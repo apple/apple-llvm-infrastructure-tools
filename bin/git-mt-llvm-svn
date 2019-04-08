@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# usage: mt-llvm-svn <commit>
+
+git rev-list --format=raw -1 "$1" |
+grep -e '^    \(git-svn-id\|llvm-svn\): ' | {
+    read key value junk || exit 1
+    [ "$key" = "llvm-svn:" ] &&
+    printf "%s\n" "$value"
+    printf "%s\n" "${value#*@}"
+}

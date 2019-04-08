@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# usage: mt-map-llvm-svn <commit>
+
+# Make sure this has a rev.
+REV=$(mt-llvm-svn "$1") || exit 1
+
+# Make sure it's the monorepo.
+git log -1 --format=raw "$1" |
+grep "^    llvm-svn: $REV\$" || exit 1
+
+# Check if this is mapped.
+is_mapped() {
+    git rev-parse refs/mt/svn/r/"$1"^{commit} >/dev/null 2>&1
+}
+if_mapped "$1" && return 0
+
+# Binary search for the first one not mapped.
+PREV=$1
+CHECK=$(git rev-list --bisect $1)
+while [ ! $PREV = $CHECKED ] ; do
+    if is_mapped $CHECK; then
+        CHECK=$(git rev-list --bisect $CHECK..$PREV)
+    else
+        CHECK=$(git rev-list --bisect $CHECK)
+    fi
+    PREV=$CHECK
+done
+
+# Map them all
+git rev-list $CHECK..$1 |
+while read COMMIT; do
+    # This should *never* fail!
+    REV=$(mt-llvm-rev "$COMMIT") || exit 1
+
+    # Update the ref and exit if it's already there.
+    printf "create refs/mt/svn/r/%s %s" $REV $COMMIT
+done |
+git update-ref --stdin
