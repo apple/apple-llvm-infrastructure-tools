@@ -3,11 +3,12 @@
 . "$(dirname "$0")"/mt-helpers/init.sh
 helper mt_llvm_svn
 helper mt_llvm_svn2git
+helper bisect
 
 usage() { echo "usage: git $COMMAND <commit>"; }
 
 # Make sure this has a rev.
-COMMIT=$(git rev-parse "$1"^{commit} 2>/dev/null) ||
+COMMIT=$(run --hide-errors git rev-parse "$1"^{commit}) ||
     error "invalid commit"
 REV=$(mt_llvm_svn $COMMIT) ||
     error "no rev for $COMMIT"
@@ -31,33 +32,25 @@ fi
 SKIP=afb1d31c54204b7f6c11e4f8815d203bcf9cffa3
 
 # Binary search for the first one not mapped.
-log "Looking for the first unmapped commit..."
-HIGH=$COMMIT^
-LOW= PREVMID= MID=
-
-# If this errors, it's because COMMIT is r1.  We can skip the loop.
 # TODO: add a testcase for r1.
 # TODO: add a testcase for SKIP.
-MID=$(run git rev-list --bisect $HIGH 2>/dev/null)
-while [ ! "$MID" = "$PREVMID" ]; do
+log "Looking for the first unmapped commit..."
+is_commit_mapped() {
+    local commit="$1"
+
     # Clump skipped commits with their parents.
-    if [ "$MID" = $SKIP ]; then
-        REV=$(mt_llvm_svn $MID^) ||
-            error "unexpected missing SVN rev for $MID^"
-    elif [ -n "$MID" ]; then
-        REV=$(mt_llvm_svn $MID) ||
-            error "unexpected missing SVN rev for $MID"
+    local rev
+    if [ "$commit" = $SKIP ]; then
+        rev=$(mt_llvm_svn $commit^) ||
+            error "unexpected missing SVN rev for $commit^"
+    elif [ -n "$commit" ]; then
+        rev=$(mt_llvm_svn $commit) ||
+            error "unexpected missing SVN rev for $commit"
     fi
 
-    if [ -n "$MID" ] && is_mapped $REV >/dev/null 2>&1; then
-        LOW=$MID
-    else
-        HIGH=$MID
-    fi
-    PREVMID=$MID
-    MID=$(run git rev-list --bisect $HIGH --not $LOW 2>/dev/null) ||
-        error "couldn't bisect $HIGH${LOW:+ from $LOW}"
-done
+    is_mapped $rev >/dev/null 2>&1
+}
+LOW=$(bisect is_commit_mapped $COMMIT^) || exit 1
 
 # Update all the refs.
 log "Mapping commits..."

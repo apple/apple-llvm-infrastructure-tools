@@ -36,8 +36,21 @@ helper() {
 }
 
 run() {
+    # Support hiding errors so that clients don't hide the verbose-mode
+    # logging.
+    local hide_errors=0
+    if [ "$1" = --hide-errors ]; then
+        hide_errors=1
+        shift
+    fi
+
     [ "${VERBOSE:-0}" = 0 ] || echo "# $*" >&2
-    "$@"
+
+    if [ $hide_errors -eq 1 ]; then
+        "$@" 2>/dev/null
+    else
+        "$@"
+    fi
 }
 error() {
     printf "error: %s\n" "$*" >&2

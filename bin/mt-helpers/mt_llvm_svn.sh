@@ -15,6 +15,8 @@ mt_llvm_svn_impl() {
             printf "$format" "${value#*@}" $sha1
         else
             # This is the sha1, if kept.
+            # TODO: add a testcase for when this skips over a commit that has
+            # no rev.
             sha1="$value"
         fi
     done
