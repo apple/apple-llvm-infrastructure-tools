@@ -1,0 +1,77 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/mt-helpers/init.sh
+helper mt_llvm_svn
+helper mt_llvm_svn2git
+
+usage() { echo "usage: git $COMMAND <commit>"; }
+
+# Make sure this has a rev.
+COMMIT=$(git rev-parse "$1"^{commit} 2>/dev/null) ||
+    error "invalid commit"
+REV=$(mt_llvm_svn $COMMIT) ||
+    error "no rev for $COMMIT"
+
+# Make sure it's the monorepo.
+run git log -1 --format=raw $COMMIT |
+run grep -q "^    llvm-svn: $REV\$" ||
+    error "$COMMIT is not canonical for $REV"
+
+# Open up a connection to the database.
+mt_llvm_svn2git_init --write
+
+# Check if this is mapped.
+is_mapped() { mt_llvm_svn2git "$1" >/dev/null ;}
+if is_mapped $REV; then
+    log "$COMMIT is already mapped to $REV"
+    exit 0
+fi
+
+# This commit has no SVN revision.
+SKIP=afb1d31c54204b7f6c11e4f8815d203bcf9cffa3
+
+# Binary search for the first one not mapped.
+log "Looking for the first unmapped commit..."
+HIGH=$COMMIT^
+LOW= PREVMID= MID=
+
+# If this errors, it's because COMMIT is r1.  We can skip the loop.
+# TODO: add a testcase for r1.
+# TODO: add a testcase for SKIP.
+MID=$(run git rev-list --bisect $HIGH 2>/dev/null)
+while [ ! "$MID" = "$PREVMID" ]; do
+    # Clump skipped commits with their parents.
+    if [ "$MID" = $SKIP ]; then
+        REV=$(mt_llvm_svn $MID^) ||
+            error "unexpected missing SVN rev for $MID^"
+    elif [ -n "$MID" ]; then
+        REV=$(mt_llvm_svn $MID) ||
+            error "unexpected missing SVN rev for $MID"
+    fi
+
+    if [ -n "$MID" ] && is_mapped $REV >/dev/null 2>&1; then
+        LOW=$MID
+    else
+        HIGH=$MID
+    fi
+    PREVMID=$MID
+    MID=$(run git rev-list --bisect $HIGH --not $LOW 2>/dev/null) ||
+        error "couldn't bisect $HIGH${LOW:+ from $LOW}"
+done
+
+# Update all the refs.
+log "Mapping commits..."
+
+# TODO: add a testcase for searching exactly one commit.
+REVLIST_ARGS=( $COMMIT --not $LOW )
+run git rev-list --reverse --format=raw "${REVLIST_ARGS[@]}" |
+mt_llvm_svn_impl --append-commit |
+mt_llvm_svn2git_mapper "${REVLIST_ARGS[@]}"
+
+STATUS=$?
+if [ $STATUS -eq 0 -o $STATUS -eq 1 ]; then
+    log ""
+    log "Saving..."
+    mt_llvm_svn2git_save
+fi
+exit $STATUS

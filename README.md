@@ -9,14 +9,27 @@ A collection of tools for working downstream with the LLVM project.
 #### Revision to monorepo commit
 
 ```
-refs/mt/svn/<rev> -> <commit>
+refs/mt/svn2git -> <blob>
 ```
-Maps from an SVN revision number on [llvm.org](http://llvm.org/) to
-the monorepo commit on github/llvm/llvm-project.
+
+The `<blob>` is a binary file that maps from an SVN revision number on
+[llvm.org](http://llvm.org/) to the monorepo commit on
+github/llvm/llvm-project.  The SHA1s for the commits are each packed into 20
+bytes and stored contiguously by revision, leaving 0s for revisions that don't
+have commits mapped (yet).
+
+Looking up a commit is easy using `xxd`.  For example, to look up r20343, run:
+
+```
+FILE=$(git unpack-file refs/mt/svn2git)
+xxd -s $(( 20 * 20343 )) -g 0 -c 20 -l 20 -p $FILE
+```
 
 ### Tools for maintaining monorepo transition branches
 
 #### Dealing with SVN revisions from [llvm.org](http://llvm.org/)
+
+`git-mt-llvm-svn2git` converts an SVN revision number to a monorepo commit.
 
 `git-mt-llvm-svn` extracts an SVN revision number from a commit
 message.  We need to support a few different formats:
@@ -34,9 +47,9 @@ message.  We need to support a few different formats:
 
 ```
 
-`git-mt-map-llvm-svn` updates a map from SVN revision numbers from
-llvm.org (http://llvm.org/) to monorepo commits on
-github/llvm/llvm-project
+`git-mt-llvm-svn2git-map` updates the map from SVN revision numbers from
+llvm.org (http://llvm.org/) to monorepo commits on github/llvm/llvm-project
 
 - pass in a commit from the canonical monorepo, and it will map all
   the commits in its history
+- subsequent calls to `git-mt-llvm-svn2git` will be able to answer queries

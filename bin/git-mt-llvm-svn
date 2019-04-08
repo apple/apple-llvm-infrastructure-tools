@@ -2,6 +2,6 @@
 . "$(dirname "$0")"/mt-helpers/init.sh
 helper mt_llvm_svn
 
-usage() { echo "usage: git mt-llvm-svn <commit>"; }
+usage() { echo "usage: git $COMMAND <commit>"; }
 
 mt_llvm_svn "$@"
