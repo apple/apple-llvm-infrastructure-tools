@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# usage: mt-split2mono-translate-commit
+#           <dir> <commit> [<parent> <pdirs>...]
+#   <dir>       the directory to move to; use "" for top-level
+#   <commit>    commit hash to translate
+#   <parent>    overrides first-parent
+#   <pdirs>     dirs to take from <parent> instead of "newest"
+#
+# uses read/write this map:
+#   refs/mt/mapped/<hash>/commit -> <commit>
+#
+DIR="$1"
+shift
+COMMIT="$1"
+shift
+PARENT=$1
+shift
+PARENTDIRS=( "$@" )
+
+declare -a TODO
+I=1
+push() {
+    I=$(( I + 1 ))
+    TODO[$I]=$1
+}
+pop() {
+    I=$(( I - 1 ))
+}
+push $COMMIT
+
+map_parents() {
+    local commit=$1
+    shift
+
+    local p
+    local retval=0
+    for p in "$@"; do
+        if [ -n "$PARENT" -a $commit = $COMMIT ]; then
+            mt-split2mono-translate-commit $p >/dev/null ||
+                exit 1
+            echo $PARENT
+        elif mp=$(mt-split2mono-translate-commit $p); then
+            echo $mp
+        else
+            push $p
+            retval=1
+        fi
+    done
+    return $retval
+}
+
+list_split_tree() {
+    local commit=$1
+    local tree
+    if [ -n "$DIR" ]; then
+        tree=$(git rev-parse $commit:)
+        printf "%s %s %s\t%s\n" 040000 tree $tree "$DIR"
+    else
+        # Dereference if this is a root.
+        git ls-tree $commit
+    fi
+}
+
+list_tree_with_dups() {
+    local commit=$1
+    shift
+    local mparents="$1"
+    local fparent=${mparents%% *}
+    shift
+    if [ -z "$fparent" ]; then
+        list_split_tree $commit
+        return 0
+    fi
+    if [ $fparent = "$mparents" ]; then
+        git ls-tree $fparent &&
+            list_split_tree $commit
+        return 0
+    fi
+    local  ct  mp  mode  type  sha1  name
+    local lct lmp lmode ltype lsha1 lname
+    for mp in $mparents; do
+        git ls-tree $mp | sed -e 's,^.,'$mp' &,'
+    done |
+    sort --stable --field-separator='\t' -k2,2 | uniq |
+    while read -r mp mode type sha1 name; do
+        [ "$name" = "$DIR" ] && continue
+        if [ ! "$lname" = "$name" ]; then
+            # if --first-parent has this, it'll be printed here
+            printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
+            lct= lmp=$mp lmode=$mode ltype=$type lsha1=$sha1 lname="$lname"
+            continue
+        fi
+        skip=0
+        for d in "$@"; do
+            [ "$name" = "$d" ] || continue
+            skip=1 && break
+        done
+        [ $skip -eq 1 ] && continue
+
+        # lookup timestamps; this logic is sketchy
+        # may need to track more clearly somehow
+        # but this should be enough for llvm-project-v0
+        [ -n "$lct" ] ||
+            lct=$(git log --no-merges -1 --format=format:%ct $lmp -- "$name")
+        ct=$(git log --no-merges -1 --format=format:%ct $mp -- "$name")
+        # print the current one if it's newer than the last
+        [ $ct -lt $lct ] && continue
+        printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
+        lct=$ct lmp=$mp lmode=$mode ltype=$type lsha1=$sha1 lname="$lname"
+    done
+    list_split_tree $commit
+}
+list_tree() {
+    list_tree_with_dups "$@" |
+    awk -F'\t' '{x[$2]=$0} END {for(n in x) print x[n]}'
+}
+make_tree() {
+    list_tree "$@" | git mk-tree
+}
+commit_tree() {
+    local commit="$1" mparents="$2" newtree="$3"
+    trailers=( --trailer apple-llvm-split-commit:$commit )
+    [ -n "$DIR" ] &&
+        trailers=( "${trailers[@]}"
+    --trailer apple-llvm-split-subdir:$DIR/ )
+
+    # make parent command-line
+    pcmd=()
+    for mp in $mparents; do
+        pcmd=( "${pcmd[@]}" -p $mp )
+    done
+
+    git log -1 --format=%B $commit |
+    git interpret-trailers "${trailers[@]}" |
+    git commit-tree $pcmd $newtree
+}
+
+while [ $I -gt 0 ]; do
+    commit=TODO[$I]
+    if mt-lookup-commit $commit; then
+        pop
+        continue
+    fi
+    if rev=$(mt-get-llvm $commit); then
+        revcommit=$(git mt-llvm-svn2git $rev) || exit 1
+        git update-ref refs/mt/mapped/$commit/commit $revcommit
+        pop
+        continue
+    fi
+
+    # map parents, pushing them on the stack if necessary
+    mparents="$(map_parents $commit $(git rev-parse $commit^@))" ||
+        continue
+
+    # get the split tree hash
+    [ -z "$DIR" ] || stree=$(git rev-parse $commit:)
+
+    # Collect the dirs hard-coded to the parent
+    [ $commit = $COMMIT -a -n "$PARENT" ] && firstpdirs=( "$@" )
+
+    # commit, map, and pop
+    newtree=$(make_tree $commit "$mparents" "${firstpdirs[@]}") ||
+        exit 1
+    newcommit=$(commit_tree $commit "$mparents" $newtree) ||
+        exit 1  
+    git update-ref refs/mt/mapped/$commit/commit $newcommit
+    pop
+done

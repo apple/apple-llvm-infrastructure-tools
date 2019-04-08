@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# usage: mt-split2mono <commit>
+if REV=$(mt-llvm-rev "$1"); then
+  git mt-llvm-svn2git $REV
+  exit $?
+fi
+git rev-parse refs/mt/translated/"$1"^{commit} 2>/dev/null

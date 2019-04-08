@@ -25,6 +25,28 @@ FILE=$(git unpack-file refs/mt/svn2git)
 xxd -s $(( 20 * 20343 )) -g 0 -c 20 -l 20 -p $FILE
 ```
 
+#### Split repository commit to monorepo commit
+
+```
+refs/mt/remotes/<remote>/split2mono -> <blob>
+```
+
+This `<blob>` maps from a commit in a split Git repo to its translated
+monorepo commit.  We probably want want to use sqlite3 for this.
+
+This database must be saved separately for each remote.
+
+- We want a global view of commits.
+    - The split repos have complex commit graphs.  It's vital that each
+      split commit is only translated once to a monorepo commit.
+- Downstream remotes have more commits than upstream.
+    - There could be secrets.  It's important to make it difficult to
+      accidentally push a downstream database to an upstream remote.
+- We want access to be fast.
+
+As a result, we need a way of merging from an upstream db into a
+downstream.
+
 ### Tools for maintaining monorepo transition branches
 
 #### Dealing with SVN revisions from [llvm.org](http://llvm.org/)
@@ -45,11 +67,35 @@ message.  We need to support a few different formats:
     - r47672: 077f9b20d0e8659d00a09046a63e28edf0665ffe
     - ...
 
-```
-
-`git-mt-llvm-svn2git-map` updates the map from SVN revision numbers from
-llvm.org (http://llvm.org/) to monorepo commits on github/llvm/llvm-project
+`git-mt-llvm-svn2git-map` updates the map from SVN revision numbers
+from [llvm.org](http://llvm.org/) to monorepo commits on
+github/llvm/llvm-project
 
 - pass in a commit from the canonical monorepo, and it will map all
   the commits in its history
 - subsequent calls to `git-mt-llvm-svn2git` will be able to answer queries
+
+#### Dealing with downstream, split-repo branches
+
+There are a few tools sketched out so far:
+
+`git-mt-split2mono`, to look up an existing mapping
+
+- Leverage `git-mt-llvm-svn2git` for upstream commits?
+
+`git-mt-split2mono-translate-commit`, to create monorepo commits out of split
+repo commits
+
+- Leave commits handled by `git-mt-llvm-svn2git` where they are?
+
+`git-mt-split2mono-translate-branch` translates commits onto a branch.
+It's given:
+
+- `<branch>` the name of the branch to add commits to
+- `<upstream>...` a list of upstream monorepo branches
+- `<skip>...` a list of known-to-already-be-mapped refs to skip looking
+  at in the split repos, as a performance optimization
+- `<ref>:<dir>...` a list of refs from split repositories and which
+  directory to move them to, where `<ref>:` on its own indicates it
+  should go at root (similar to
+  [llvm.org/git/monorepo-root.git](http://git.llvm.org/git/monorepo-root.git)).

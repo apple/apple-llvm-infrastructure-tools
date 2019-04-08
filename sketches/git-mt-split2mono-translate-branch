@@ -1,0 +1,104 @@
+#!/bin/bash
+
+# usage: mt-split2mono-translate-branch <branch> 
+#           [--upstream <upstream>]...
+#           [--skip <skip>]...
+#           <ref>:<dir>...
+#   <branch>      the branch to create a combined linear history from
+#   <upstream>... monorepo upstream branches for <branch>
+#   <skip>...     split <ref>s that are in the upstreams (optimization only)
+#   <ref>...      the refs for split branches to combine
+#   <dir>...      the dirs for each split branch
+# 
+# uses read/write these maps:
+#   refs/mt/mapped/<hash>/commit -> <commit>
+#   refs/mt/branch/split/<branch>/head/<dir> -> <split-commit>
+#   refs/mt/branch/split/<branch>/next/<dir> -> <split-commit>
+#   refs/mt/branch/split/<branch>/first/<dir> -> <split-commit>
+
+# confirm skips are valid to skip
+for s in $skips; do
+    mt-split2mono "$s" || exit 1
+done
+
+
+splitrefs=refs/mt/branch/split/$branch
+get_split_ref() {
+    git rev-parse $splitrefs/$1/$2^{commit} 2>/dev/null
+}
+set_split_ref() {
+    git update-ref $splitrefs/$1/$2 $3
+}
+
+# open fifos for each split dir
+fifos="$(mktemp -d)"
+dirs=()
+for rd in ${refdirs[@]}; do
+    r="${rd%:*}"
+    d="${rd##*:}"
+    dirs=( "${dirs[@]}" "$d" )
+    next=$(get_split_ref next $d 2>/dev/null)
+    head=$(get_split_ref head $d 2>/dev/null)
+    fifo="$fifos"/$d
+    mkfifo "$fifo" || exit 1
+    git rev-list --first-parent --reverse \
+        $r \
+        --not $skips ${next:-$head} \
+        >"$fifo" &
+    [ -n "$next" ] && continue
+    if [ -n "$head" ]; then
+        read -u "$fifo" next
+        [ -n "$next" ] && set_split_ref next $d $next
+        continue
+    fi
+    while read -u "$fifo" commit; do
+        mt-lookup-commit $commit >/dev/null && continue
+        set_split_ref next  $d $commit
+        set_split_ref first $d $commit
+        break
+    done
+done
+
+select_next() {
+    local next d date best bestd bestdate=$(( 0x7fffffffffffffff ))
+    for d in ${dirs[@]}; do
+        next=$(get_split_ref next $d) || continue
+        date=$(git log --format=format:%ct $next) || exit 1
+        if [ $date -lt $bestdate ]; then
+            [ -n "$bestd" ] && printf "%s " "$bestd"
+            bestd="$d"
+            best=$next
+            bestdate=$date
+        else
+            printf "%s " "$d"
+        fi
+    done
+    # Save the best for last.
+    if [ -n "$best" ]; then
+        printf "%s" $bestd
+        return 0
+    fi
+    return 1
+}
+
+bhead=$(git rev-parse refs/heads/$branch^{commit} 2>/dev/null)
+while true; do
+    ds_best_last=$(select_next) || return 0
+    other_ds="${ds_best_last##* }"
+    nextd="${ds_best_last% *}"
+    next=$(get_split_ref next $nextd)
+    bhead=$(mt-split2mono-translate-commit \
+        $nextd $next $bhead ${bhead:+$other_ds}) ||
+        exit 1
+
+    # update everything
+    head=$next
+    read -u "$fifos"/$nextd new
+    prefix=refs/mt/branch/split/$branch
+    {
+        printf "update %s/next/%s %s %s\n" $prefix $nextd $new $next
+        printf "update %s/head/%s %s\n"    $prefix $nextd $head
+        printf "update refs/heads/%s %s\n" $branch $bhead
+    } |
+    git update-ref --stdin || exit 1
+done
