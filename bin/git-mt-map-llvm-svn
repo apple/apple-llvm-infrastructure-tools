@@ -1,39 +1,75 @@
 #!/bin/bash
 
-# usage: mt-map-llvm-svn <commit>
+. "$(dirname "$0")"/mt-helpers/init.sh
+helper mt_llvm_svn
+
+usage() { echo "usage: git mt-map-llvm-svn <commit>"; }
 
 # Make sure this has a rev.
-REV=$(mt-llvm-svn "$1") || exit 1
+log "Checking input..."
+COMMIT=$(git rev-parse "$1"^{commit} 2>/dev/null) ||
+    error "invalid commit"
+REV=$(mt_llvm_svn $COMMIT) ||
+    error "no rev for $COMMIT"
 
 # Make sure it's the monorepo.
-git log -1 --format=raw "$1" |
-grep "^    llvm-svn: $REV\$" || exit 1
+run git log -1 --format=raw $COMMIT |
+run grep -q "^    llvm-svn: $REV\$" ||
+    error "$COMMIT is not canonical for $REV"
 
 # Check if this is mapped.
-is_mapped() {
-    git rev-parse refs/mt/svn/r/"$1"^{commit} >/dev/null 2>&1
-}
-if_mapped "$1" && return 0
+is_mapped() { run git rev-parse refs/mt/svn/r/$1^{commit} >/dev/null 2>&1; }
+if is_mapped $COMMIT; then
+    log "$COMMIT is already mapped"
+    return 0
+fi
 
 # Binary search for the first one not mapped.
-PREV=$1
-CHECK=$(git rev-list --bisect $1)
-while [ ! $PREV = $CHECKED ] ; do
-    if is_mapped $CHECK; then
-        CHECK=$(git rev-list --bisect $CHECK..$PREV)
+log "Looking for the first unmapped commit..."
+PREV=$COMMIT
+FIRST=$(run git rev-list --bisect $COMMIT) ||
+    error "couldn't bisect from $COMMIT"
+while [ ! $PREV = $FIRST ]; do
+    PREV=$FIRST
+    if is_mapped $FIRST; then
+        FIRST=$(run git rev-list --bisect $FIRST..$PREV)
     else
-        CHECK=$(git rev-list --bisect $CHECK)
+        FIRST=$(run git rev-list --bisect $FIRST)
     fi
-    PREV=$CHECK
 done
 
-# Map them all
-git rev-list $CHECK..$1 |
-while read COMMIT; do
-    # This should *never* fail!
-    REV=$(mt-llvm-rev "$COMMIT") || exit 1
+# Update all the refs.
+log "Mapping commits..."
+COUNT=$(run git rev-list --count --boundary $FIRST..$COMMIT)
+progress() {
+    printf "  [%${#COUNT}d / %d commits mapped]\n" $1 $COUNT >&2
+}
+run git rev-list --reverse --format=raw --boundary $FIRST..$COMMIT |
+mt_llvm_svn_impl --prepend-commit | {
+while read COMMIT REV; do
+    if [ -z "$N" ]; then
+        N=0
+    elif [ $(( $N % 5000 )) -eq 0 ]; then
+        progress $N
+    fi
+    # Strip off the '-' from the boundary commit.
+    COMMIT=${COMMIT#-}
 
-    # Update the ref and exit if it's already there.
-    printf "create refs/mt/svn/r/%s %s" $REV $COMMIT
-done |
-git update-ref --stdin
+    # Skip the commit that deletes the stacker project retroactively.  It has
+    # no llvm-svn revision.
+    [ "$COMMIT" = afb1d31c54204b7f6c11e4f8815d203bcf9cffa3 ] &&
+        continue
+
+    # This should *never* fail!
+    if [ -z "$REV" ]; then
+        printf "garbage to crash git-update-ref"
+        error "invalid rev for $COMMIT"
+    fi
+
+    printf "create refs/mt/svn/r/%s %s\n" $REV $COMMIT
+    N=$(( $N + 1 ))
+done
+progress $N
+log "Writing refs to refs/mt/svn/r/*..."
+} |
+run git update-ref --stdin
