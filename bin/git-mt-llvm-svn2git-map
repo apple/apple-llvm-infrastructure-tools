@@ -59,7 +59,7 @@ log "Mapping commits..."
 REVLIST_ARGS=( $COMMIT --not $LOW )
 run git rev-list --reverse --format=raw "${REVLIST_ARGS[@]}" |
 mt_llvm_svn_impl --append-commit |
-mt_llvm_svn2git_mapper "${REVLIST_ARGS[@]}"
+mt_llvm_svn2git_insert "${REVLIST_ARGS[@]}"
 
 STATUS=$?
 if [ $STATUS -eq 0 -o $STATUS -eq 1 ]; then

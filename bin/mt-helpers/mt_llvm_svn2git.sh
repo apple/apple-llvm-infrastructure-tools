@@ -49,11 +49,11 @@ mt_llvm_svn2git() {
     echo "$sha1"
 }
 
-mt_llvm_svn2git_mapper() {
+mt_llvm_svn2git_insert() {
     local mapper
-    mapper="$(mktemp -t mt-commit-mapper)" ||
+    mapper="$(mktemp -t svn2git-insert)" ||
         error "could not create temp file for commit mapper"
-    local src="$(dirname "$0")"/../src/commit-mapper.c
+    local src="$(dirname "$0")"/../src/svn2git-insert.c
     run clang -O2 -o "$mapper" "$src" &
     local clang=$!
     local count
