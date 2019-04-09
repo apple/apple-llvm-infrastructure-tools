@@ -1,4 +1,13 @@
 // svn2git-insert.c
+//
+// Format description: sha1 corresponding to an SVN rev starts at 20*rev and
+// runs for 20 bytes.
+//
+// - bytes 00-19: unused / file magic FIXME: add file magic
+// - bytes 20-39: sha1 for commit for r1 (0s if none)
+// - bytes 40-59: sha1 for commit for r2 (0s if none)
+// - bytes 60-79: sha1 for commit for r3 (0s if none)
+// - ...
 #include <fcntl.h>
 #include <stdio.h>
 
@@ -39,6 +48,7 @@ int main(int argc, const char *argv[]) {
 
   // TODO: add test where commits are added in two chunks.  Initial commits
   // will be deleted if we use fopen instead of open/fdopen.
+  // FIXME: add file magic (check it everywhere, write it here)
   int dbfd = open(db, O_WRONLY | O_CREAT);
   if (dbfd == -1)
     return usage("could not open <db> file descriptor", argc, argv);
