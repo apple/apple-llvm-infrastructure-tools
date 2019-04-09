@@ -227,7 +227,9 @@ int insert_commits(sqlite3 *db) {
   if (n == progress)
     return 0;
   query += suffix;
-  return execute(db, query.c_str());
+  if (execute(db, query.c_str()))
+    return 1;
+  return show_progress(n);
 }
 
 int insert_usage(const char *msg, int argc, const char *argv[]) {
