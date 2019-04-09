@@ -57,6 +57,20 @@ static bool is_name_valid(const char *name) {
 static bool is_name_valid(const std::string &name) {
   return is_name_valid(name.c_str());
 }
+static bool is_commit_valid(const char *sha1) {
+  for (; *sha1; ++sha1) {
+    // Allow "[0-9a-z]".
+    if (*sha1 >= '0' && *sha1 <= '9')
+      continue;
+    if (*sha1 >= 'a' && *sha1 <= 'z')
+      continue;
+    return false;
+  }
+  return true;
+}
+static bool is_commit_valid(const std::string &sha1) {
+  return is_commit_valid(sha1.c_str());
+}
 
 template <class T> struct CallbackContext {
   T callable;
@@ -171,38 +185,38 @@ int initialize_db(sqlite3 **db, const char *name, const char *filename,
 }
 
 int insert_commits(sqlite3 *db) {
-  const char prefix[] = "INSERT INTO split2mono(split,mono)VALUES(\"";
-  const char record_delim[] = "\"),(\"";
-  const char value_delim[] = "\",\"";
-  const char suffix[] = "\");";
-  char buffer[2048] = {0};
-  const int record_size = 80 + sizeof(value_delim) + sizeof(record_delim);
-  const int max_records =
-      (sizeof(buffer) - 1 - sizeof(prefix) - sizeof(suffix)) /
-      record_size;
-  char *record_start =
-      buffer + snprintf(buffer, sizeof(prefix), "%s", prefix);
-  char *current = record_start;
+  constexpr const char prefix[] = "INSERT INTO split2mono(split,mono)VALUES(\"";
+  constexpr const char record_delim[] = "\"),(\"";
+  constexpr const char value_delim[] = "\",\"";
+  constexpr const char suffix[] = "\");";
 
+  // Do 20 records at a time.
+  constexpr const int max_records = 20;
+
+  std::string query = prefix;
   char split[41];
   char mono[41];
   int n = 0;
   int progress = 0;
-  while (scanf("%s %s", split, mono) == 2) {
-    current += snprintf(current, record_size, "%s%s%s", split, value_delim,
-                        mono);
+  while (scanf("%40s %40s", split, mono) == 2) {
+    if (!is_commit_valid(split))
+      return error("invalid split commit");
+    if (!is_commit_valid(mono))
+      return error("invalid mono commit");
+    query += split;
+    query += value_delim;
+    query += mono;
 
+    ++n;
     if (n < max_records) {
-      current += snprintf(current, sizeof(record_delim), "%s", record_delim);
-      n = 0;
+      query += record_delim;
       continue;
     }
 
-    current += snprintf(current, sizeof(suffix), "%s", suffix);
-    *current = '\0';
-    if (execute(db, buffer))
+    query += suffix;
+    if (execute(db, query.c_str()))
       return 1;
-    current = record_start;
+    query.erase(sizeof(prefix));
 
     if (n - progress > 5000) {
       progress = n;
@@ -210,11 +224,10 @@ int insert_commits(sqlite3 *db) {
         return 1;
     }
   }
-  if (!n)
+  if (n == progress)
     return 0;
-  current += snprintf(current, sizeof(suffix), "%s", suffix);
-  *current = '\0';
-  return execute(db, buffer);
+  query += suffix;
+  return execute(db, query.c_str());
 }
 
 int insert_usage(const char *msg, int argc, const char *argv[]) {
