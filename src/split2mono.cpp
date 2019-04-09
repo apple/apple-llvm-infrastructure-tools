@@ -22,7 +22,7 @@ void sqlite3_free(void *mem);
 int sqlite3_exec(sqlite3 *db, const char *sql,
                  int (*callback)(void *, int, char **, char **), void *context,
                  char **error);
-int sqlite3_bind_text(sqlite3_stmt *,int,const char*,int,void(*)(void*));
+int sqlite3_bind_text(sqlite3_stmt *, int, const char *, int, void (*)(void *));
 int sqlite3_prepare_v2(sqlite3 *db, const char *sql, int numbytes,
                        sqlite3_stmt **stmt, const char **tail);
 } // extern "C"
@@ -79,8 +79,7 @@ template <class T> struct CallbackContext {
   }
 };
 
-template <class T>
-int execute(sqlite3 *db, const char *command, T callback) {
+template <class T> int execute(sqlite3 *db, const char *command, T callback) {
   CallbackContext<T> context = {callback};
   return sqlite3_exec(db, command, CallbackContext<T>::callback, &context,
                       nullptr);
@@ -92,30 +91,32 @@ int execute(sqlite3 *db, const char *command) {
 int extract_string(std::string &s, sqlite3 *db, const char *query) {
   bool set = false;
   return execute(db, query,
-      [&s, &set](int numcols, char **cols, char**) {
-        if (numcols != 1)
-          return 1;
-        if (set)
-          return 1;
-        set = true;
-        s = cols[0];
-        return 0;
-      }) && set;
+                 [&s, &set](int numcols, char **cols, char **) {
+                   if (numcols != 1)
+                     return 1;
+                   if (set)
+                     return 1;
+                   set = true;
+                   s = cols[0];
+                   return 0;
+                 }) &&
+         set;
 }
 
 int extract_long(long &l, sqlite3 *db, const char *query) {
   bool set = false;
   return execute(db, query,
-      [&l, &set](int numcols, char **cols, char**) {
-        if (numcols != 1)
-          return 1;
-        if (set)
-          return 1;
-        set = true;
-        char *endptr = nullptr;
-        l = strtol(cols[0], &endptr, 10);
-        return *endptr ? 1 : 0;
-      }) && set;
+                 [&l, &set](int numcols, char **cols, char **) {
+                   if (numcols != 1)
+                     return 1;
+                   if (set)
+                     return 1;
+                   set = true;
+                   char *endptr = nullptr;
+                   l = strtol(cols[0], &endptr, 10);
+                   return *endptr ? 1 : 0;
+                 }) &&
+         set;
 }
 
 int check_name(sqlite3 *db, const char *name) {
@@ -165,14 +166,14 @@ int initialize_db_readonly(sqlite3 **db, const char *filename) {
 }
 
 int initialize_db(sqlite3 **db, const char *name, const char *filename,
-                  int(*usage)(const char *, int, const char *[]),
-                  int argc, const char *argv[]) {
+                  int (*usage)(const char *, int, const char *[]), int argc,
+                  const char *argv[]) {
   if (!sqlite3_open_v2(filename, db, SQLITE_OPEN_READWRITE, nullptr))
     return check_name(*db, name);
   sqlite3_close_v2(*db);
 
-  if (sqlite3_open_v2(filename, db,
-                      SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr))
+  if (sqlite3_open_v2(filename, db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
+                      nullptr))
     return usage("can't open <db>", argc, argv);
   if (!create_tables(*db, name))
     return 0;
@@ -277,26 +278,26 @@ int extract_stored_upstream_info(sqlite3 *db, UpstreamInfo &stored,
                                  const UpstreamInfo &computed) {
   assert(!computed.name.empty());
   assert(stored.name.empty());
-  std::string query =
-      "SELECT upstream_dbs_count,split2mono_count"
-      " FROM upstream_dbs"
-      " WHERE name=\"" + computed.name + "\"";
+  std::string query = "SELECT upstream_dbs_count,split2mono_count"
+                      " FROM upstream_dbs"
+                      " WHERE name=\"" +
+                      computed.name + "\"";
 
   if (!execute(db, query.c_str(),
-      [&computed, &stored](int numcols, char **cols, char**) {
-        if (numcols != 2)
-          return 1;
-        if (!stored.name.empty())
-          return 1;
-        stored.name = computed.name;
-        char *endptr = nullptr;
-        stored.upstream_dbs_count = strtol(cols[0], &endptr, 10);
-        if (*endptr)
-          return 1;
-        endptr = nullptr;
-        stored.split2mono_count = strtol(cols[1], &endptr, 10);
-        return *endptr ? 1 : 0;
-      }))
+               [&computed, &stored](int numcols, char **cols, char **) {
+                 if (numcols != 2)
+                   return 1;
+                 if (!stored.name.empty())
+                   return 1;
+                 stored.name = computed.name;
+                 char *endptr = nullptr;
+                 stored.upstream_dbs_count = strtol(cols[0], &endptr, 10);
+                 if (*endptr)
+                   return 1;
+                 endptr = nullptr;
+                 stored.split2mono_count = strtol(cols[1], &endptr, 10);
+                 return *endptr ? 1 : 0;
+               }))
     return error("could not get upstream name");
 
   if (computed.upstream_dbs_count < stored.upstream_dbs_count ||
