@@ -1,10 +1,25 @@
-// split2mono.c
+// split2mono.cpp
 //
-// build: clang -x c -std=gnu11 -O2 -lsqlite3
+// build: clang -x c++ -std=gnu++17 -O2 -lsqlite3
 // alias: split2mono-insert
+#include <cstdio>
+#include <cstring>
 #include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
+
+constexpr int SQLITE_OPEN_READONLY = 1;
+constexpr int SQLITE_OPEN_READWRITE = 2;
+constexpr int SQLITE_OPEN_CREATE = 4;
+
+extern "C" {
+typedef void *sqlite3_handle;
+int sqlite3_open_v2(const char *filename, sqlite3_handle *db, int flags,
+                    const char *vfs);
+int sqlite3_close_v2(sqlite3_handle db);
+void sqlite3_free(void *mem);
+int sqlite3_exec(sqlite3_handle db, const char *sql,
+                 int (*callback)(void *, int, char **, char **), void *context,
+                 char **error);
+} // extern "C"
 
 int show_progress(int total) {
   return fprintf(stderr, "   %9d commits mapped\n", total) < 0;
@@ -14,23 +29,9 @@ int error(const char *msg) {
   return 1;
 }
 
-#define SQLITE_OPEN_READONLY 1
-#define SQLITE_OPEN_READWRITE 2
-#define SQLITE_OPEN_CREATE 4
-
-typedef void *sqlite3_handle;
-int sqlite3_open_v2(const char *filename, sqlite3_handle *db, int flags,
-                    const char *vfs);
-int sqlite3_close_v2(sqlite3_handle db);
-void sqlite3_free(void *mem);
-
-
-int sqlite3_exec(sqlite3_handle db, const char *sql,
-                 int (*callback)(void *, int, char **, char **), void *context,
-                 char **error);
 int execute(sqlite3_handle db, const char *command) {
   char *error;
-  if (!sqlite3_exec(db, command, 0, 0, &error))
+  if (!sqlite3_exec(db, command, nullptr, nullptr, &error))
     return 0;
   sqlite3_free(error);
   return 1;
@@ -62,7 +63,7 @@ int create_tables(sqlite3_handle db, const char *name) {
 }
 
 int initialize_db_readonly(sqlite3_handle *db, const char *filename) {
-  if (!sqlite3_open_v2(filename, db, SQLITE_OPEN_READONLY, 0))
+  if (!sqlite3_open_v2(filename, db, SQLITE_OPEN_READONLY, nullptr))
     return 0;
   sqlite3_close_v2(*db);
   *db = 0;
@@ -72,18 +73,18 @@ int initialize_db_readonly(sqlite3_handle *db, const char *filename) {
 int initialize_db(sqlite3_handle *db, const char *name, const char *filename,
                   int(*usage)(const char *, int, const char *[]),
                   int argc, const char *argv[]) {
-  if (!sqlite3_open_v2(filename, db, SQLITE_OPEN_READWRITE, 0))
+  if (!sqlite3_open_v2(filename, db, SQLITE_OPEN_READWRITE, nullptr))
     return 0;
   sqlite3_close_v2(*db);
 
   if (sqlite3_open_v2(filename, db,
-                      SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, 0))
+                      SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr))
     return usage("can't open <db>", argc, argv);
   if (!create_tables(*db, name))
     return 0;
 
   sqlite3_close_v2(*db);
-  *db = 0;
+  *db = nullptr;
   if (remove(filename))
     return error("can't remove <db> (after creating it!)");
   return 1;
@@ -172,7 +173,7 @@ int split2mono_upstream(sqlite3_handle *db, int argc, const char *argv[]) {
   if (initialize_db(db, name, filename, upstream_usage, argc, argv))
     return 1;
 
-  sqlite3_handle udb = 0;
+  sqlite3_handle udb = nullptr;
   if (initialize_db_readonly(&udb, upstream))
     return error("could not open <upstream>");
 
@@ -180,10 +181,9 @@ int split2mono_upstream(sqlite3_handle *db, int argc, const char *argv[]) {
 }
 
 int main(int argc, const char *argv[]) {
-  sqlite3_handle db = 0;
+  sqlite3_handle db = nullptr;
   const char *name = argv[0];
-  char *slash = strrchr(name, '/');
-  if (slash)
+  if (const char *slash = strrchr(name, '/'))
     name = slash + 1;
   int status;
   if (strcmp(name, "split2mono-insert")) {
