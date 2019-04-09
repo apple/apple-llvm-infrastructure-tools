@@ -25,12 +25,12 @@ int sqlite3_exec(sqlite3 *db, const char *sql,
 int sqlite3_bind_text(sqlite3_stmt *, int, const char *, int, void (*)(void *));
 int sqlite3_prepare_v2(sqlite3 *db, const char *sql, int numbytes,
                        sqlite3_stmt **stmt, const char **tail);
-} // extern "C"
+} // end extern "C"
 
-int show_progress(int total) {
+static int show_progress(int total) {
   return fprintf(stderr, "   %9d commits mapped\n", total) < 0;
 }
-int error(const char *msg) {
+static int error(const char *msg) {
   fprintf(stderr, "error: %s\n", msg);
   return 1;
 }
@@ -72,23 +72,26 @@ static bool is_commit_valid(const std::string &sha1) {
   return is_commit_valid(sha1.c_str());
 }
 
+namespace {
 template <class T> struct CallbackContext {
   T callable;
   static int callback(void *context, int numcols, char **cols, char **names) {
     return (*reinterpret_cast<T *>(context))(numcols, cols, names);
   }
 };
+} // end namespace
 
-template <class T> int execute(sqlite3 *db, const char *command, T callback) {
+template <class T>
+static int execute(sqlite3 *db, const char *command, T callback) {
   CallbackContext<T> context = {callback};
   return sqlite3_exec(db, command, CallbackContext<T>::callback, &context,
                       nullptr);
 }
-int execute(sqlite3 *db, const char *command) {
+static int execute(sqlite3 *db, const char *command) {
   return sqlite3_exec(db, command, nullptr, nullptr, nullptr);
 }
 
-int extract_string(std::string &s, sqlite3 *db, const char *query) {
+static int extract_string(std::string &s, sqlite3 *db, const char *query) {
   bool set = false;
   return execute(db, query,
                  [&s, &set](int numcols, char **cols, char **) {
@@ -103,7 +106,7 @@ int extract_string(std::string &s, sqlite3 *db, const char *query) {
          set;
 }
 
-int extract_long(long &l, sqlite3 *db, const char *query) {
+static int extract_long(long &l, sqlite3 *db, const char *query) {
   bool set = false;
   return execute(db, query,
                  [&l, &set](int numcols, char **cols, char **) {
@@ -119,7 +122,7 @@ int extract_long(long &l, sqlite3 *db, const char *query) {
          set;
 }
 
-int check_name(sqlite3 *db, const char *name) {
+static int check_name(sqlite3 *db, const char *name) {
   if (!is_name_valid(name))
     return error("invalid name provided");
   std::string stored_name;
@@ -132,7 +135,7 @@ int check_name(sqlite3 *db, const char *name) {
   return 0;
 }
 
-int create_tables(sqlite3 *db, const char *name) {
+static int create_tables(sqlite3 *db, const char *name) {
   if (!execute(db, "CREATE TABLE mynameis (name TEXT UNIQUE NOT NULL);"))
     return error("could not create 'mynameis' table");
   char mynameis[1024] = {0};
@@ -157,7 +160,7 @@ int create_tables(sqlite3 *db, const char *name) {
   return 0;
 }
 
-int initialize_db_readonly(sqlite3 **db, const char *filename) {
+static int initialize_db_readonly(sqlite3 **db, const char *filename) {
   if (!sqlite3_open_v2(filename, db, SQLITE_OPEN_READONLY, nullptr))
     return 0;
   sqlite3_close_v2(*db);
@@ -165,9 +168,9 @@ int initialize_db_readonly(sqlite3 **db, const char *filename) {
   return 1;
 }
 
-int initialize_db(sqlite3 **db, const char *name, const char *filename,
-                  int (*usage)(const char *, int, const char *[]), int argc,
-                  const char *argv[]) {
+static int initialize_db(sqlite3 **db, const char *name, const char *filename,
+                         int (*usage)(const char *, int, const char *[]),
+                         int argc, const char *argv[]) {
   if (!sqlite3_open_v2(filename, db, SQLITE_OPEN_READWRITE, nullptr))
     return check_name(*db, name);
   sqlite3_close_v2(*db);
@@ -185,7 +188,7 @@ int initialize_db(sqlite3 **db, const char *name, const char *filename,
   return 1;
 }
 
-int insert_commits(sqlite3 *db) {
+static int insert_commits(sqlite3 *db) {
   constexpr const char prefix[] = "INSERT INTO split2mono(split,mono)VALUES(\"";
   constexpr const char record_delim[] = "\"),(\"";
   constexpr const char value_delim[] = "\",\"";
@@ -233,17 +236,17 @@ int insert_commits(sqlite3 *db) {
   return show_progress(n);
 }
 
-int insert_usage(const char *msg, int argc, const char *argv[]) {
+static int insert_usage(const char *msg, int argc, const char *argv[]) {
   error(msg);
   fprintf(stderr, "usage: %s <db-name> <db>\n", argv[0]);
   return 1;
 }
-int upstream_usage(const char *msg, int argc, const char *argv[]) {
+static int upstream_usage(const char *msg, int argc, const char *argv[]) {
   error(msg);
   fprintf(stderr, "usage: %s <db-name> <db> <upstream-db>\n", argv[0]);
   return 1;
 }
-int split2mono_insert(sqlite3 **db, int argc, const char *argv[]) {
+static int split2mono_insert(sqlite3 **db, int argc, const char *argv[]) {
   if (argc < 3)
     return insert_usage("missing positional arguments", argc, argv);
   const char *name = argv[1];
@@ -260,7 +263,7 @@ struct UpstreamInfo {
   long split2mono_count = -1;
 };
 
-int compute_upstream_info(sqlite3 *udb, UpstreamInfo &computed) {
+static int compute_upstream_info(sqlite3 *udb, UpstreamInfo &computed) {
   assert(computed.name.empty());
   if (extract_string(computed.name, udb, "SELECT name FROM nameis") ||
       extract_long(computed.upstream_dbs_count, udb,
@@ -274,8 +277,8 @@ int compute_upstream_info(sqlite3 *udb, UpstreamInfo &computed) {
   return 0;
 }
 
-int extract_stored_upstream_info(sqlite3 *db, UpstreamInfo &stored,
-                                 const UpstreamInfo &computed) {
+static int extract_stored_upstream_info(sqlite3 *db, UpstreamInfo &stored,
+                                        const UpstreamInfo &computed) {
   assert(!computed.name.empty());
   assert(stored.name.empty());
   std::string query = "SELECT upstream_dbs_count,split2mono_count"
@@ -330,7 +333,7 @@ static int merge_upstream_dbs(sqlite3 *db, const UpstreamInfo &stored,
 
   return error("split2mono-upstream is not yet implemented");
 }
-int merge_upstream(sqlite3 *db, sqlite3 *udb) {
+static int merge_upstream(sqlite3 *db, sqlite3 *udb) {
   UpstreamInfo computed, stored;
   if (compute_upstream_info(udb, computed) ||
       extract_stored_upstream_info(db, stored, computed))
@@ -350,7 +353,7 @@ int merge_upstream(sqlite3 *db, sqlite3 *udb) {
 
   return 0;
 }
-int split2mono_upstream(sqlite3 **db, int argc, const char *argv[]) {
+static int split2mono_upstream(sqlite3 **db, int argc, const char *argv[]) {
   if (argc < 4)
     return upstream_usage("missing positional arguments", argc, argv);
   const char *name = argv[1];

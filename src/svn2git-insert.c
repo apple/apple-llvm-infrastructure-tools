@@ -11,8 +11,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 
-void exit(int);
-int convert(int ch) {
+static int convert(int ch) {
   switch (ch) {
   default:
     __builtin_unreachable();
@@ -23,14 +22,14 @@ int convert(int ch) {
     return ch - 'a' + 10;
   }
 }
-int show_progress(int n, int total) {
+static int show_progress(int n, int total) {
   return fprintf(stderr, "   %9d / %d commits mapped\n", n, total) < 0;
 }
-int error(const char *msg) {
+static int error(const char *msg) {
   fprintf(stderr, "error: %s\n", msg);
   return 1;
 }
-int usage(const char *msg, int argc, const char *argv[]) {
+static int usage(const char *msg, int argc, const char *argv[]) {
   error(msg);
   fprintf(stderr, "usage: %s <db> [<count>]\n", argv[0]);
   return 1;
