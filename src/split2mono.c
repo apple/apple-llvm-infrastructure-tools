@@ -13,14 +13,10 @@ int error(const char *msg) {
   fprintf(stderr, "error: %s\n", msg);
   return 1;
 }
-int usage(const char *msg, int argc, const char *argv[]) {
-  error(msg);
-  fprintf(stderr, "usage: %s <db>\n", argv[0]);
-  return 1;
-}
 
-#define SQLITE_OPEN_READWRITE 0x00000002
-#define SQLITE_OPEN_CREATE 0x00000004
+#define SQLITE_OPEN_READONLY 1
+#define SQLITE_OPEN_READWRITE 2
+#define SQLITE_OPEN_CREATE 4
 
 typedef void *sqlite3_handle;
 int sqlite3_open_v2(const char *filename, sqlite3_handle *db, int flags,
@@ -40,7 +36,17 @@ int execute(sqlite3_handle db, const char *command) {
   return 1;
 }
 
-int create_tables(sqlite3_handle db) {
+int create_tables(sqlite3_handle db, const char *name) {
+  if (!execute(db, "CREATE TABLE mynameis (name TEXT UNIQUE NOT NULL);"))
+    return error("could not create 'mynameis' table");
+  char mynameis[1024] = {0};
+  int n = snprintf(mynameis, sizeof(mynameis),
+                   "INSERT INTO mynameis VALUES(\"%s\");", name);
+  if (n == sizeof(mynameis))
+    return error("<name> is too long");
+  if (!execute(db, mynameis))
+    return error("could not insert name into 'mynameis' table");
+
   if (!execute(db, "CREATE TABLE upstream_dbs ("
                    "id INT PRIMARY KEY NOT NULL,"
                    "name TEXT UNIQUE NOT NULL,"
@@ -55,8 +61,17 @@ int create_tables(sqlite3_handle db) {
   return 0;
 }
 
-int initialize_db(sqlite3_handle *db, const char *filename, int argc,
-                  const char *argv[]) {
+int initialize_db_readonly(sqlite3_handle *db, const char *filename) {
+  if (!sqlite3_open_v2(filename, db, SQLITE_OPEN_READONLY, 0))
+    return 0;
+  sqlite3_close_v2(*db);
+  *db = 0;
+  return 1;
+}
+
+int initialize_db(sqlite3_handle *db, const char *name, const char *filename,
+                  int(*usage)(const char *, int, const char *[]),
+                  int argc, const char *argv[]) {
   if (!sqlite3_open_v2(filename, db, SQLITE_OPEN_READWRITE, 0))
     return 0;
   sqlite3_close_v2(*db);
@@ -64,7 +79,7 @@ int initialize_db(sqlite3_handle *db, const char *filename, int argc,
   if (sqlite3_open_v2(filename, db,
                       SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, 0))
     return usage("can't open <db>", argc, argv);
-  if (!create_tables(*db))
+  if (!create_tables(*db, name))
     return 0;
 
   sqlite3_close_v2(*db);
@@ -121,14 +136,47 @@ int insert_commits(sqlite3_handle db) {
   return execute(db, buffer);
 }
 
+int insert_usage(const char *msg, int argc, const char *argv[]) {
+  error(msg);
+  fprintf(stderr, "usage: %s <db-name> <db>\n", argv[0]);
+  return 1;
+}
+int upstream_usage(const char *msg, int argc, const char *argv[]) {
+  error(msg);
+  fprintf(stderr, "usage: %s <db-name> <db> <upstream-db>\n", argv[0]);
+  return 1;
+}
 int split2mono_insert(sqlite3_handle *db, int argc, const char *argv[]) {
-  if (argc < 2)
-    return usage("missing <db>", argc, argv);
-  const char *filename = argv[1];
+  if (argc < 3)
+    return insert_usage("missing positional arguments", argc, argv);
+  const char *name = argv[1];
+  const char *filename = argv[2];
 
-  if (initialize_db(db, filename, argc, argv))
+  if (initialize_db(db, name, filename, insert_usage, argc, argv))
     return 1;
   return insert_commits(*db);
+}
+
+int merge_upstream(sqlite3_handle db, sqlite3_handle udb) {
+  (void)db;
+  (void)udb;
+  return error("split2mono-upstream is not yet implemented");
+}
+int split2mono_upstream(sqlite3_handle *db, int argc, const char *argv[]) {
+  if (argc < 4)
+    return upstream_usage("missing positional arguments", argc, argv);
+  const char *name = argv[1];
+  const char *filename = argv[2];
+  const char *upstream = argv[3];
+
+  if (initialize_db(db, name, filename, upstream_usage, argc, argv))
+    return 1;
+
+  sqlite3_handle udb = 0;
+  if (initialize_db_readonly(&udb, upstream))
+    return error("could not open <upstream>");
+
+  return merge_upstream(*db, udb);
 }
 
 int main(int argc, const char *argv[]) {
@@ -140,6 +188,8 @@ int main(int argc, const char *argv[]) {
   int status;
   if (strcmp(name, "split2mono-insert")) {
     status = split2mono_insert(&db, argc, argv);
+  } else if (strcmp(name, "split2mono-upstream")) {
+    status = split2mono_upstream(&db, argc, argv);
   } else {
     fprintf(stderr, "unrecognized invocation name '%s'", name);
     return 1;
