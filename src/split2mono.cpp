@@ -307,19 +307,48 @@ int extract_stored_upstream_info(sqlite3 *db, UpstreamInfo &stored,
   return 0;
 }
 
-int merge_upstream(sqlite3 *db, sqlite3 *udb) {
-  (void)db;
-  (void)udb;
+static int merge_split2mono(sqlite3 *db, const UpstreamInfo &stored,
+                            sqlite3 *udb, const UpstreamInfo &computed) {
+  assert(stored.split2mono_count < computed.split2mono_count);
+  // Add commits.
+  //
+  // - open a pipe
+  // - spawn a thread that reads the pipe, running insert_commits
+  // - read commits
+  // - write them
 
+  return error("split2mono-upstream is not yet implemented");
+}
+
+static int merge_upstream_dbs(sqlite3 *db, const UpstreamInfo &stored,
+                              sqlite3 *udb, const UpstreamInfo &computed) {
+  assert(stored.upstream_dbs_count < computed.upstream_dbs_count);
+  // Add upstreams.
+  //
+  // - no reason for a thread here, there won't be many upstreams to
+  // incorporate.
+
+  return error("split2mono-upstream is not yet implemented");
+}
+int merge_upstream(sqlite3 *db, sqlite3 *udb) {
   UpstreamInfo computed, stored;
   if (compute_upstream_info(udb, computed) ||
       extract_stored_upstream_info(db, stored, computed))
     return 1;
   assert(computed.name == stored.name);
+  assert(computed.split2mono_count >= stored.split2mono_count);
+  assert(computed.upstream_dbs_count >= stored.upstream_dbs_count);
 
-  // Add commits.
+  // Merge split2mono first.
+  if (computed.split2mono_count != stored.split2mono_count)
+    if (merge_split2mono(db, stored, udb, computed))
+      return 1;
 
-  return error("split2mono-upstream is not yet implemented");
+  if (computed.upstream_dbs_count != stored.upstream_dbs_count)
+    if (merge_upstream_dbs(db, stored, udb, computed))
+      return 1;
+
+  return 0;
 }
 int split2mono_upstream(sqlite3 **db, int argc, const char *argv[]) {
   if (argc < 4)
