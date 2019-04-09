@@ -15,10 +15,23 @@ static int convert(int ch) {
   switch (ch) {
   default:
     __builtin_unreachable();
-  case '0': case '1': case '2': case '3': case '4':
-  case '5': case '6': case '7': case '8': case '9':
+  case '0':
+  case '1':
+  case '2':
+  case '3':
+  case '4':
+  case '5':
+  case '6':
+  case '7':
+  case '8':
+  case '9':
     return ch - '0';
-  case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
+  case 'a':
+  case 'b':
+  case 'c':
+  case 'd':
+  case 'e':
+  case 'f':
     return ch - 'a' + 10;
   }
 }
@@ -62,7 +75,7 @@ int main(int argc, const char *argv[]) {
   while (scanf("%d %s", &rev, sha1) == 2) {
     const int offset = sha1[0] == '-' ? 1 : 0;
     for (int i = 0 + offset; i < 40 + offset; i += 2)
-      binsha1[i / 2 ] = (convert(sha1[i]) << 4) | convert(sha1[i + 1]);
+      binsha1[i / 2] = (convert(sha1[i]) << 4) | convert(sha1[i + 1]);
     if (fseek(out, rev * 20, SEEK_SET))
       return error("could not seek to rev");
     int written = fwrite(binsha1, 1, 20, out);
