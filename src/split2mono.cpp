@@ -138,17 +138,28 @@ struct split2monodb {
 };
 
 // Some constants.
-constexpr const int commit_pairs_offset = 0x8;
-constexpr const int commit_pair_size = 0x28;
-constexpr const int num_root_bits = 14;
-constexpr const int num_subtrie_bits = 6;
-constexpr const int root_index_bitmap_offset = 0x8;
-constexpr const int index_entry_size = 0x3;
-constexpr const int root_index_entries_offset = 0x0808;
-constexpr const int subtrie_indexes_offset = 0xc808;
-constexpr const int subtrie_index_size = 0xc8;
-constexpr const int subtrie_index_bitmap_offset = 0x0;
-constexpr const int subtrie_index_entries_offset = 0x8;
+constexpr const long magic_size = 8;
+constexpr const long commit_pairs_offset = magic_size;
+constexpr const long commit_pair_size = 40;
+constexpr const long num_root_bits = 14;
+constexpr const long num_subtrie_bits = 6;
+constexpr const long root_index_bitmap_offset = magic_size;
+constexpr const long index_entry_size = 3;
+constexpr long compute_index_bitmap_size(long num_bits) {
+  return 1 << (num_bits - 3);
+}
+constexpr long compute_index_entries_size(long num_bits) {
+  return (1 << num_bits) * index_entry_size;
+}
+constexpr const long root_index_entries_offset =
+    root_index_bitmap_offset + compute_index_bitmap_size(num_root_bits);
+constexpr const long subtrie_indexes_offset =
+    root_index_entries_offset + compute_index_entries_size(num_root_bits);
+constexpr const long subtrie_index_bitmap_offset = 0;
+constexpr const long subtrie_index_entries_offset =
+    compute_index_bitmap_size(num_subtrie_bits);
+constexpr const long subtrie_index_size =
+    subtrie_index_entries_offset + compute_index_entries_size(num_subtrie_bits);
 
 static void set_index_entry(char *index_entry, int is_commit, int offset) {
   assert(offset >= 0);
