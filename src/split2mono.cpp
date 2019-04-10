@@ -1,6 +1,6 @@
 // split2mono.cpp
 //
-// build: clang -x c++ -std=gnu++17 -O2 -lsqlite3 -lc++
+// build: clang -x c++ -std=gnu++17 -O2 -lc++
 //
 // tree: split2mono
 // - blob: commits (file size: num-commits)
@@ -34,6 +34,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
+#include <map>
 #include <string>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -176,16 +177,33 @@ struct split2monodb {
 
   bool has_read_upstreams = false;
   int upstreamsfd = -1;
+  int dbfd = -1;
   std::string name;
-  std::vector<upstream_entry> upstreams;
+
+  // FIXME: std::map is way overkill, we just have a few of these.
+  std::map<std::string, upstream_entry> upstreams;
 
   int opendb(const char *dbdir);
   int parse_upstreams();
   long num_commits() const {
     return (commits_size - commit_pairs_offset) / commit_pair_size;
   }
+
+  int close_files();
+
+  ~split2monodb() { close_files(); }
 };
 } // end namespace
+
+int split2monodb::close_files() {
+  int status = 0;
+  if (commits)
+    status |= fclose(commits);
+  if (index)
+    status |= fclose(index);
+  commits = index = nullptr;
+  return status;
+}
 
 static void set_index_entry(char *index_entry, int is_commit, int offset) {
   assert(offset >= 0);
@@ -241,15 +259,17 @@ int split2monodb::parse_upstreams() {
   struct mmapped_file {
     long len;
     const char *bytes;
-    mmapped_file() = delete;
+
     mmapped_file(int fd, long len)
         : len(len), bytes(static_cast<char *>(
                         mmap(nullptr, len, PROT_READ, MAP_FILE, fd, 0))) {
       close(fd);
     }
+    mmapped_file() = delete;
     ~mmapped_file() { munmap(const_cast<char *>(bytes), len); }
   };
   mmapped_file file(upstreamsfd, len);
+  upstreamsfd = -1;
   struct context {
     const char *beg;
     const char *cur;
@@ -343,7 +363,11 @@ int split2monodb::parse_upstreams() {
         parse_number(ue.num_upstreams) ||
         parse_space(/*needs_any=*/true, /*newlines=*/true))
       return 1;
-    upstreams.push_back(std::move(ue));
+    if (ue.name == name)
+      return error("upstream has same name as main repo");
+    std::string copy_name = ue.name;
+    if (!upstreams.emplace(std::move(copy_name), std::move(ue)).second)
+      return error("duplicate upstream");
   }
   has_read_upstreams = true;
   return 0;
@@ -351,7 +375,7 @@ int split2monodb::parse_upstreams() {
 
 int split2monodb::opendb(const char *dbdir) {
   auto &db = *this;
-  int dbfd = open(dbdir, O_RDONLY);
+  dbfd = open(dbdir, O_RDONLY);
   if (dbfd == -1)
     return error("could not open <dbdir>");
   int flags = db.is_read_only ? O_RDONLY : (O_RDWR | O_CREAT);
@@ -359,14 +383,12 @@ int split2monodb::opendb(const char *dbdir) {
   int indexfd = openat(dbfd, "index", flags);
   int upstreamsfd = openat(dbfd, "upstreams", flags);
   int has_error = 0;
-  if (!close(dbfd))
-    has_error |= error("could not close <dbdir>");
   if (commitsfd == -1)
     has_error |= error("could not open <dbdir>/commits");
   if (indexfd == -1)
     has_error |= error("could not open <dbdir>/index");
   if (upstreamsfd == -1)
-    has_error |= error("could not open <dbdir>/index");
+    has_error |= error("could not open <dbdir>/upstremas");
   if (has_error) {
     close(indexfd);
     close(commitsfd);
@@ -819,39 +841,49 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
     return usage("could not open <dbdir>", cmd);
 
   // Linear search for this upstream.
-  const upstream_entry *existing_entry = nullptr;
-  for (auto &ue : main.upstreams)
-    if (ue.name == upstream.name) {
-      existing_entry = &ue;
-      break;
-    }
+  auto existing_entry = main.upstreams.find(upstream.name);
 
   // Pretend we've already merged this upstream, but it had no commits or
   // upstreams at the time.
-  if (!existing_entry) {
+  if (existing_entry == main.upstreams.end()) {
     upstream_entry ue;
     ue.name = upstream.name;
     ue.num_commits = ue.num_upstreams = 0;
-    main.upstreams.push_back(std::move(ue));
-    existing_entry = &main.upstreams.back();
+    existing_entry = main.upstreams.emplace(upstream.name, std::move(ue)).first;
   }
 
-  if (existing_entry->num_commits > upstream.num_commits())
+  if (existing_entry->second.num_commits > upstream.num_commits())
     return error("upstream is missing commits we already merged");
 
-  if (existing_entry->num_upstreams > upstream.upstreams.size())
+  if (existing_entry->second.num_upstreams > upstream.upstreams.size())
     return error("upstream is missing upstreams we already merged");
 
   // Nothing to do if nothing has changed (or the upstream is empty).
-  if (existing_entry->num_commits == upstream.num_commits() &&
-      existing_entry->num_upstreams == upstream.upstreams.size())
+  if (existing_entry->second.num_commits == upstream.num_commits() &&
+      existing_entry->second.num_upstreams == upstream.upstreams.size())
     return 0;
 
+  // Merge the upstream's upstreams (just in memory, for now).
+  for (auto ue : upstream.upstreams) {
+    if (ue.second.name == main.name)
+      return error("upstream: refusing to create upstream-cycle between dbs");
+    auto &existing_ue = main.upstreams[ue.second.name];
+
+    // Check that we're only moving forward.
+    if (!existing_ue.name.empty())
+      if (existing_ue.num_commits > ue.second.num_commits ||
+          existing_ue.num_upstreams > ue.second.num_upstreams)
+        return error("upstream's upstream is out-of-date");
+
+    // Update.
+    existing_ue = ue.second;
+  }
+
   // Read all missing commits and merge them.
-  long first_offset =
-      commit_pairs_offset + commit_pair_size * existing_entry->num_commits;
-  long num_bytes =
-      commit_pair_size * (upstream.num_commits() - existing_entry->num_commits);
+  long first_offset = commit_pairs_offset +
+                      commit_pair_size * existing_entry->second.num_commits;
+  long num_bytes = commit_pair_size * (upstream.num_commits() -
+                                       existing_entry->second.num_commits);
   if (num_bytes) {
     // FIXME: This copy is dumb.  We shoud be using mmap for the upstream
     // commits, not FILE streams.
@@ -867,8 +899,28 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
         return error("error inserting new commit from upstream");
   }
 
+  // Close the streams.
+  if (main.close_files())
+    return error("error closing commits or index afte writing");
+
   // Merge upstreams.
-  return error("not merging upstreams yet");
+  existing_entry->second.num_commits = upstream.num_commits();
+  existing_entry->second.num_upstreams = upstream.upstreams.size();
+  int upstreamsfd = openat(main.dbfd, "upstreams", O_WRONLY | O_TRUNC);
+  if (upstreamsfd == -1)
+    return error("could not reopen upstreams to write merged file");
+  FILE *ufile = fdopen(upstreamsfd, "w");
+  if (!ufile)
+    return error("could not reopen stream for upstreams");
+  if (fprintf(ufile, "name: %s\n", main.name.c_str()) < 0)
+    return error("could not write repo name");
+  for (auto &ue : main.upstreams)
+    if (fprintf(ufile, "upstream: %s %ld %ld\n", ue.second.name.c_str(),
+                ue.second.num_commits, ue.second.num_upstreams) < 0)
+      return error("could not write upstream");
+  if (fclose(ufile))
+    return error("problem closing new upstream");
+  return 0;
 }
 
 int main(int argc, const char *argv[]) {
