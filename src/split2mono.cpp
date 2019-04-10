@@ -129,13 +129,17 @@ static int check_sha1(const char *sha1) {
   return ch - sha1 == 40 ? 0 : 1;
 }
 
+namespace {
 struct split2monodb {
   FILE *commits = nullptr;
   FILE *index = nullptr;
   long commits_size = -1;
   long index_size = -1;
   int read_only = 0;
+
+  int opendb(const char *dbdir);
 };
+} // end namespace
 
 // Some constants.
 constexpr const long magic_size = 8;
@@ -199,11 +203,12 @@ static void set_bitmap_bit(char *byte, int bit_offset) {
   *byte |= mask;
 }
 
-static int open_db(const char *dbdir, split2monodb *db) {
+int split2monodb::opendb(const char *dbdir) {
+  auto &db = *this;
   int dbfd = open(dbdir, O_RDONLY);
   if (dbfd == -1)
     return error("could not open <dbdir>");
-  int flags = db->read_only ? O_RDONLY : (O_RDWR | O_CREAT);
+  int flags = db.read_only ? O_RDONLY : (O_RDWR | O_CREAT);
   int commitsfd = openat(dbfd, "commits", flags);
   int indexfd = openat(dbfd, "index", flags);
   int has_error = 0;
@@ -219,12 +224,12 @@ static int open_db(const char *dbdir, split2monodb *db) {
     return 1;
   }
 
-  const char *mode = db->read_only ? "rb" : "wb";
-  if (!(db->commits = fdopen(commitsfd, mode))) {
+  const char *mode = db.read_only ? "rb" : "wb";
+  if (!(db.commits = fdopen(commitsfd, mode))) {
     close(commitsfd);
     return error("could not open stream for <dbdir>/commits");
   }
-  if (!(db->index = fdopen(indexfd, mode))) {
+  if (!(db.index = fdopen(indexfd, mode))) {
     close(indexfd);
     return error("could not open stream for <dbdir>/index");
   }
@@ -232,37 +237,37 @@ static int open_db(const char *dbdir, split2monodb *db) {
   // TODO: write/check magic.
 
   // Check that file sizes make sense.
-  if (!fseek(db->commits, 0, SEEK_END) || !fseek(db->index, 0, SEEK_END))
+  if (!fseek(db.commits, 0, SEEK_END) || !fseek(db.index, 0, SEEK_END))
     return error("could not seek to end");
-  db->commits_size = ftell(db->commits) ? 0 : 1;
-  db->index_size = ftell(db->index) ? 0 : 1;
-  if (db->commits_size) {
-    if (!db->index_size)
+  db.commits_size = ftell(db.commits) ? 0 : 1;
+  db.index_size = ftell(db.index) ? 0 : 1;
+  if (db.commits_size) {
+    if (!db.index_size)
       return error("unexpected commits without index");
-    if (db->commits_size < commit_pairs_offset + commit_pair_size ||
-        (db->commits_size - commit_pairs_offset) % commit_pair_size)
+    if (db.commits_size < commit_pairs_offset + commit_pair_size ||
+        (db.commits_size - commit_pairs_offset) % commit_pair_size)
       return error("invalid commits");
   }
-  if (db->index_size) {
-    if (!db->commits_size)
+  if (db.index_size) {
+    if (!db.commits_size)
       return error("unexpected index without commits");
   }
   return 0;
 }
 
-static int seek_index_for_read(split2monodb *db, long offset) {
-  if (offset > db->index_size)
+static int seek_index_for_read(split2monodb &db, long offset) {
+  if (offset > db.index_size)
     return 1;
-  return fseek(db->index, offset, SEEK_SET);
+  return fseek(db.index, offset, SEEK_SET);
 }
 
-static int seek_commits_for_read(split2monodb *db, long offset) {
-  if (offset > db->commits_size)
+static int seek_commits_for_read(split2monodb &db, long offset) {
+  if (offset > db.commits_size)
     return 1;
-  return fseek(db->commits, offset, SEEK_SET);
+  return fseek(db.commits, offset, SEEK_SET);
 }
 
-static int lookup_index_entry(split2monodb *db, int bitmap_offset,
+static int lookup_index_entry(split2monodb &db, int bitmap_offset,
                               unsigned *bitmap_byte_offset,
                               unsigned *bitmap_bit_offset, char *bitmap_byte,
                               int entries_offset, const char *sha1,
@@ -274,7 +279,7 @@ static int lookup_index_entry(split2monodb *db, int bitmap_offset,
   *bitmap_bit_offset = i % 8;
   *bitmap_byte = 0;
   if (seek_index_for_read(db, *bitmap_byte_offset) ||
-      fread(bitmap_byte, 1, 1, db->index) != 1)
+      fread(bitmap_byte, 1, 1, db.index) != 1)
     return 1;
 
   // Not found.
@@ -284,12 +289,12 @@ static int lookup_index_entry(split2monodb *db, int bitmap_offset,
   *found = 1;
   *entry_offset = entries_offset + i * index_entry_size;
   if (seek_index_for_read(db, *entry_offset) ||
-      fread(entry, 1, 3, db->index) != 3)
+      fread(entry, 1, 3, db.index) != 3)
     return 1;
   return 0;
 }
 
-static int lookup_commit_bin_impl(split2monodb *db, const char *split,
+static int lookup_commit_bin_impl(split2monodb &db, const char *split,
                                   int *num_bits_matched, char *found_split,
                                   int *commit_pair_offset,
                                   unsigned *bitmap_byte_offset,
@@ -332,7 +337,7 @@ static int lookup_commit_bin_impl(split2monodb *db, const char *split,
   int i = extract_offset_from_index_entry(index_entry);
   *commit_pair_offset = commit_pairs_offset + commit_pair_size * i;
   if (seek_commits_for_read(db, *commit_pair_offset) ||
-      fread(found_split, 1, 20, db->commits) != 20)
+      fread(found_split, 1, 20, db.commits) != 20)
     return 1;
   // Don't try to get num_bits_matched exactly right unless it's a full match.
   // It's good enough to say how many bits matched in the index.
@@ -341,7 +346,7 @@ static int lookup_commit_bin_impl(split2monodb *db, const char *split,
   return 0;
 }
 
-static int lookup_commit(split2monodb *db, const char *split, char *mono) {
+static int lookup_commit(split2monodb &db, const char *split, char *mono) {
   char binsplit[21];
   char found_binmono[21];
   int num_bits_matched = 0;
@@ -362,7 +367,7 @@ static int lookup_commit(split2monodb *db, const char *split, char *mono) {
     return 1;
   char binmono[21] = {0};
   if (seek_commits_for_read(db, commit_pair_offset + 20) ||
-      fread(found_binmono, 1, 20, db->commits) != 20)
+      fread(found_binmono, 1, 20, db.commits) != 20)
     return error("could not extract mono commit");
   bintosha1(mono, found_binmono);
   return 0;
@@ -382,16 +387,16 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
 
   split2monodb db = {0};
   db.read_only = 1;
-  if (!open_db(dbdir, &db))
+  if (!db.opendb(dbdir))
     return 1;
 
   char mono[41] = {0};
-  if (lookup_commit(&db, split, mono))
+  if (lookup_commit(db, split, mono))
     return 1;
   return printf("%s\n", mono);
 }
 
-static int insert_one(split2monodb *db, const char *split, const char *mono) {
+static int insert_one(split2monodb &db, const char *split, const char *mono) {
   char binsplit[21] = {0};
   sha1tobin(binsplit, split);
   int num_bits_matched = 0;
@@ -419,24 +424,24 @@ static int insert_one(split2monodb *db, const char *split, const char *mono) {
   // add the commit to *commits*
   char binmono[21] = {0};
   sha1tobin(binmono, mono);
-  if (fseek(db->commits, 0, SEEK_END))
+  if (fseek(db.commits, 0, SEEK_END))
     return error("could not seek in commits");
-  int new_commit_pair_offset = ftell(db->commits);
-  if (fwrite(binsplit, 1, 20, db->commits) != 20 ||
-      fwrite(binmono, 1, 20, db->commits) != 20)
+  int new_commit_pair_offset = ftell(db.commits);
+  if (fwrite(binsplit, 1, 20, db.commits) != 20 ||
+      fwrite(binmono, 1, 20, db.commits) != 20)
     return error("could not write commits");
 
   if (!need_new_subtrie) {
     // update the existing trie/subtrie
     set_index_entry(index_entry, /*is_commit=*/1, new_commit_pair_offset);
-    if (fseek(db->index, index_entry_offset, SEEK_SET) ||
-        fwrite(index_entry, 1, 3, db->index) != 3)
+    if (fseek(db.index, index_entry_offset, SEEK_SET) ||
+        fwrite(index_entry, 1, 3, db.index) != 3)
       return error("could not write index entry");
 
     // update the bitmap
     set_bitmap_bit(&bitmap_byte, bitmap_bit_offset);
-    if (fseek(db->index, bitmap_byte_offset, SEEK_SET) ||
-        fwrite(&bitmap_byte, 1, 1, db->index) != 1)
+    if (fseek(db.index, bitmap_byte_offset, SEEK_SET) ||
+        fwrite(&bitmap_byte, 1, 1, db.index) != 1)
       return error("could not update index bitmap");
     return 0;
   }
@@ -480,9 +485,9 @@ static int insert_one(split2monodb *db, const char *split, const char *mono) {
   top->skip_bitmap_update = 0;
   top->entry_offset = index_entry_offset;
 
-  if (fseek(db->index, 0, SEEK_END))
+  if (fseek(db.index, 0, SEEK_END))
     return error("could not seek to end");
-  int end_offset = ftell(db->index);
+  int end_offset = ftell(db.index);
   int next_subtrie =
       end_offset <= subtrie_indexes_offset
           ? 0
@@ -550,16 +555,16 @@ static int insert_one(split2monodb *db, const char *split, const char *mono) {
     --top;
     // Update the index entry.
     set_index_entry(index_entry, top->is_commit, top->num);
-    if (fseek(db->index, top->entry_offset, SEEK_SET) ||
-        fwrite(index_entry, 1, 3, db->index) != 1)
+    if (fseek(db.index, top->entry_offset, SEEK_SET) ||
+        fwrite(index_entry, 1, 3, db.index) != 1)
       return error("could not write index entry");
 
     if (top->skip_bitmap_update)
       continue;
 
     // Update the bitmap to point at the index entry.
-    if (fseek(db->index, top->bitmap_byte_offset, SEEK_SET) ||
-        fwrite(&top->bitmap_byte, 1, 1, db->index) != 1)
+    if (fseek(db.index, top->bitmap_byte_offset, SEEK_SET) ||
+        fwrite(&top->bitmap_byte, 1, 1, db.index) != 1)
       return error("could not write to index bitmap");
   }
 
@@ -575,16 +580,16 @@ static int main_insert_one(const char *cmd, const char *dbdir,
 
   split2monodb db = {0};
   db.read_only = 0;
-  if (!open_db(dbdir, &db))
+  if (!db.opendb(dbdir))
     return 1;
 
-  return insert_one(&db, split, mono);
+  return insert_one(db, split, mono);
 }
 
 static int main_insert_stdin(const char *cmd, const char *dbdir) {
   split2monodb db = {0};
   db.read_only = 0;
-  if (!open_db(dbdir, &db))
+  if (!db.opendb(dbdir))
     return 1;
 
   char split[41] = {0};
@@ -595,7 +600,7 @@ static int main_insert_stdin(const char *cmd, const char *dbdir) {
       return error("invalid sha1 for <split>");
     if (check_sha1(mono))
       return error("invliad sha1 for <mono>");
-    if (insert_one(&db, split, mono))
+    if (insert_one(db, split, mono))
       return 1;
   }
   if (scanned != EOF)
