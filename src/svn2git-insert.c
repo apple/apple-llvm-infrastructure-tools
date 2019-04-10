@@ -68,11 +68,13 @@ int main(int argc, const char *argv[]) {
   if (!out)
     return usage("could not open <db> stream", argc, argv);
 
-  char sha1[64];
-  char binsha1[64];
-  int rev;
+  char sha1[41] = {0};
+  char binsha1[20] = {0};
+  int rev = 0;
   int n = 0;
-  while (scanf("%d %s", &rev, sha1) == 2) {
+  while (scanf("%d %40s", &rev, sha1) == 2) {
+    if (rev < 1)
+      return error("invalid rev < 1");
     const int offset = sha1[0] == '-' ? 1 : 0;
     for (int i = 0 + offset; i < 40 + offset; i += 2)
       binsha1[i / 2] = (convert(sha1[i]) << 4) | convert(sha1[i + 1]);
