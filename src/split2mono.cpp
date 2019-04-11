@@ -374,19 +374,13 @@ static int extract_offset_from_index_entry(unsigned char *index_entry) {
 static int get_bitmap_bit(unsigned byte, int bit_offset) {
   assert(bit_offset >= 0);
   assert(bit_offset <= 7);
-  unsigned mask = 1;
-  if (bit_offset)
-    mask <<= bit_offset;
-  return byte & mask ? 1 : 0;
+  return byte & (0x100 >> (bit_offset + 1)) ? 1 : 0;
 }
 
 static void set_bitmap_bit(unsigned char *byte, int bit_offset) {
   assert(bit_offset >= 0);
   assert(bit_offset <= 7);
-  int mask = 1;
-  if (bit_offset)
-    mask <<= bit_offset;
-  *byte |= mask;
+  *byte |= 0x100 >> (bit_offset + 1);
 }
 
 int split2monodb::parse_upstreams() {
