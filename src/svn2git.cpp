@@ -1,4 +1,4 @@
-// svn2git-insert.c
+// svn2git.cpp
 //
 // Format description: sha1 corresponding to an SVN rev starts at 20*rev and
 // runs for 20 bytes.
@@ -9,7 +9,8 @@
 // - bytes 60-79: sha1 for commit for r3 (0s if none)
 // - ...
 #include <fcntl.h>
-#include <stdio.h>
+#include <cstdio>
+#include <cstring>
 
 static int convert(int ch) {
   switch (ch) {
@@ -42,31 +43,31 @@ static int error(const char *msg) {
   fprintf(stderr, "error: %s\n", msg);
   return 1;
 }
-static int usage(const char *msg, int argc, const char *argv[]) {
+static int usage(const char *msg, const char *cmd) {
   error(msg);
-  fprintf(stderr, "usage: %s <db> [<count>]\n", argv[0]);
+  fprintf(stderr, "usage: %s insert <db> [<count>]\n", cmd);
   return 1;
 }
 
-int main(int argc, const char *argv[]) {
-  if (argc < 2)
-    return usage("missing <db>", argc, argv);
-  const char *db = argv[1];
-  const char *countstr = argv[2];
+int main_insert(const char *cmd, int argc, const char *argv[]) {
+  if (argc < 1)
+    return usage("missing <db>", cmd);
+  const char *db = argv[0];
+  const char *countstr = argv[1];
   int total = 0;
   if (argc >= 3)
     if (sscanf(countstr, "%d", &total) != 1)
-      return usage("invalid <count>", argc, argv);
+      return usage("invalid <count>", cmd);
 
   // TODO: add test where commits are added in two chunks.  Initial commits
   // will be deleted if we use fopen instead of open/fdopen.
   // FIXME: add file magic (check it everywhere, write it here)
   int dbfd = open(db, O_WRONLY | O_CREAT);
   if (dbfd == -1)
-    return usage("could not open <db> file descriptor", argc, argv);
+    return usage("could not open <db> file descriptor", cmd);
   FILE *out = fdopen(dbfd, "wb");
   if (!out)
-    return usage("could not open <db> stream", argc, argv);
+    return usage("could not open <db> stream", cmd);
 
   char sha1[41] = {0};
   char binsha1[20] = {0};
@@ -96,4 +97,12 @@ int main(int argc, const char *argv[]) {
   if (fclose(out))
     return error("could not close <db>");
   return 0;
+}
+
+int main(int argc, const char *argv[]) {
+  if (argc < 2)
+    return usage("missing command", argv[0]);
+  if (!strcmp(argv[1], "insert"))
+    return main_insert(argv[0], argc - 2, argv + 2);
+  return usage("unknown command", argv[0]);
 }

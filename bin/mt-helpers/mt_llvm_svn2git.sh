@@ -51,13 +51,13 @@ mt_llvm_svn2git() {
 
 mt_llvm_svn2git_insert() {
     local mapper
-    mapper="$(mktemp -t svn2git-insert)" ||
+    mapper="$(mktemp -t svn2git)" ||
         error "could not create temp file for commit mapper"
-    local src="$(dirname "$0")"/../src/svn2git-insert.c
-    run clang -O2 -o "$mapper" "$src" &
+    local src="$(dirname "$0")"/../src/svn2git.cpp
+    run clang -O2 -std=c++17 -lc++ -o "$mapper" "$src" &
     local clang=$!
     local count
     [ "$#" -le 0 ] || count="$(run git rev-list --count "$@")"
     wait $clang || error "could not build commit mapper"
-    run "$mapper" "$MT_SVN2GIT_FILE" $count
+    run "$mapper" insert "$MT_SVN2GIT_FILE" $count
 }
