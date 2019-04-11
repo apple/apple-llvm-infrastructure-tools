@@ -173,38 +173,28 @@ struct upstream_entry {
   long num_commits = -1;
   long num_upstreams = -1;
 };
+struct mmapped_file {
+  long len = 0;
+  const char *bytes = nullptr;
+
+  mmapped_file() = default;
+  mmapped_file(int fd) { init(fd); }
+  int init(int fd);
+  ~mmapped_file() { close(); }
+  int close();
+};
 class stream_gimmick {
   FILE *stream = nullptr;
-  const char *bytes = nullptr;
+  mmapped_file mmapped;
   size_t num_bytes = -1;
   bool is_stream = false;
-  bool is_init = false;
+  bool is_initialized = false;
   long position = 0;
 
 public:
   stream_gimmick() = default;
-  int init(FILE *stream) {
-    assert(!is_init);
-    if (!stream)
-      return 1;
-    if (fseek(stream, 0, SEEK_END))
-      return 1;
-    num_bytes = ftell(stream);
-    if (fseek(stream, 0, SEEK_SET))
-      return 1;
-    is_init = true;
-    is_stream = true;
-    this->stream=stream;
-    return 0;
-  }
-  int init(const char *bytes, size_t num_bytes) {
-    assert(!is_init);
-    is_init = true;
-    is_stream = false;
-    this->bytes=bytes;
-    this->num_bytes=num_bytes;
-    return 0;
-  }
+  int init_stream(FILE *stream);
+  int init_mmap(int fd);
 
   int seek_end();
   long tell();
@@ -214,6 +204,7 @@ public:
   int write(const char *bytes, int count);
 
   int close();
+  ~stream_gimmick() { close(); }
 };
 struct split2monodb {
   bool is_verbose = false;
@@ -249,30 +240,78 @@ struct split2monodb {
 };
 } // end namespace
 
+int mmapped_file::init(int fd) {
+  assert(fd != -1);
+  struct stat st;
+  if (fstat(fd, &st))
+    return 1;
+  len = st.st_size;
+  if (len) {
+    bytes =
+        static_cast<char *>(mmap(nullptr, len, PROT_READ, MAP_PRIVATE, fd, 0));
+    if (bytes == MAP_FAILED)
+      return 1;
+  }
+  ::close(fd);
+  return 0;
+}
+int mmapped_file::close() {
+  if (!bytes)
+    return 0;
+  return munmap(const_cast<char *>(bytes), len);
+}
+
+int stream_gimmick::init_stream(FILE *stream) {
+  assert(!is_initialized);
+  if (!stream)
+    return 1;
+  if (fseek(stream, 0, SEEK_END))
+    return 1;
+  num_bytes = ftell(stream);
+  if (fseek(stream, 0, SEEK_SET))
+    return 1;
+  is_initialized = true;
+  is_stream = true;
+  this->stream = stream;
+  return 0;
+}
+int stream_gimmick::init_mmap(int fd) {
+  assert(!is_initialized);
+  is_initialized = true;
+  is_stream = false;
+  mmapped.init(fd);
+  num_bytes = mmapped.len;
+  return 0;
+}
 int stream_gimmick::seek_end() {
-  assert(is_init);
+  assert(is_initialized);
   if (is_stream)
     return fseek(stream, 0, SEEK_END);
   position = num_bytes;
   return 0;
 }
 long stream_gimmick::tell() {
-  assert(is_init);
+  assert(is_initialized);
   if (is_stream)
     return ftell(stream);
   return position;
 }
+static void limit_position(long &pos, int &count, size_t &num_bytes) {}
 int stream_gimmick::seek_and_read(long pos, char *bytes, int count) {
-  assert(is_init);
+  assert(is_initialized);
   // Check that the position is valid first.
+  if (position >= num_bytes)
+    return 0;
   if (pos > num_bytes || seek(pos))
     return 0;
   if (count + pos > num_bytes)
     count = num_bytes - pos;
+  if (!count)
+    return 0;
   return read(bytes, count);
 }
 int stream_gimmick::seek(long pos) {
-  assert(is_init);
+  assert(is_initialized);
   if (is_stream)
     return fseek(stream, pos, SEEK_SET);
   if (pos > num_bytes)
@@ -281,27 +320,28 @@ int stream_gimmick::seek(long pos) {
   return 0;
 }
 int stream_gimmick::read(char *bytes, int count) {
-  assert(is_init);
+  assert(is_initialized);
   if (is_stream)
     return fread(bytes, 1, count, stream);
-  if (count + position > num_bytes)
+  if (position + count > num_bytes)
     count = num_bytes - position;
-  std::memcpy(bytes, this->bytes, count);
+  if (count > 0)
+    std::memcpy(bytes, mmapped.bytes + position, count);
   return count;
 }
 int stream_gimmick::write(const char *bytes, int count) {
-  assert(is_init);
+  assert(is_initialized);
   assert(is_stream);
   return fwrite(bytes, 1, count, stream);
 }
 
 int stream_gimmick::close() {
-  if (!is_init)
+  if (!is_initialized)
     return 0;
-  is_init = false;
+  is_initialized = false;
   if (is_stream)
     return fclose(stream);
-  return munmap(const_cast<char *>(bytes), num_bytes);
+  return mmapped.close();
 }
 
 int split2monodb::close_files() { return commits.close() | index.close(); }
@@ -347,30 +387,13 @@ static void set_bitmap_bit(char *byte, int bit_offset) {
 int split2monodb::parse_upstreams() {
   assert(!has_read_upstreams);
   assert(upstreamsfd != -1);
-  struct stat st;
-  if (fstat(upstreamsfd, &st))
-    return 1;
-  int len = st.st_size;
-  if (!len) {
+  mmapped_file file(upstreamsfd);
+  upstreamsfd = -1;
+  if (!file.len) {
     // No upstreams.
     has_read_upstreams = true;
     return 0;
   }
-
-  struct mmapped_file {
-    long len;
-    const char *bytes;
-
-    mmapped_file(int fd, long len)
-        : len(len), bytes(static_cast<char *>(
-                        mmap(nullptr, len, PROT_READ, MAP_FILE, fd, 0))) {
-      close(fd);
-    }
-    mmapped_file() = delete;
-    ~mmapped_file() { munmap(const_cast<char *>(bytes), len); }
-  };
-  mmapped_file file(upstreamsfd, len);
-  upstreamsfd = -1;
   struct context {
     const char *beg;
     const char *cur;
@@ -500,18 +523,26 @@ int split2monodb::opendb(const char *dbdir) {
     close(upstreamsfd);
     return 1;
   }
-  fchmod(indexfd, 0644);
-  fchmod(commitsfd, 0644);
-  fchmod(upstreamsfd, 0644);
-
-  const char *mode = db.is_read_only ? "rb" : "wb";
-  if (db.commits.init(fdopen(commitsfd, mode))) {
-    close(commitsfd);
-    return error("could not open stream for <dbdir>/commits");
+  if (!db.is_read_only) {
+    fchmod(indexfd, 0644);
+    fchmod(commitsfd, 0644);
+    fchmod(upstreamsfd, 0644);
   }
-  if (db.index.init(fdopen(indexfd, mode))) {
-    close(indexfd);
-    return error("could not open stream for <dbdir>/index");
+
+  if (db.is_read_only) {
+    if (db.commits.init_mmap(commitsfd))
+      return error("could not mmap <dbdir>/commits");
+    if (db.index.init_mmap(indexfd))
+      return error("could not mmap <dbdir>/index");
+  } else {
+    if (db.commits.init_stream(fdopen(commitsfd, "wb"))) {
+      close(commitsfd);
+      return error("could not open stream for <dbdir>/commits");
+    }
+    if (db.index.init_stream(fdopen(indexfd, "wb"))) {
+      close(indexfd);
+      return error("could not open stream for <dbdir>/index");
+    }
   }
 
   // Check that file sizes make sense.
@@ -549,8 +580,7 @@ int split2monodb::opendb(const char *dbdir) {
       return error("invalid index");
 
     char magic[magic_size];
-    if (db.index.seek(0) ||
-        db.index.read(magic, magic_size) != magic_size ||
+    if (db.index.seek(0) || db.index.read(magic, magic_size) != magic_size ||
         strncmp(magic, index_magic, magic_size))
       return error("bad index magic");
   } else if (!db.is_read_only) {
@@ -657,8 +687,8 @@ static int lookup_commit(split2monodb &db, const char *split, char *mono) {
   if (num_bits_matched != 160)
     return 1;
   char binmono[21] = {0};
-  if (db.commits.seek_and_read(commit_pair_offset + 20,
-                               found_binmono, 20) != 20)
+  if (db.commits.seek_and_read(commit_pair_offset + 20, found_binmono, 20) !=
+      20)
     return error("could not extract mono commit");
   bintosha1(mono, found_binmono);
   return 0;
@@ -830,8 +860,7 @@ static int insert_one_bin_impl(split2monodb &db, const char *binsplit,
     --top;
     // Update the index entry.
     set_index_entry(index_entry, top->is_commit, top->num);
-    if (db.index.seek(top->entry_offset) ||
-        db.index.write(index_entry, 3) != 1)
+    if (db.index.seek(top->entry_offset) || db.index.write(index_entry, 3) != 1)
       return error("could not write index entry");
 
     if (top->skip_bitmap_update)
@@ -1008,7 +1037,8 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
     // commits, not FILE streams.
     std::vector<char> bytes;
     bytes.resize(num_bytes, 0);
-    if (upstream.commits.seek_and_read(first_offset, bytes.data(), num_bytes) != num_bytes)
+    if (upstream.commits.seek_and_read(first_offset, bytes.data(), num_bytes) !=
+        num_bytes)
       return error("could not read new commits from upstream");
 
     for (const char *b = bytes.data(), *be = bytes.data() + bytes.size();
