@@ -65,9 +65,12 @@ static int convert(int ch) {
     return ch - 'a' + 10;
   }
 }
-static int unconvert(unsigned ch, int index) {
-  int stripped = index ? ch & 0xf : ch >> 4;
-  return stripped < 10 ? '0' + ch : 'a' + ch;
+static int unconvert(char ch, int index) {
+  unsigned char uch = ch;
+  unsigned char stripped = index ? uch & 0xf : uch >> 4;
+  assert(stripped >= 0);
+  assert(stripped < 16);
+  return stripped < 10 ? '0' + stripped : 'a' + stripped;
 }
 static void sha1tobin(char *bin, const char *text) {
   for (int i = 0; i < 40; i += 2)
@@ -75,9 +78,9 @@ static void sha1tobin(char *bin, const char *text) {
   bin[20] = '\0';
 }
 static void bintosha1(char *bin, const char *text) {
-  for (int i = 0; i < 40; i += 2)
-    bin[i / 2] = (convert(text[i]) << 4) | convert(text[i + 1]);
-  bin[20] = '\0';
+  for (int i = 0; i < 40; ++i)
+    bin[i] = unconvert(text[i / 2], i % 2);
+  bin[40] = '\0';
 }
 static unsigned get_bits(const char *binsha1, int start, int count) {
   assert(count > 0);
@@ -90,18 +93,19 @@ static unsigned get_bits(const char *binsha1, int start, int count) {
     binsha1 += start / 8;
     start = start % 8;
   }
-  count += start; // could be more than 32
+  int totake = count + start; // could be more than 32
   unsigned long long bits = 0;
-  while (count > 0) {
-    bits |= *binsha1;
+  while (totake > 0) {
     bits <<= 8;
-    count -= 8;
+    bits |= *binsha1++;
+    totake -= 8;
   }
-  if (count < 0)
-    bits >>= -count;
+  if (totake < 0)
+    bits >>= -totake;
+  return bits;
   unsigned long long mask = 0;
-  if (count > start)
-    mask = (1ull << (count - start)) - 1;
+  if (start)
+    mask = (1ull << (8 - start)) - 1;
   return bits & mask;
 }
 static int show_progress(int n, int total) {
@@ -111,6 +115,7 @@ static int error(const char *msg) {
   fprintf(stderr, "error: %s\n", msg);
   return 1;
 }
+
 static int usage(const char *msg, const char *cmd) {
   error(msg);
   fprintf(stderr,
@@ -169,6 +174,7 @@ struct upstream_entry {
   long num_upstreams = -1;
 };
 struct split2monodb {
+  bool is_verbose = false;
   FILE *commits = nullptr;
   FILE *index = nullptr;
   long commits_size = -1;
@@ -190,6 +196,12 @@ struct split2monodb {
   }
 
   int close_files();
+
+  void log(std::string x) {
+    if (!is_verbose)
+      return;
+    fprintf(stderr, "log: %s\n", x.c_str());
+  }
 
   ~split2monodb() { close_files(); }
 };
@@ -374,6 +386,9 @@ int split2monodb::parse_upstreams() {
 }
 
 int split2monodb::opendb(const char *dbdir) {
+  if (const char *verbose = getenv("VERBOSE"))
+    if (strcmp(verbose, "0"))
+      is_verbose = true;
   auto &db = *this;
   dbfd = open(dbdir, O_RDONLY);
   if (dbfd == -1)
@@ -384,17 +399,21 @@ int split2monodb::opendb(const char *dbdir) {
   int upstreamsfd = openat(dbfd, "upstreams", flags);
   int has_error = 0;
   if (commitsfd == -1)
-    has_error |= error("could not open <dbdir>/commits");
+    has_error |= db.is_read_only ? 1 : error("could not open <dbdir>/commits");
   if (indexfd == -1)
-    has_error |= error("could not open <dbdir>/index");
+    has_error |= db.is_read_only ? 1 : error("could not open <dbdir>/index");
   if (upstreamsfd == -1)
-    has_error |= error("could not open <dbdir>/upstremas");
+    has_error |=
+        db.is_read_only ? 1 : error("could not open <dbdir>/upstremas");
   if (has_error) {
     close(indexfd);
     close(commitsfd);
     close(upstreamsfd);
     return 1;
   }
+  fchmod(indexfd, 0644);
+  fchmod(commitsfd, 0644);
+  fchmod(upstreamsfd, 0644);
 
   const char *mode = db.is_read_only ? "rb" : "wb";
   if (!(db.commits = fdopen(commitsfd, mode))) {
@@ -406,23 +425,49 @@ int split2monodb::opendb(const char *dbdir) {
     return error("could not open stream for <dbdir>/index");
   }
 
-  // TODO: write/check magic.
-
   // Check that file sizes make sense.
-  if (!fseek(db.commits, 0, SEEK_END) || !fseek(db.index, 0, SEEK_END))
-    return error("could not seek to end");
-  db.commits_size = ftell(db.commits) ? 0 : 1;
-  db.index_size = ftell(db.index) ? 0 : 1;
+  if (fseek(db.commits, 0, SEEK_END) || fseek(db.index, 0, SEEK_END))
+    return error("could not seek to end when opening");
+
+  db.commits_size = ftell(db.commits);
+  db.index_size = ftell(db.index);
+
+  const char commits_magic[] = {'s', 2, 'm', 0xc, 0x0, 'm', 't', 's'};
+  const char index_magic[] = {'s', 2, 'm', 0x1, 'n', 0xd, 0xe, 'x'};
+  assert(sizeof(commits_magic) == magic_size);
+  assert(sizeof(index_magic) == magic_size);
   if (db.commits_size) {
     if (!db.index_size)
       return error("unexpected commits without index");
-    if (db.commits_size < commit_pairs_offset + commit_pair_size ||
+    if (db.commits_size < magic_size ||
         (db.commits_size - commit_pairs_offset) % commit_pair_size)
       return error("invalid commits");
+
+    char magic[magic_size];
+    if (fseek(db.commits, 0, SEEK_SET) ||
+        fread(magic, 1, magic_size, db.commits) != magic_size ||
+        strncmp(magic, commits_magic, magic_size))
+      return error("bad commits magic");
+  } else if (!db.is_read_only) {
+    if (fseek(db.commits, 0, SEEK_SET) ||
+        fwrite(commits_magic, 1, magic_size, db.commits) != magic_size)
+      return error("could not write commits magic");
   }
   if (db.index_size) {
     if (!db.commits_size)
       return error("unexpected index without commits");
+    if (db.index_size < magic_size)
+      return error("invalid index");
+
+    char magic[magic_size];
+    if (fseek(db.index, 0, SEEK_SET) ||
+        fread(magic, 1, magic_size, db.index) != magic_size ||
+        strncmp(magic, index_magic, magic_size))
+      return error("bad index magic");
+  } else if (!db.is_read_only) {
+    if (fseek(db.index, 0, SEEK_SET) ||
+        fwrite(index_magic, 1, magic_size, db.index) != magic_size)
+      return error("could not write index magic");
   }
   this->upstreamsfd = upstreamsfd;
   return 0;
@@ -448,6 +493,7 @@ static int lookup_index_entry(split2monodb &db, int bitmap_offset,
                               int *entry_offset, char *entry) {
   *found = 0;
   unsigned i = get_bits(sha1, start_bit, num_bits);
+  *entry_offset = entries_offset + i * index_entry_size;
   *bitmap_byte_offset = bitmap_offset + i / 8;
   *bitmap_bit_offset = i % 8;
   *bitmap_byte = 0;
@@ -460,7 +506,6 @@ static int lookup_index_entry(split2monodb &db, int bitmap_offset,
     return 0;
 
   *found = 1;
-  *entry_offset = entries_offset + i * index_entry_size;
   if (seek_index_for_read(db, *entry_offset) ||
       fread(entry, 1, 3, db.index) != 3)
     return 1;
@@ -531,11 +576,11 @@ static int lookup_commit(split2monodb &db, const char *split, char *mono) {
   char found_binsplit[21] = {0};
   char binsplit[21];
   sha1tobin(binsplit, split);
-  if (!lookup_commit_bin_impl(db, binsplit, &num_bits_matched, found_binsplit,
-                              &commit_pair_offset, &bitmap_byte_offset,
-                              &bitmap_bit_offset, &bitmap_byte, index_entry,
-                              &index_entry_offset))
-    return error("problem lookup up split commit");
+  if (lookup_commit_bin_impl(db, binsplit, &num_bits_matched, found_binsplit,
+                             &commit_pair_offset, &bitmap_byte_offset,
+                             &bitmap_bit_offset, &bitmap_byte, index_entry,
+                             &index_entry_offset))
+    return error("problem looking up split commit");
   if (num_bits_matched != 160)
     return 1;
   char binmono[21] = {0};
@@ -560,7 +605,7 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
 
   split2monodb db;
   db.is_read_only = true;
-  if (!db.opendb(dbdir))
+  if (db.opendb(dbdir))
     return 1;
 
   char mono[41] = {0};
@@ -583,13 +628,17 @@ static int insert_one_bin_impl(split2monodb &db, const char *binsplit,
   if (fseek(db.commits, 0, SEEK_END))
     return error("could not seek in commits");
   int new_commit_pair_offset = ftell(db.commits);
+  int new_commit_num =
+      (new_commit_pair_offset - commit_pairs_offset) / commit_pair_size;
+  assert((new_commit_pair_offset - commit_pairs_offset) % commit_pair_size ==
+         0);
   if (fwrite(binsplit, 1, 20, db.commits) != 20 ||
       fwrite(binmono, 1, 20, db.commits) != 20)
     return error("could not write commits");
 
   if (!need_new_subtrie) {
     // update the existing trie/subtrie
-    set_index_entry(index_entry, /*is_commit=*/1, new_commit_pair_offset);
+    set_index_entry(index_entry, /*is_commit=*/1, new_commit_num);
     if (fseek(db.index, index_entry_offset, SEEK_SET) ||
         fwrite(index_entry, 1, 3, db.index) != 3)
       return error("could not write index entry");
@@ -642,7 +691,7 @@ static int insert_one_bin_impl(split2monodb &db, const char *binsplit,
   top->entry_offset = index_entry_offset;
 
   if (fseek(db.index, 0, SEEK_END))
-    return error("could not seek to end");
+    return error("could not seek to end to discover num subtries");
   int end_offset = ftell(db.index);
   int next_subtrie =
       end_offset <= subtrie_indexes_offset
@@ -651,10 +700,7 @@ static int insert_one_bin_impl(split2monodb &db, const char *binsplit,
 
   int commit_num =
       (commit_pair_offset - commit_pairs_offset) / commit_pair_size;
-  assert((commit_num - commit_pairs_offset) % commit_pair_size == 0);
-  int new_commit_num =
-      (new_commit_pair_offset - commit_pairs_offset) / commit_pair_size;
-  assert((new_commit_num - commit_pairs_offset) % commit_pair_size == 0);
+  assert((commit_pair_offset - commit_pairs_offset) % commit_pair_size == 0);
   while (first_mismatched_bit > num_bits_matched) {
     top->is_commit = 0;
     top->num = next_subtrie++;
@@ -739,13 +785,13 @@ static int insert_one_bin(split2monodb &db, const char *binsplit,
   int index_entry_offset = 0;
   // FIXME: protect against bugs mixing up binsplit and split by using
   // different type wrappers.
-  if (!lookup_commit_bin_impl(db, binsplit, &num_bits_matched, found_binsplit,
-                              &commit_pair_offset, &bitmap_byte_offset,
-                              &bitmap_bit_offset, &bitmap_byte, index_entry,
-                              &index_entry_offset))
+  if (lookup_commit_bin_impl(db, binsplit, &num_bits_matched, found_binsplit,
+                             &commit_pair_offset, &bitmap_byte_offset,
+                             &bitmap_bit_offset, &bitmap_byte, index_entry,
+                             &index_entry_offset))
     return error("index issue");
   assert(index_entry_offset);
-  assert(num_bits_matched >= num_root_bits);
+  assert(!commit_pair_offset || num_bits_matched >= num_root_bits);
 
   if (num_bits_matched == 160)
     return error("split is already mapped");
@@ -767,13 +813,13 @@ static int insert_one(split2monodb &db, const char *split, const char *mono) {
   char bitmap_byte = 0;
   char index_entry[3];
   int index_entry_offset = 0;
-  if (!lookup_commit_bin_impl(db, binsplit, &num_bits_matched, found_binsplit,
-                              &commit_pair_offset, &bitmap_byte_offset,
-                              &bitmap_bit_offset, &bitmap_byte, index_entry,
-                              &index_entry_offset))
+  if (lookup_commit_bin_impl(db, binsplit, &num_bits_matched, found_binsplit,
+                             &commit_pair_offset, &bitmap_byte_offset,
+                             &bitmap_bit_offset, &bitmap_byte, index_entry,
+                             &index_entry_offset))
     return error("index issue");
   assert(index_entry_offset);
-  assert(num_bits_matched >= num_root_bits);
+  assert(!commit_pair_offset || num_bits_matched >= num_root_bits);
 
   if (num_bits_matched == 160)
     return error("split is already mapped");
@@ -794,7 +840,7 @@ static int main_insert_one(const char *cmd, const char *dbdir,
     return usage("insert: <mono> is not a valid sha1", cmd);
 
   split2monodb db;
-  if (!db.opendb(dbdir))
+  if (db.opendb(dbdir))
     return 1;
 
   return insert_one(db, split, mono);
@@ -802,7 +848,7 @@ static int main_insert_one(const char *cmd, const char *dbdir,
 
 static int main_insert_stdin(const char *cmd, const char *dbdir) {
   split2monodb db;
-  if (!db.opendb(dbdir))
+  if (db.opendb(dbdir))
     return 1;
 
   char split[41] = {0};
@@ -901,7 +947,7 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
 
   // Close the streams.
   if (main.close_files())
-    return error("error closing commits or index afte writing");
+    return error("error closing commits or index after writing");
 
   // Merge upstreams.
   existing_entry->second.num_commits = upstream.num_commits();
