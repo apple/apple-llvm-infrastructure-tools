@@ -32,6 +32,7 @@ helper() {
     . "$path" || error "internal: could not include '$path'"
 }
 
+showpids() { [ ! "${SHOWPIDS:-0}" = 0 ]; }
 verbose() { [ ! "${VERBOSE:-0}" = 0 ]; }
 run() {
     # Support hiding errors so that clients don't hide the verbose-mode
@@ -42,7 +43,7 @@ run() {
         shift
     fi
 
-    verbose && echo "# $*" >&2
+    verbose && echo "#${SHOWPIDS:+ [$$]} $*" >&2
 
     if [ $hide_errors -eq 1 ]; then
         "$@" 2>/dev/null

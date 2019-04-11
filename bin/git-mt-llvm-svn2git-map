@@ -19,7 +19,7 @@ run grep -q "^    llvm-svn: $REV\$" ||
     error "$COMMIT is not canonical for $REV"
 
 # Open up a connection to the database.
-mt_llvm_svn2git_init --write
+mt_llvm_svn2git_init || exit 1
 
 # Check if this is mapped.
 is_mapped() { mt_llvm_svn2git "$1" >/dev/null ;}

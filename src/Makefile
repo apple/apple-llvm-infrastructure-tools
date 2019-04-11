@@ -8,17 +8,12 @@ endif
 headers := $(wildcard *.h)
 sources := $(wildcard *.cpp)
 programs := $(patsubst %.cpp,$D/%,$(sources))
-keep := $D/.keep
 
 .PHONY: all clean
-all:: $(programs) ;
+all: $(programs)
 
 clean:
-	rm -f $(programs) $(keep)
+	rm -f $(programs)
 
-$(keep): Makefile
-	mkdir -p "$(@D)"
-	touch "$@"
-
-$(programs): $D/%: %.cpp $(headers) $(keep)
+$(programs): $D/%: %.cpp $(headers) Makefile
 	clang -O2 -std=c++17 -lc++ -o "$@" $<

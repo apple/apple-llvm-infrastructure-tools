@@ -4,5 +4,5 @@ helper mt_llvm_svn2git
 
 usage() { echo "usage: git $COMMAND <llvm-svn-rev>"; }
 
-mt_llvm_svn2git_init
+mt_llvm_svn2git_init &&
 mt_llvm_svn2git "$@"

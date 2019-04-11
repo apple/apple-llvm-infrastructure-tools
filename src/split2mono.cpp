@@ -1089,5 +1089,15 @@ int main(int argc, const char *argv[]) {
     return main_upstream(argv[0], argc - 2, argv + 2);
   if (!strcmp(argv[1], "dump"))
     return main_dump(argv[0], argc - 2, argv + 2);
+#define SUBMAIN(X)                                                             \
+  do {                                                                         \
+    if (!strcmp(argv[1], #X))                                                  \
+      return main_##X(argv[0], argc - 2, argv + 2);                            \
+  } while (false)
+  SUBMAIN(lookup);
+  SUBMAIN(insert);
+  SUBMAIN(upstream);
+  SUBMAIN(dump);
+#undef SUBMAIN
   return usage("unknown command", argv[0]);
 }

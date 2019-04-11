@@ -12,8 +12,8 @@ mt_llvm_svn2git_init() {
     file="$d"/svn2git
     MT_SVN2GIT_FILE="$file"
 
-    local sha1 oldsha1
-    if sha1=$(run git rev-parse $ref^{blob} 2>/dev/null); then
+    local sha1 oldsha1 status=0
+    if sha1=$(run --hide-errors git rev-parse $ref^{blob}); then
         MT_SVN2GIT_SHA1=$sha1
         local gitfile=$(cd "$d" &&
             run git --git-dir "$GIT_DIR" unpack-file $sha1) ||
@@ -21,11 +21,15 @@ mt_llvm_svn2git_init() {
         run mv "$d/$gitfile" "$file" ||
             error "could not rename unpacked $sha1 from $ref"
     else
+        local svn2git
+        svn2git="$(build_executable svn2git)" ||
+            error "could not build or find svn2git"
+        run "$svn2git" create "$MT_SVN2GIT_FILE"
+        status=$?
         MT_SVN2GIT_SHA1=0000000000000000000000000000000000000000
-        touch "$file" ||
-            error "could not create temp file for $ref"
     fi
     mt_register_paths_to_clean_up "$d"
+    return $status
 }
 
 mt_llvm_svn2git_save() {

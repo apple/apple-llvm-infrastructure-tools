@@ -15,22 +15,31 @@ build_executable() {
     done | git hash-object --stdin)"
 
 
-    local d="$TMPDIR"/mt-build-executable/$sha1
-    [ -d "$d" ] || build_executable_impl "$srcdir" "$d"
-    verbose && log "Checking for $name in $d"
+    local pd="$TMPDIR"mt-build-executable
+    local d="$pd/$sha1"
     local execpath="$d"/"$name"
+    if [ -x "$execpath" ]; then
+        echo "$execpath"
+        return
+    fi
+
+    run --hide-errors mkdir -p "$pd"
+    [ -d "$pd" ] && build_executable_impl "$srcdir" "$d"
+    local status=$?
+    verbose && log "Checking for $name in $d"
     [ -x "$execpath" ] || error "no executable for '$name'"
     echo "$execpath"
+    return $status
 }
 build_executable_impl() {
+    [ -r "$d"/.done ] && return 0
     local srcdir="$1"
     local d="$2"
     local -a extra
-    if verbose; then
-        extra=()
-    else
-        extra=( -s )
-    fi
-    run make "${extra[@]}" -C "$srcdir" D="$d" ||
+    verbose || extra=( -s )
+
+    run mkdir -p "$d" || exit 1
+    make -C "$srcdir" "${extra[@]}" D="$d" 2>&1 |
+    sed -e 's,^[^#],#'"${SHOWPIDS:+ [make]}"' &,' 1>&2 ||
         error "could not build executables"
 }
