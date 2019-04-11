@@ -850,7 +850,7 @@ insert_one_bin_impl(split2monodb &db, const unsigned char *binsplit,
 
   // Unwind the stack.  Be careful not to decrement top past the beginning.
   ++top;
-  while (top - 1 != stack) {
+  while (top != stack) {
     --top;
     // Update the index entry.
     set_index_entry(index_entry, top->is_commit, top->num);
