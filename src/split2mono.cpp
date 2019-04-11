@@ -1,6 +1,6 @@
 // split2mono.cpp
 //
-// build: clang -x c++ -std=gnu++17 -O2 -lc++
+// Format description below:
 //
 // tree: split2mono
 // - blob: commits (file size: num-commits)

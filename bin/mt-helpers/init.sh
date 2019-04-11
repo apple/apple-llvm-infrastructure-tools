@@ -25,16 +25,14 @@ getnextfd() {
     NEXTFD=$(( $NEXTFD + 1 ))
 }
 
-is_function() {
-    [ "$(type -t "$1" 2>/dev/null)" = function ]
-}
-
+is_function() { [ "$(type -t "$1" 2>/dev/null)" = function ]; }
 helper() {
     is_function "$1" && return 0
     local path="$(dirname "$0")"/mt-helpers/"$1".sh
     . "$path" || error "internal: could not include '$path'"
 }
 
+verbose() { [ ! "${VERBOSE:-0}" = 0 ]; }
 run() {
     # Support hiding errors so that clients don't hide the verbose-mode
     # logging.
@@ -44,7 +42,7 @@ run() {
         shift
     fi
 
-    [ "${VERBOSE:-0}" = 0 ] || echo "# $*" >&2
+    verbose && echo "# $*" >&2
 
     if [ $hide_errors -eq 1 ]; then
         "$@" 2>/dev/null
