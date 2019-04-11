@@ -30,59 +30,16 @@
 //   subtrie index: 0xc8
 //   0x00-0x07: bitmap (0x40 bits)
 //   0x08-0xc7: index entries
+#include "mmapped_file.h"
+#include "sha1convert.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <map>
 #include <string>
-#include <sys/file.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <vector>
 
-static int convert(int ch) {
-  switch (ch) {
-  default:
-    __builtin_unreachable();
-  case '0':
-  case '1':
-  case '2':
-  case '3':
-  case '4':
-  case '5':
-  case '6':
-  case '7':
-  case '8':
-  case '9':
-    return ch - '0';
-  case 'a':
-  case 'b':
-  case 'c':
-  case 'd':
-  case 'e':
-  case 'f':
-    return ch - 'a' + 10;
-  }
-}
-static int unconvert(char ch, int index) {
-  unsigned char uch = ch;
-  unsigned char stripped = index ? uch & 0xf : uch >> 4;
-  assert(stripped >= 0);
-  assert(stripped < 16);
-  return stripped < 10 ? '0' + stripped : 'a' + stripped;
-}
-static void sha1tobin(unsigned char *bin, const char *text) {
-  for (int i = 0; i < 40; i += 2)
-    bin[i / 2] = (convert(text[i]) << 4) | convert(text[i + 1]);
-  bin[20] = '\0';
-}
-static void bintosha1(char *text, const unsigned char *bin) {
-  for (int i = 0; i < 40; ++i)
-    text[i] = unconvert(bin[i / 2], i % 2);
-  text[40] = '\0';
-}
 static unsigned get_bits(const unsigned char *binsha1, int start, int count) {
   assert(count > 0);
   assert(count <= 32);
@@ -174,16 +131,6 @@ struct upstream_entry {
   long num_commits = -1;
   long num_upstreams = -1;
 };
-struct mmapped_file {
-  long len = 0;
-  const char *bytes = nullptr;
-
-  mmapped_file() = default;
-  mmapped_file(int fd) { init(fd); }
-  int init(int fd);
-  ~mmapped_file() { close(); }
-  int close();
-};
 class stream_gimmick {
   FILE *stream = nullptr;
   mmapped_file mmapped;
@@ -244,27 +191,6 @@ struct split2monodb {
 };
 } // end namespace
 
-int mmapped_file::init(int fd) {
-  assert(fd != -1);
-  struct stat st;
-  if (fstat(fd, &st))
-    return 1;
-  len = st.st_size;
-  if (len) {
-    bytes =
-        static_cast<char *>(mmap(nullptr, len, PROT_READ, MAP_PRIVATE, fd, 0));
-    if (bytes == MAP_FAILED)
-      return 1;
-  }
-  ::close(fd);
-  return 0;
-}
-int mmapped_file::close() {
-  if (!bytes)
-    return 0;
-  return munmap(const_cast<char *>(bytes), len);
-}
-
 int stream_gimmick::init_stream(int fd) {
   assert(fd != -1);
   assert(!is_initialized);
@@ -282,7 +208,7 @@ int stream_gimmick::init_mmap(int fd) {
   is_initialized = true;
   is_stream = false;
   mmapped.init(fd);
-  num_bytes = mmapped.len;
+  num_bytes = mmapped.num_bytes;
   return 0;
 }
 int stream_gimmick::seek_end() {
@@ -388,7 +314,7 @@ int split2monodb::parse_upstreams() {
   assert(upstreamsfd != -1);
   mmapped_file file(upstreamsfd);
   upstreamsfd = -1;
-  if (!file.len) {
+  if (!file.num_bytes) {
     // No upstreams.
     has_read_upstreams = true;
     return 0;
@@ -399,7 +325,7 @@ int split2monodb::parse_upstreams() {
     const char *end;
     context() = delete;
     explicit context(const mmapped_file &file)
-        : beg(file.bytes), cur(file.bytes), end(file.bytes + file.len) {}
+        : beg(file.bytes), cur(file.bytes), end(file.bytes + file.num_bytes) {}
   };
 
   // Create some simple parsers.
