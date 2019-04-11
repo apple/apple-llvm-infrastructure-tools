@@ -354,6 +354,7 @@ int split2monodb::close_files() { return commits.close() | index.close(); }
 
 static void set_index_entry(unsigned char *index_entry, int is_commit,
                             int offset) {
+  assert(is_commit == 0 || is_commit == 1);
   assert(offset >= 0);
   assert(offset <= (1 << 23));
   index_entry[0] = is_commit << 7 | offset >> 16;
@@ -1141,7 +1142,7 @@ static int main_dump(const char *cmd, int argc, const char *argv[]) {
     printf("commit num=%08d split=%s mono=%s\n", i++, split, mono);
   }
   i = -1;
-  while (dump_index(db, i))
+  while (!dump_index(db, i))
     ++i;
   return 0;
 }
