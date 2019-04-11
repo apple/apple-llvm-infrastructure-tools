@@ -199,6 +199,8 @@ public:
   int init_stream(int fd);
   int init_mmap(int fd);
 
+  size_t get_num_bytes() const { return num_bytes; }
+
   int seek_end();
   long tell();
   int seek(long pos);
@@ -213,8 +215,6 @@ struct split2monodb {
   bool is_verbose = false;
   stream_gimmick commits;
   stream_gimmick index;
-  long commits_size = -1;
-  long index_size = -1;
   bool is_read_only = false;
 
   bool has_read_upstreams = false;
@@ -228,7 +228,7 @@ struct split2monodb {
   int opendb(const char *dbdir);
   int parse_upstreams();
   long num_commits() const {
-    return (commits_size - commit_pairs_offset) / commit_pair_size;
+    return (commits.get_num_bytes() - commit_pairs_offset) / commit_pair_size;
   }
 
   int close_files();
@@ -540,21 +540,15 @@ int split2monodb::opendb(const char *dbdir) {
     return error("could not open <dbdir>/index");
 
   // Check that file sizes make sense.
-  if (db.commits.seek_end() || db.index.seek_end())
-    return error("could not seek to end when opening");
-
-  db.commits_size = db.commits.tell();
-  db.index_size = db.index.tell();
-
   const char commits_magic[] = {'s', 2, 'm', 0xc, 0x0, 'm', 't', 's'};
   const char index_magic[] = {'s', 2, 'm', 0x1, 'n', 0xd, 0xe, 'x'};
   assert(sizeof(commits_magic) == magic_size);
   assert(sizeof(index_magic) == magic_size);
-  if (db.commits_size) {
-    if (!db.index_size)
+  if (db.commits.get_num_bytes()) {
+    if (!db.index.get_num_bytes())
       return error("unexpected commits without index");
-    if (db.commits_size < magic_size ||
-        (db.commits_size - commit_pairs_offset) % commit_pair_size)
+    if (db.commits.get_num_bytes() < magic_size ||
+        (db.commits.get_num_bytes() - commit_pairs_offset) % commit_pair_size)
       return error("invalid commits");
 
     char magic[magic_size];
@@ -567,10 +561,10 @@ int split2monodb::opendb(const char *dbdir) {
         db.commits.write(commits_magic, magic_size) != magic_size)
       return error("could not write commits magic");
   }
-  if (db.index_size) {
-    if (!db.commits_size)
+  if (db.index.get_num_bytes()) {
+    if (!db.commits.get_num_bytes())
       return error("unexpected index without commits");
-    if (db.index_size < magic_size)
+    if (db.index.get_num_bytes() < magic_size)
       return error("invalid index");
 
     char magic[magic_size];
