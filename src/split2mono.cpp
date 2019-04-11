@@ -193,7 +193,10 @@ class stream_gimmick {
 
 public:
   stream_gimmick() = default;
-  int init_stream(FILE *stream);
+  int init(int fd, bool is_read_only) {
+    return is_read_only ? init_mmap(fd) : init_stream(fd);
+  }
+  int init_stream(int fd);
   int init_mmap(int fd);
 
   int seek_end();
@@ -261,18 +264,20 @@ int mmapped_file::close() {
   return munmap(const_cast<char *>(bytes), len);
 }
 
-int stream_gimmick::init_stream(FILE *stream) {
+int stream_gimmick::init_stream(int fd) {
   assert(!is_initialized);
-  if (!stream)
+  stream = fdopen(fd, "wb");
+  if (!stream || fseek(stream, 0, SEEK_END)) {
+    ::close(fd);
     return 1;
-  if (fseek(stream, 0, SEEK_END))
-    return 1;
+  }
   num_bytes = ftell(stream);
-  if (fseek(stream, 0, SEEK_SET))
+  if (fseek(stream, 0, SEEK_SET)) {
+    ::close(fd);
     return 1;
+  }
   is_initialized = true;
   is_stream = true;
-  this->stream = stream;
   return 0;
 }
 int stream_gimmick::init_mmap(int fd) {
@@ -529,21 +534,10 @@ int split2monodb::opendb(const char *dbdir) {
     fchmod(upstreamsfd, 0644);
   }
 
-  if (db.is_read_only) {
-    if (db.commits.init_mmap(commitsfd))
-      return error("could not mmap <dbdir>/commits");
-    if (db.index.init_mmap(indexfd))
-      return error("could not mmap <dbdir>/index");
-  } else {
-    if (db.commits.init_stream(fdopen(commitsfd, "wb"))) {
-      close(commitsfd);
-      return error("could not open stream for <dbdir>/commits");
-    }
-    if (db.index.init_stream(fdopen(indexfd, "wb"))) {
-      close(indexfd);
-      return error("could not open stream for <dbdir>/index");
-    }
-  }
+  if (db.commits.init(commitsfd, db.is_read_only))
+    return error("could not open <dbdir>/commits");
+  if (db.index.init(indexfd, db.is_read_only))
+    return error("could not open <dbdir>/index");
 
   // Check that file sizes make sense.
   if (db.commits.seek_end() || db.index.seek_end())
