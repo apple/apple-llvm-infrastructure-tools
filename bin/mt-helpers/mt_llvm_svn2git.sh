@@ -40,21 +40,16 @@ mt_llvm_svn2git_save() {
 
 mt_llvm_svn2git() {
     local rev="$1"
-    local seek sha1
-    seek=$(( $rev * 20 )) ||
-        error "invalid rev '$rev'"
-    sha1=$(xxd -s $seek -g 0 -c 20 -l 20 -p "$MT_SVN2GIT_FILE" 2>/dev/null) ||
-        return 1
-    if [ -z "$sha1" -o "$sha1" = 0000000000000000000000000000000000000000 ]; then
-        return 1
-    fi
-    echo "$sha1"
+
+    local svn2git
+    svn2git="$(build_executable svn2git)" ||
+        error "could not build or find svn2git"
+    run "$svn2git" lookup "$MT_SVN2GIT_FILE" "$rev"
 }
 
 mt_llvm_svn2git_insert() {
     local svn2git
-    local srcdir="$(dirname "$0")"/../src
-    svn2git="$(build_executable "$srcdir" svn2git)" ||
+    svn2git="$(build_executable svn2git)" ||
         error "could not build or find svn2git"
     local count
     [ "$#" -le 0 ] || count="$(run git rev-list --count "$@")"

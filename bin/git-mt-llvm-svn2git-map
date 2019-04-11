@@ -24,7 +24,7 @@ mt_llvm_svn2git_init --write
 # Check if this is mapped.
 is_mapped() { mt_llvm_svn2git "$1" >/dev/null ;}
 if is_mapped $REV; then
-    log "$COMMIT is already mapped to $REV"
+    log "$COMMIT is already mapped to r$REV"
     exit 0
 fi
 

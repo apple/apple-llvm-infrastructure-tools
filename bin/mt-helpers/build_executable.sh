@@ -1,6 +1,6 @@
 build_executable() {
-    local srcdir="$1"
-    local name="$2"
+    local name="$1"
+    local srcdir="$(dirname "$0")"/../src
     local srcfile="$srcdir"/"$name".cpp
     local makefile="$srcdir"/Makefile
     [ -r "$srcfile" ] || error "could not read '$srcfile'"
@@ -26,7 +26,11 @@ build_executable_impl() {
     local srcdir="$1"
     local d="$2"
     local -a extra
-    verbose || extra=( -s )
+    if verbose; then
+        extra=()
+    else
+        extra=( -s )
+    fi
     run make "${extra[@]}" -C "$srcdir" D="$d" ||
         error "could not build executables"
 }

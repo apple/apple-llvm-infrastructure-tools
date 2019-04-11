@@ -8,6 +8,16 @@
 // - bytes 40-59: sha1 for commit for r2 (0s if none)
 // - bytes 60-79: sha1 for commit for r3 (0s if none)
 // - ...
+//
+// It's easy to read a revision from the command-line using xxd:
+//
+//     $ xxd -s $(( $REV * 20 )) -g 0 -c 20 -l 20 -p <svn2git.db 2>/dev/null ||
+//       echo 0000000000000000000000000000000000000000
+//
+// where "0000000000000000000000000000000000000000" means the revision is not
+// mapped.
+//
+// Or, use the svn2git 'lookup' command.
 #include "mmapped_file.h"
 #include "sha1convert.h"
 #include <cstdio>
