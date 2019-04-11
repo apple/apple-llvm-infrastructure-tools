@@ -105,11 +105,8 @@ static unsigned get_bits(const unsigned char *binsha1, int start, int count) {
   }
   if (totake < 0)
     bits >>= -totake;
+  bits &= (1ull << count) - 1;
   return bits;
-  unsigned long long mask = 0;
-  if (start)
-    mask = (1ull << (8 - start)) - 1;
-  return bits & mask;
 }
 static int show_progress(int n, int total) {
   return fprintf(stderr, "   %9d / %d commits mapped\n", n, total) < 0;
@@ -156,10 +153,10 @@ constexpr const long num_subtrie_bits = 6;
 constexpr const long root_index_bitmap_offset = magic_size;
 constexpr const long index_entry_size = 3;
 constexpr long compute_index_bitmap_size(long num_bits) {
-  return 1 << (num_bits - 3);
+  return 1ull << (num_bits - 3);
 }
 constexpr long compute_index_entries_size(long num_bits) {
-  return (1 << num_bits) * index_entry_size;
+  return (1ull << num_bits) * index_entry_size;
 }
 constexpr const long root_index_entries_offset =
     root_index_bitmap_offset + compute_index_bitmap_size(num_root_bits);
@@ -780,14 +777,6 @@ insert_one_bin_impl(split2monodb &db, const unsigned char *binsplit,
     int num;
   };
 
-  // Help racing readers by updating index in reverse.
-  trie_update_stack stack[160 / num_subtrie_bits + 2] = {0};
-  trie_update_stack *top = stack;
-  top->bitmap_byte_offset = bitmap_byte_offset;
-  top->bitmap_byte = bitmap_byte;
-  top->skip_bitmap_update = 0;
-  top->entry_offset = index_entry_offset;
-
   if (db.index.seek_end())
     return error("could not seek to end to discover num subtries");
   int end_offset = db.index.tell();
@@ -796,63 +785,81 @@ insert_one_bin_impl(split2monodb &db, const unsigned char *binsplit,
           ? 0
           : 1 + (end_offset - subtrie_indexes_offset - 1) / subtrie_index_size;
 
+  // Update index in reverse, so that if this gets aborted early (or killed)
+  // the output file has no semantic changes.
+  trie_update_stack stack[160 / num_subtrie_bits + 2] = {0};
+  trie_update_stack *top = stack;
+
+  // Start with updating the existing trie that is pointing at the conflicting
+  // commit.  Note that the bitmap is already set, we just need to make it
+  // point at the right place.
+  top->skip_bitmap_update = 1;
+  top->entry_offset = index_entry_offset;
+  top->is_commit = 0;
+  top->num = next_subtrie++;
+
+  // Add some variables that need to last past the while loop.
   int commit_num =
       (commit_pair_offset - commit_pairs_offset) / commit_pair_size;
+  int subtrie_offset, bitmap_offset;
+  int n, n_entry_offset;
+  int f, f_entry_offset;
   assert((commit_pair_offset - commit_pairs_offset) % commit_pair_size == 0);
-  while (first_mismatched_bit > num_bits_in_hash) {
+  while (true) {
+    // Calculate the entries for the next subtrie.
+    subtrie_offset = subtrie_indexes_offset + top->num * subtrie_index_size;
+    bitmap_offset = subtrie_offset + subtrie_index_bitmap_offset;
+    n = get_bits(binsplit, num_bits_in_hash, num_subtrie_bits);
+    f = get_bits(found_binsplit, num_bits_in_hash, num_subtrie_bits);
+    n_entry_offset =
+        subtrie_offset + subtrie_index_entries_offset + n * index_entry_size;
+    f_entry_offset =
+        subtrie_offset + subtrie_index_entries_offset + f * index_entry_size;
+
+    if (n != f)
+      break;
+
+    // push another subtrie.
+    num_bits_in_hash += num_subtrie_bits;
+
+    ++top;
     top->is_commit = 0;
     top->num = next_subtrie++;
-    int subtrie_offset = subtrie_indexes_offset + top->num * subtrie_index_size;
-
-    int n = get_bits(binsplit, num_bits_in_hash, num_subtrie_bits);
-    int f = get_bits(found_binsplit, num_bits_in_hash, num_subtrie_bits);
-    int n_entry_offset =
-        subtrie_offset + subtrie_index_entries_offset + n * index_entry_size;
-    int f_entry_offset =
-        subtrie_offset + subtrie_index_entries_offset + f * index_entry_size;
-    int bitmap_offset = subtrie_offset + subtrie_index_bitmap_offset;
-
-    if (n == f) {
-      // push.
-      num_bits_in_hash += num_subtrie_bits;
-      top[1].entry_offset = n_entry_offset;
-      top[1].skip_bitmap_update = 0;
-      top[1].bitmap_byte_offset = bitmap_offset + n / 8;
-      set_bitmap_bit(&top[1].bitmap_byte, n % 8);
-      ++top;
-      continue;
-    }
-
-    // found a difference.  add commit entries to last subtrie.
-    int fbyte_offset = bitmap_offset + f / 8;
-    int nbyte_offset = bitmap_offset + n / 8;
-    top[1].entry_offset = f_entry_offset;
-    top[1].is_commit = 1;
-    top[1].num = commit_num;
-    top[1].bitmap_byte_offset = fbyte_offset;
-    top[1].skip_bitmap_update = 0;
-    set_bitmap_bit(&top[1].bitmap_byte, f % 8);
-
-    top[2].entry_offset = n_entry_offset;
-    top[2].is_commit = 1;
-    top[2].num = new_commit_num;
-    if (fbyte_offset == nbyte_offset) {
-      // Only do one bitmap update if it's the same byte in the bitmap.
-      top[2].skip_bitmap_update = 1;
-      set_bitmap_bit(&top[1].bitmap_byte, n % 8);
-    } else {
-      top[2].skip_bitmap_update = 0;
-      top[2].bitmap_byte_offset = nbyte_offset;
-      set_bitmap_bit(&top[2].bitmap_byte, n % 8);
-    }
-    top += 2;
-    break;
+    top->entry_offset = n_entry_offset;
+    top->skip_bitmap_update = 0;
+    top->bitmap_byte_offset = bitmap_offset + n / 8;
+    set_bitmap_bit(&top->bitmap_byte, n % 8);
+    assert(top->bitmap_byte);
   }
+
+  // found a difference.  add commit entries to last subtrie.
+  int fbyte_offset = bitmap_offset + f / 8;
+  int nbyte_offset = bitmap_offset + n / 8;
+  ++top;
+  top->is_commit = 1;
+  top->num = commit_num;
+  top->entry_offset = f_entry_offset;
+  top->skip_bitmap_update = 0;
+  top->bitmap_byte_offset = fbyte_offset;
+  set_bitmap_bit(&top->bitmap_byte, f % 8);
+  assert(top->bitmap_byte);
+
+  ++top;
+  top->is_commit = 1;
+  top->num = new_commit_num;
+  top->entry_offset = n_entry_offset;
+  top->skip_bitmap_update = nbyte_offset == fbyte_offset;
+  top->bitmap_byte_offset = nbyte_offset;
+  set_bitmap_bit(&top->bitmap_byte, n % 8);
+  assert(top->bitmap_byte);
+  if (top->skip_bitmap_update)
+    top[-1].bitmap_byte |= top->bitmap_byte;
 
   // Unwind the stack.  Be careful not to decrement top past the beginning.
   ++top;
   while (top != stack) {
     --top;
+
     // Update the index entry.
     set_index_entry(index_entry, top->is_commit, top->num);
     if (db.index.seek(top->entry_offset) ||
@@ -1070,7 +1077,7 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
 
 static int dump_index(split2monodb &db, int num) {
   int num_bits = num == -1 ? num_root_bits : num_subtrie_bits;
-  int bitmap_size = 1u << num_bits;
+  int bitmap_size_in_bits = 1u << num_bits;
   int bitmap_offset = num == -1
                           ? root_index_bitmap_offset
                           : subtrie_indexes_offset + subtrie_index_size * num +
@@ -1082,20 +1089,22 @@ static int dump_index(split2monodb &db, int num) {
 
   // Visit bitmap, and print out entries.
   unsigned char bitmap[(1u << num_root_bits) / 8];
-  if (db.index.seek_and_read(bitmap_offset, bitmap, bitmap_size / 8) !=
-          bitmap_size / 8)
+  if (db.index.seek_and_read(bitmap_offset, bitmap, bitmap_size_in_bits / 8) !=
+      bitmap_size_in_bits / 8)
     return 1;
   if (num == -1)
     printf("index num=root num-bits=%02d\n", num_bits);
   else
     printf("index num=%04d num-bits=%02d\n", num, num_bits);
-  for (int i = 0, ie = bitmap_size / 8; i != ie; ++i) {
+  int any = 0;
+  for (int i = 0, ie = bitmap_size_in_bits / 8; i != ie; ++i) {
     if (!bitmap[i])
       continue;
     for (int bit = 0; bit != 8; ++bit) {
       if (!get_bitmap_bit(bitmap[i], bit))
         continue;
 
+      any = 1;
       int entry_i = i * 8 + bit;
       int offset = entries_offset + index_entry_size * entry_i;
       unsigned char entry[index_entry_size] = {0};
@@ -1115,6 +1124,8 @@ static int dump_index(split2monodb &db, int num) {
         printf("  entry: bits=%s  index=%04d\n", bits, entry_num);
     }
   }
+  if (!any)
+    error("no bits set in index...");
   return 0;
 }
 
