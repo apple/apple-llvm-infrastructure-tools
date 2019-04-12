@@ -18,7 +18,7 @@ mt_split2mono_init() {
         MT_SPLIT2MONO_SHA1=$sha1
         for name in commits index upstreams; do
             local blob
-            blob=$(git ls-tree --full-tree $sha1 -- $name | awk '{print $3}') ||
+            blob=$(git rev-parse $sha1:$name) ||
                 error "could not unpack $sha1 from $ref"
 
             local gitfile
