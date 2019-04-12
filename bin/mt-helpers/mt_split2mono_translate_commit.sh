@@ -228,7 +228,13 @@ mt_split2mono_translate_commit() {
 
     # FIXME: If there's a big history to map, using a stack like this will be
     # very slow.  It would be better to git rev-list --reverse --topo-order.
-    # Maybe that's not too hard to do correctly.
+    # However, what --not arguments do you we use?  Should we do a bisect,
+    # similar to mt_llvm_svn2git_map, to find out?  But given that this is not
+    # expected to be a linear history, how easy is that?
+    #
+    # Maybe we can just collect radars in chunks, going back 100 or so at a
+    # time.  Then rev-list all the found radars in topological order to do the
+    # real work.  As a first cut this stack is fine though.
     mt_split2mono_translate_push "$commit" ||
         error "could not push '$commit' onto the stack"
 
