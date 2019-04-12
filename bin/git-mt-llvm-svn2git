@@ -1,8 +1,9 @@
 #!/bin/bash
+
 . "$(dirname "$0")"/mt-helpers/init.sh
 helper mt_llvm_svn2git
 
-usage() { echo "usage: git $COMMAND <llvm-svn-rev>"; }
+usage() { echo "usage: git $COMMAND_FROM_GIT <llvm-svn-rev>"; }
 
 mt_llvm_svn2git_init &&
 mt_llvm_svn2git "$@"

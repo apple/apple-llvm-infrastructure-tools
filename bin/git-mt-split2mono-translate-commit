@@ -1,0 +1,18 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/mt-helpers/init.sh
+helper mt_split2mono
+helper mt_split2mono_translate_commit
+
+usage() {
+    printf "%s\n"                                                           \
+        "usage: git $COMMAND_FROM_GIT <dir> <commit> [<parent> <pdirs>...]" \
+        "          <dir> <commit> [<parent> <pdirs>...]"                    \
+        "  <dir>       the directory to move to; use \"\" for top-level"    \
+        "  <commit>    commit hash to translate"                            \
+        "  <parent>    overrides first-parent"                              \
+        "  <pdirs>     dirs to take from <parent> instead of \"newest\""
+}
+
+mt_split2mono_init &&
+mt_split2mono_translate_commit "$@"

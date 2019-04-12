@@ -2,6 +2,7 @@
 
 . "$(git --exec-path)/git-sh-setup"
 COMMAND="$(basename "$0")"
+COMMAND_FROM_GIT="${COMMAND#git-}"
 
 mt_register_paths_to_clean_up() {
     if [ -z "$MT_CLEANUP_ONCE" ]; then
@@ -52,12 +53,21 @@ run() {
     fi
 }
 error() {
+    local exit=1
+    if [ "$1" = "--no-exit" ]; then
+        shift
+        exit=0
+    fi
+
     printf "error: %s\n" "$*" >&2
     if is_function usage; then
         printf "\n"
         usage
     fi >&2
-    exit 1
+    if [ $exit -eq 1 ]; then
+        exit 1
+    fi
+    return 1
 }
 
 log() {

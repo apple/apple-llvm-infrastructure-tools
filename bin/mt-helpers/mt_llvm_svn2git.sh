@@ -7,9 +7,9 @@ mt_llvm_svn2git_init() {
     local file
     local ref=refs/mt/svn2git
     local d
-    d="$(run mktemp -d -t mt-temp)" ||
+    d="$(run mktemp -d -t mt-llvm-svn2git)" ||
         error "could not create tempdir"
-    file="$d"/svn2git
+    file="$d"/svn2git.db
     MT_SVN2GIT_FILE="$file"
 
     local sha1 oldsha1 status=0
@@ -57,6 +57,5 @@ mt_llvm_svn2git_insert() {
         error "could not build or find svn2git"
     local count
     [ "$#" -le 0 ] || count="$(run git rev-list --count "$@")"
-    wait $clang || error "could not build svn2git"
     run "$svn2git" insert "$MT_SVN2GIT_FILE" $count
 }
