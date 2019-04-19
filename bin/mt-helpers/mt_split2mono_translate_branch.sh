@@ -28,13 +28,18 @@ mt_split2mono_translate_branch() {
                 ;;
         esac
     done
-    check_upstreams "${upstreams[@]}"
-    check_skips "${skips[@]}"
+    mt_split2mono_check_upstreams "${upstreams[@]}"
+    mt_split2mono_check_refdirs "${refdirs[@]}"
+    mt_split2mono_check_skips "${skips[@]}"
+
+    mt_split2mono_list_new_split_commits "${refdirs[@]}" |
+    mt_split2mono_interleave_commits ||
+        error "failure interleaving commits"
 }
 
 mt_split2mono_check_skips() {
     for s in "$@"; do
-        mt-split2mono "$s" || exit 1
+        mt_split2mono "$s" || exit 1
     done
 }
 
@@ -42,80 +47,55 @@ mt_split2mono_check_upstreams() {
     error "mt_split2mono_check_upstreams not implemented"
 }
 
-
-mt_split2mono_get_split_ref() {
-    git rev-parse refs/mt/branch/split/$1/$2/$3^{commit} 2>/dev/null
-}
-mt_split2mono_set_split_ref() {
-    git update-ref refs/mt/branch/split/$1/$2/$3 $4
+mt_split2mono_check_refdirs() {
+    error "mt_split2mono_check_refdirs not implemented"
 }
 
-# open fifos for each split dir
-fifos="$(mktemp -d)"
-dirs=()
-for rd in ${refdirs[@]}; do
-    r="${rd%:*}"
-    d="${rd##*:}"
-    dirs=( "${dirs[@]}" "$d" )
-    next=$(get_split_ref $branch $d next 2>/dev/null)
-    head=$(get_split_ref $branch $d head 2>/dev/null)
-    fifo="$fifos"/$d
-    mkfifo "$fifo" || exit 1
-    eval "git rev-list --first-parent --reverse $r --not $skips ${next:-$head} >&$fifo" &
-    [ -n "$next" ] && continue
-    if [ -n "$head" ]; then
-        read -u "$fifo" next
-        [ -n "$next" ] && set_split_ref $branch $d next $next
-        continue
-    fi
-    while read -u "$fifo" commit; do
-        mt-lookup-commit $commit >/dev/null && continue
-        set_split_ref $branch $d next $commit
-        set_split_ref $branch $d tail $commit
-        break
+mt_split2mono_list_new_split_commits() {
+    # FIXME: Printing all of them and sorting is really slow, when we could
+    # just take commits one at a time from n FIFOs, choosing the best of the
+    # bunch.  The problem is that bash could run out of file descriptors.
+    local rd r d head fifo
+    for rd in "$@"; do
+        r="${rd%:*}"
+        d="${rd##*:}"
+        head=$(git rev-parse refs/heads/mt/$branch/$d/mt-split 2>/dev/null)
+        fifo="$fifos"/$d
+        mkfifo "$fifo" || exit 1
+        run git log --format="${d:--} %ct %H" \
+            --first-parent --reverse $r --not $skips $head
+    done |
+    sort --stable -n -k 2,2
+}
+
+mt_split2mono_interleave_commits() {
+    local refdirs="$1"
+    local d rd ds ref
+    for rd in "$all_ds"; do
+        d="${rd##*:}"
+        ref=refs/heads/mt/$branch/$d/mt-split
+        run git rev-parse $ref^{commit} >/dev/null 2>&1 ||
+            continue
+        ds="$ds${ds:+ }$d"
     done
-done
+    local ct next head i=0 n=0
+    while read d ct next; do
+        head=$(mt_split2mono_translate_commit $d $next $head $ds) ||
+            error "could not translate $next for $d"
 
-select_next() {
-    local next d date best bestd bestdate=$(( 0x7fffffffffffffff ))
-    for d in ${dirs[@]}; do
-        next=$(get_split_ref $branch $d next) || continue
-        date=$(git log --format=format:%ct $next) || exit 1
-        if [ $date -lt $bestdate ]; then
-            [ -n "$bestd" ] && printf "%s " "$bestd"
-            bestd="$d"
-            best=$next
-            bestdate=$date
-        else
-            printf "%s " "$d"
-        fi
+        ref=refs/heads/mt/$branch/$d/mt-split
+        git rev-parse $ref^{commit} >/dev/null 2>&1 ||
+            ds="$ds${ds:+ }$d"
+        {
+            printf "update %s %s\n" $ref $next
+            printf "update refs/heads/%s %s\n" $branch $head
+        } |
+        git update-ref --stdin || exit 1
+
+        i=$(( $i + 1 ))
+        [ $i -eq 5000 ] || continue
+        n=$(( $n + $i ))
+        i=0
+        printf "    interleaved %8d commits\n" $n
     done
-    # Save the best for last.
-    if [ -n "$best" ]; then
-        printf "%s" $bestd
-        return 0
-    fi
-    return 1
 }
-
-bhead=$(git rev-parse refs/heads/$branch^{commit} 2>/dev/null)
-while true; do
-    ds_best_last=$(select_next) || return 0
-    other_ds="${ds_best_last##* }"
-    nextd="${ds_best_last% *}"
-    next=$(get_split_ref $branch $nextd next)
-    bhead=$(mt-split2mono-translate-commit \
-        $nextd $next $bhead ${bhead:+$other_ds}) ||
-        exit 1
-
-    # update everything
-    head=$next
-    read -u "$fifos"/$nextd new
-    prefix=refs/mt/branch/split/$branch
-    {
-        printf "update %s/next/%s %s %s\n" $prefix $nextd $new $next
-        printf "update %s/head/%s %s\n"    $prefix $nextd $head
-        printf "update refs/heads/%s %s\n" $branch $bhead
-    } |
-    git update-ref --stdin || exit 1
-done

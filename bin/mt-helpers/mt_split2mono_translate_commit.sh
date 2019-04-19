@@ -52,15 +52,14 @@ mt_split2mono_translate_list_split_tree() {
     local splitdir="$1"
     local commit=$2
     local tree
-    if [ -n "$splitdir" ]; then
+    if [ $splitdir = - ]; then
+        # Dereference if this is a root.
+        git ls-tree --full-tree $commit: ||
+            error "could not dereference $commit"
+    else
         tree=$(git rev-parse $commit:) ||
             error "problem with rev-parse"
-        printf "%s %s %s\t%s\n" 040000 tree $tree "$splitdir"
-    else
-        # Dereference if this is a root.
-        #
-        # FIXME: if this split commit deleted something, will we notice?
-        git ls-tree --full-tree $commit
+        printf "%s %s %s\t%s\n" 040000 tree $tree $splitdir
     fi
 }
 
@@ -74,13 +73,13 @@ mt_split2mono_translate_list_tree_with_dups() {
     if [ -z "$fparent" ]; then
         # Unparented monorepo commit, from a history that eventually got merged
         # in.  Just list it.
-        mt_split2mono_translate_list_split_tree "$splitdir" $commit
+        mt_split2mono_translate_list_split_tree $splitdir $commit
         return 0
     fi
     if [ $fparent = "$mparents" ]; then
         # Only one parent.  List its tree, and then override with this tree.
         git ls-tree --full-tree $fparent &&
-            mt_split2mono_translate_list_split_tree "$splitdir" $commit
+            mt_split2mono_translate_list_split_tree $splitdir $commit
         return 0
     fi
 
@@ -93,21 +92,27 @@ mt_split2mono_translate_list_tree_with_dups() {
     # - finally override with the split tree at hand
     #
     # FIXME: not convinced this works for top-level entries that get deleted
-    local  ct  mp  mode  type  sha1  name skip
-    local lct lmp lmode ltype lsha1 lname
+    local  d  ct  mp  mode  type  sha1 name skip in_d
+    local ld lct lmp lmode ltype lsha1
     for mp in $mparents; do
         git ls-tree --full-tree $mp | sed -e "s,^,$mp ,"
     done |
     sort --stable --field-separator='\t' -k2,2 | uniq |
     while read -r mp mode type sha1 name; do
-        # Skip this if it's coming from the split commit.
-        [ "$name" = "$splitdir" ] && continue
+        if [ "$type" = blob ]; then
+            d=-
+        else
+            d=$name
+        fi
 
-        # Print this if it's our first sighting of name.
-        if [ ! "$lname" = "$name" ]; then
+        # Skip this if it's coming from the split commit.
+        [ "$d" = "$splitdir" ] && continue
+
+        # Print this if it's our first sighting of d.
+        if [ ! "$ld" = "$d" ]; then
             # if --first-parent has this, it'll be printed here
             printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
-            lmp=$mp lmode=$mode ltype=$type lsha1=$sha1 lname="$lname"
+            ld=$d lmp=$mp lmode=$mode ltype=$type lsha1=$sha1
             skip= lct=
             continue
         fi
@@ -119,8 +124,8 @@ mt_split2mono_translate_list_tree_with_dups() {
         # If --first-parent wants priority then ignore its competition.
         if [ -z "$skip" ]; then
             skip=0
-            for d in "$@"; do
-                [ "$name" = "$d" ] || continue
+            for in_d in "$@"; do
+                [ "$d" = "$in_d" ] || continue
                 skip=1 && break
             done
         fi
@@ -172,11 +177,11 @@ mt_split2mono_translate_list_tree_with_dups() {
 
         # Print out an override.
         printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
-        lct=$ct lmp=$mp lmode=$mode ltype=$type lsha1=$sha1 lname="$lname"
+        ld=$d lct=$ct lmp=$mp lmode=$mode ltype=$type lsha1=$sha1
     done
 
     # Print out the tree we actually care about.
-    mt_split2mono_translate_list_split_tree "$splitdir" $commit
+    mt_split2mono_translate_list_split_tree $splitdir $commit
 }
 mt_split2mono_translate_list_tree() {
     # Remove duplicate tree entries, treating repeats as overrides.
