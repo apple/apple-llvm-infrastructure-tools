@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. "$(dirname "$0")"/mt-helpers/init.sh
+. "$(dirname "$0")"/../helpers/init.sh
 helper mt_llvm_svn
 helper mt_llvm_svn2git
 helper bisect

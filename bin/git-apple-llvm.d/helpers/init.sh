@@ -3,6 +3,8 @@
 . "$(git --exec-path)/git-sh-setup"
 COMMAND="$(basename "$0")"
 COMMAND_FROM_GIT="${COMMAND#git-}"
+APPLE_LLVM_HELPERS_PATH="$(dirname "$BASH_SOURCE")"
+APPLE_LLVM_BIN_DIR="$(dirname "$APPLE_LLVM_HELPERS_PATH")"/..
 
 mt_register_paths_to_clean_up() {
     if [ -z "$MT_CLEANUP_ONCE" ]; then
@@ -29,7 +31,7 @@ getnextfd() {
 is_function() { [ "$(type -t "$1" 2>/dev/null)" = function ]; }
 helper() {
     is_function "$1" && return 0
-    local path="$(dirname "$0")"/mt-helpers/"$1".sh
+    local path="$APPLE_LLVM_HELPERS_PATH"/"$1".sh
     . "$path" || error "internal: could not include '$path'"
 }
 
