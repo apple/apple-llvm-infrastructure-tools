@@ -9,7 +9,9 @@ mt_llvm_svn_impl() {
         extra=( -e '^author ' -e '^committer ' )
     fi
     local sha1= committer= author=
-    grep -e '^    \(git-svn-id\|llvm-svn\): ' "${extra[@]}" | {
+    # TODO: testcase for not mapping other git-svn-id: urls.
+    local urlstart=https://llvm.org/svn/llvm-project
+    grep -e '^    \(llvm-svn:\|git-svn-id: '$urlstart'\): ' "${extra[@]}" | {
     none=1
     while read key value rest; do
         # TODO: add a testcase for cherry-picks.
@@ -30,7 +32,7 @@ mt_llvm_svn_impl() {
         elif [ "$key" = committer ]; then
             committer="$value $rest"
         else
-            error "unexpected key while parsing raw log"
+            error "unexpected key '$key' while parsing raw log"
         fi
     done
     # TODO: add a testcase for this returning non-zero when there is no output.
@@ -38,7 +40,8 @@ mt_llvm_svn_impl() {
     }
 }
 mt_llvm_svn() {
-    # TODO: testcases for this returning non-zero when there is no output.
-    # TODO: testcases for this returning non-zero when it's a cherry-pick.
+    # TODO: testcase for this returning non-zero when there is no output.
+    # TODO: testcase for this returning non-zero when it's a cherry-pick.
+    # TODO: testcase for not mapping other git-svn-id: urls.
     git rev-list --format=raw -1 "$1" | mt_llvm_svn_impl --check-timestamps
 }
