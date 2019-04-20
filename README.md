@@ -74,7 +74,7 @@ message.  We need to support a few different formats:
 
 `git-mt-llvm-svn2git-map` updates the map from SVN revision numbers
 from [llvm.org](http://llvm.org/) to monorepo commits on
-github/llvm/llvm-project
+github/llvm/llvm-project, filling up the svn2git map.
 
 - pass in a commit from the canonical monorepo, and it will map all
   the commits in its history
@@ -83,14 +83,17 @@ github/llvm/llvm-project
 #### Mapping split repo versions of llvm.org
 
 `git-mt-split2mono-map-llvm` maps split repo open source LLVM commits to their
-canonical monorepo commits.
+canonical monorepo commits, filling up the split2mono map.
 
-Note: this is necessary since it's not safe for `git-mt-split2mono` to just run
-`git-mt-llvm-svn` and `git-mt-llvm-svn2git` (leveraging `git-svn-id:`), since
-without checking ancestry it can't know if this is the original commit or a
-cherry-pick.
+Note: it's not clear if we need to use this.
 
-FIXME: unless, is it safe to compare commit date and author date?
+- It *looks* like we can detect cherry-picks in `git-mt-llvm-svn` by comparing
+  the committer and author, which means it's safe for `git-mt-split2mono` to
+  defer to `git-mt-llvm-svn` and `git-mt-llvm-svn2git` (leveraging
+  `git-svn-id:`).  But maybe we'll find a counterexample.
+- It *seems* like it's not valuable to explicitly map split LLVM commit
+  histories, which would bloat the maps unnecessarily.  But perhaps
+  `git-mt-split2mono` is too slow without this.
 
 #### Dealing with downstream, split-repo branches
 
