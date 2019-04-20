@@ -44,6 +44,8 @@ static int error(const char *msg) {
 }
 static int usage(const char *msg, const char *cmd) {
   error(msg);
+  if (const char *slash = strrchr(cmd, '/'))
+    cmd = slash + 1;
   fprintf(stderr,
           "usage: %s insert <db> [<count>]\n"
           "       %s insert <db> <rev> <sha1>\n"

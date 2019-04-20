@@ -1,6 +1,10 @@
 # vim: ft=sh
 
+[ "${TRACE_GIT_SH_SETUP:-0}" = 0 ] || set -o xtrace
 . "$(git --exec-path)/git-sh-setup"
+[ "${TRACE_GIT_SH_SETUP:-0}" = 0 ] || set +o xtrace
+[ "${TRACE:-0}" = 0 ] || set -o xtrace
+
 COMMAND="$(basename "$0")"
 COMMAND_DIR="$(dirname "$0")"
 APPLE_LLVM_HELPERS_PATH="$(dirname "$BASH_SOURCE")"
@@ -32,7 +36,7 @@ is_function() { [ "$(type -t "$1" 2>/dev/null)" = function ]; }
 helper() {
     is_function "$1" && return 0
     local path="$APPLE_LLVM_HELPERS_PATH"/"$1".sh
-    . "$path" || error "internal: could not include '$path'"
+    . "$path" || die "internal: could not include '$path'"
 }
 
 print_cmdname() {

@@ -25,8 +25,10 @@ mt_split2mono_translate_branch() {
                 else
                     refdirs=( "${refdirs[@]}" "$1" )
                 fi
+                pos=1
                 ;;
         esac
+        shift
     done
     [ -n "$branch" ] || error "missing <branch>"
     [ ${#refdirs[@]} -gt 0 ] || error "missing <ref>:<dir>"

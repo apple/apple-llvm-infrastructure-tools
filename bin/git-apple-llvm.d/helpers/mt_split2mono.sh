@@ -35,7 +35,10 @@ mt_split2mono_init() {
     split2mono="$(build_executable split2mono)" ||
         error "could not build or find split2mono"
     MT_SPLIT2MONO_SHA1=0000000000000000000000000000000000000000
-    run "$split2mono" create "$MT_SPLIT2MONO_DB"
+    run mkdir "$MT_SPLIT2MONO_DB" ||
+        error "could not create '$MT_SPLIT2MONO_DB'"
+    run "$split2mono" create "$MT_SPLIT2MONO_DB" ||
+        error "could not initialize split2mono"
 }
 
 mt_split2mono_save() {
