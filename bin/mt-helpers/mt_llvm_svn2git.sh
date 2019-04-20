@@ -13,11 +13,10 @@ mt_llvm_svn2git_init() {
     MT_SVN2GIT_FILE="$file"
 
     local sha1 oldsha1 status=0
-    local gitdir="$PWD"
     if sha1=$(run --hide-errors git rev-parse $ref^{blob}); then
         MT_SVN2GIT_SHA1=$sha1
         local gitfile=$(cd "$d" &&
-            run git --git-dir "$gitdir" unpack-file $sha1) ||
+            run git --git-dir "$GIT_DIR" unpack-file $sha1) ||
             error "could not unpack $sha1 from $ref"
         run mv "$d/$gitfile" "$file" ||
             error "could not rename unpacked $sha1 from $ref"
@@ -59,22 +58,4 @@ mt_llvm_svn2git_insert() {
     local count
     [ "$#" -le 0 ] || count="$(run git rev-list --count "$@")"
     run "$svn2git" insert "$MT_SVN2GIT_FILE" $count
-}
-
-MT_LLVM_SVN2GIT_SKIP=afb1d31c54204b7f6c11e4f8815d203bcf9cffa3
-mt_llvm_svn2git_is_commit_mapped() {
-    local commit="$1"
-
-    # Clump skipped commits with their parents.
-    local rev
-    if [ "$commit" = $MT_LLVM_SVN2GIT_SKIP ]; then
-        rev=$(mt_llvm_svn $commit^) ||
-            error "unexpected missing SVN rev for $commit^"
-    elif [ -n "$commit" ]; then
-        rev=$(mt_llvm_svn $commit) ||
-            error "unexpected missing SVN rev for $commit"
-    fi
-
-    # TODO: write testcase that would catch passing "$1" here instead of "$rev".
-    mt_llvm_svn2git "$rev" >/dev/null 2>&1
 }

@@ -75,11 +75,8 @@ static int error(const char *msg) {
 
 static int usage(const char *msg, const char *cmd) {
   error(msg);
-  if (const char *slash = strrchr(cmd, '/'))
-    cmd = slash + 1;
   fprintf(stderr,
-          "usage: %s create <dbdir>\n"
-          "       %s lookup <dbdir> <split>\n"
+          "usage: %s lookup <dbdir> <split>\n"
           "       %s upstream <dbdir> <upstream-dbdir>\n"
           "       %s insert <dbdir> [<split> <mono>]\n"
           "       %s dump <dbdir>\n"
@@ -87,7 +84,7 @@ static int usage(const char *msg, const char *cmd) {
           "   <dbdir>/upstreams: merged upstreams (text)\n"
           "   <dbdir>/commits: translated commits (bin)\n"
           "   <dbdir>/index: translated commits (bin)\n",
-          cmd, cmd, cmd, cmd, cmd);
+          cmd, cmd, cmd, cmd);
   return 1;
 }
 
@@ -444,7 +441,7 @@ int split2monodb::opendb(const char *dbdir) {
     has_error |= db.is_read_only ? 1 : error("could not open <dbdir>/index");
   if (upstreamsfd == -1)
     has_error |=
-        db.is_read_only ? 1 : error("could not open <dbdir>/upstreams");
+        db.is_read_only ? 1 : error("could not open <dbdir>/upstremas");
   if (has_error) {
     close(indexfd);
     close(commitsfd);
@@ -626,8 +623,7 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
   char mono[41] = {0};
   if (lookup_commit(db, split, mono))
     return 1;
-  // TODO: add a test for the exit status.
-  return printf("%s\n", mono) != 41;
+  return printf("%s\n", mono);
 }
 
 static int
@@ -905,15 +901,6 @@ static int main_insert(const char *cmd, int argc, const char *argv[]) {
   return usage("insert: wrong number of positional arguments", cmd);
 }
 
-static int main_create(const char *cmd, int argc, const char *argv[]) {
-  if (argc != 1)
-    return usage("create: wrong number of positional arguments", cmd);
-  split2monodb db;
-  if (db.opendb(argv[0]))
-    return usage("create: failed to open <dbdir>", cmd);
-  return 0;
-}
-
 static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   if (argc != 2)
     return usage("upstream: wrong number of positional arguments", cmd);
@@ -1094,12 +1081,19 @@ static int main_dump(const char *cmd, int argc, const char *argv[]) {
 int main(int argc, const char *argv[]) {
   if (argc < 2)
     return usage("missing command", argv[0]);
+  if (!strcmp(argv[1], "lookup"))
+    return main_lookup(argv[0], argc - 2, argv + 2);
+  if (!strcmp(argv[1], "insert"))
+    return main_insert(argv[0], argc - 2, argv + 2);
+  if (!strcmp(argv[1], "upstream"))
+    return main_upstream(argv[0], argc - 2, argv + 2);
+  if (!strcmp(argv[1], "dump"))
+    return main_dump(argv[0], argc - 2, argv + 2);
 #define SUBMAIN(X)                                                             \
   do {                                                                         \
     if (!strcmp(argv[1], #X))                                                  \
       return main_##X(argv[0], argc - 2, argv + 2);                            \
   } while (false)
-  SUBMAIN(create);
   SUBMAIN(lookup);
   SUBMAIN(insert);
   SUBMAIN(upstream);

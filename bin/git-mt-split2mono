@@ -1,0 +1,9 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/mt-helpers/init.sh
+helper mt_split2mono
+
+usage() { echo "usage: git $COMMAND_FROM_GIT <sha1>"; }
+
+mt_split2mono_init &&
+mt_split2mono "$@"

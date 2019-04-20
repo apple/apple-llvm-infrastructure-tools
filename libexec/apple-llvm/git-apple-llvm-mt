@@ -1,6 +1,0 @@
-#!/bin/bash
-
-NONGIT_OK=1
-. "$(dirname "$0")"/helpers/init.sh &&
-helper forward &&
-forward "$@"
