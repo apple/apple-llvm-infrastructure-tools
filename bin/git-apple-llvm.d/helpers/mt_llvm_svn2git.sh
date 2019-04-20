@@ -59,3 +59,20 @@ mt_llvm_svn2git_insert() {
     [ "$#" -le 0 ] || count="$(run git rev-list --count "$@")"
     run "$svn2git" insert "$MT_SVN2GIT_FILE" $count
 }
+
+MT_LLVM_SVN2GIT_SKIP=afb1d31c54204b7f6c11e4f8815d203bcf9cffa3
+mt_llvm_svn2git_is_commit_mapped() {
+    local commit="$1"
+
+    # Clump skipped commits with their parents.
+    local rev
+    if [ "$commit" = $MT_LLVM_SVN2GIT_SKIP ]; then
+        rev=$(mt_llvm_svn $commit^) ||
+            error "unexpected missing SVN rev for $commit^"
+    elif [ -n "$commit" ]; then
+        rev=$(mt_llvm_svn $commit) ||
+            error "unexpected missing SVN rev for $commit"
+    fi
+
+    mt_llvm_svn2git "$1" >/dev/null 2>&1
+}

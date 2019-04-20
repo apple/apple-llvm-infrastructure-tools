@@ -85,9 +85,10 @@ github/llvm/llvm-project
 `git-mt-split2mono-map-llvm` maps split repo open source LLVM commits to their
 canonical monorepo commits.
 
-Note that grabbing a revision from `git-svn-id:` is not sufficient, since
-without checking ancestry the tool can't know if this is the original commit or
-a cherry-pick.
+Note: this is necessary since it's not safe for `git-mt-split2mono` to just run
+`git-mt-llvm-svn` and `git-mt-llvm-svn2git` (leveraging `git-svn-id:`), since
+without checking ancestry it can't know if this is the original commit or a
+cherry-pick.
 
 FIXME: unless, is it safe to compare commit date and author date?
 
@@ -97,7 +98,8 @@ There are a few tools sketched out so far:
 
 `git-mt-split2mono`, to look up an existing mapping
 
-- Leverage `git-mt-llvm-svn2git` for upstream commits?
+- Expects split commits from upstream to have been mapped using
+  `git-mt-split2mono-map-llvm`.
 
 `git-mt-split2mono-translate-commit`, to create monorepo commits out of split
 repo commits

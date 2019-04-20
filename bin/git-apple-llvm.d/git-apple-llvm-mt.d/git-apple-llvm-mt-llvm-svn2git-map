@@ -25,35 +25,16 @@ run grep -q "^    llvm-svn: $REV\$" ||
 mt_llvm_svn2git_init || exit 1
 
 # Check if this is mapped.
-is_mapped() { mt_llvm_svn2git "$1" >/dev/null ;}
-if is_mapped $REV; then
+if mt_llvm_svn2git $REV >/dev/null;  then
     log "$COMMIT is already mapped to r$REV"
     exit 0
 fi
 
-# This commit has no SVN revision.
-SKIP=afb1d31c54204b7f6c11e4f8815d203bcf9cffa3
-
 # Binary search for the first one not mapped.
 # TODO: add a testcase for r1.
-# TODO: add a testcase for SKIP.
+# TODO: add a testcase for MT_LLVM_SVN2GIT_SKIP
 log "Looking for the first unmapped commit..."
-is_commit_mapped() {
-    local commit="$1"
-
-    # Clump skipped commits with their parents.
-    local rev
-    if [ "$commit" = $SKIP ]; then
-        rev=$(mt_llvm_svn $commit^) ||
-            error "unexpected missing SVN rev for $commit^"
-    elif [ -n "$commit" ]; then
-        rev=$(mt_llvm_svn $commit) ||
-            error "unexpected missing SVN rev for $commit"
-    fi
-
-    is_mapped $rev >/dev/null 2>&1
-}
-LOW=$(bisect is_commit_mapped $COMMIT^) || exit 1
+LOW=$(bisect mt_llvm_svn2git_is_commit_mapped $COMMIT^) || exit 1
 
 # Update all the refs.
 log "Mapping commits..."
