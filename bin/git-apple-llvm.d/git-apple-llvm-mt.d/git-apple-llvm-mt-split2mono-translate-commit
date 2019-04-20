@@ -14,5 +14,8 @@ usage() {
         "  <pdirs>     dirs to take from <parent> instead of \"newest\""
 }
 
+[ "$#" -ge 1 ] || error "missing <dir> <commit>"
+[ "$#" -ge 2 ] || error "missing <commit>"
+
 mt_split2mono_init &&
 mt_split2mono_translate_commit "$@"

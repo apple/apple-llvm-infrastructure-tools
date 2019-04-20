@@ -28,6 +28,8 @@ mt_split2mono_translate_branch() {
                 ;;
         esac
     done
+    [ -n "$branch" ] || error "missing <branch>"
+    [ ${#refdirs[@]} -gt 0 ] || error "missing <ref>:<dir>"
     mt_split2mono_check_upstreams "${upstreams[@]}"
     mt_split2mono_check_refdirs "${refdirs[@]}"
     mt_split2mono_check_skips "${skips[@]}"

@@ -11,5 +11,8 @@ usage() {
         "  and map them to the canonical commit in the svn2git.db"
 }
 
+[ "$#" -ge 1 ] || error "missing <commit-ish>"
+[ "$#" -eq 1 ] || error "too many positional args"
+
 mt_split2mono_init &&
 mt_split2mono_map_llvm "$@"

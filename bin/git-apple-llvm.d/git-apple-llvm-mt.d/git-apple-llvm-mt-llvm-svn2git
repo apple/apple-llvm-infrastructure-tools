@@ -5,5 +5,8 @@ helper mt_llvm_svn2git
 
 usage() { echo "usage: $(print_cmdname) <llvm-svn-rev>"; }
 
+[ "$#" -ge 1 ] || error "missing <llvm-svn-rev>"
+[ "$#" -eq 1 ] || error "too many positional args"
+
 mt_llvm_svn2git_init &&
 mt_llvm_svn2git "$@"
