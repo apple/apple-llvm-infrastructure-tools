@@ -15,4 +15,5 @@ usage() {
 [ "$#" -eq 1 ] || error "too many positional args"
 
 mt_split2mono_init &&
-mt_split2mono_map_llvm "$@"
+mt_split2mono_map_llvm "$@" &&
+mt_split2mono_save

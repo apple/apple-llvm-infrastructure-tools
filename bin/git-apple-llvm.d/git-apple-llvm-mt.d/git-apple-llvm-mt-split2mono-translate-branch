@@ -26,4 +26,5 @@ usage() {
 [ $# -ge 2 ] || error "missing <ref>:<dir>..."
 
 mt_split2mono_init &&
-mt_split2mono_translate_branch "$@"
+mt_split2mono_translate_branch "$@" &&
+mt_split2mono_save

@@ -18,4 +18,5 @@ usage() {
 [ "$#" -ge 2 ] || error "missing <commit>"
 
 mt_split2mono_init &&
-mt_split2mono_translate_commit "$@"
+mt_split2mono_translate_commit "$@" &&
+mt_split2mono_save
