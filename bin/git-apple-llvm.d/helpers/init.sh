@@ -3,6 +3,7 @@
 . "$(git --exec-path)/git-sh-setup"
 COMMAND="$(basename "$0")"
 COMMAND_FROM_GIT="${COMMAND#git-}"
+COMMAND_DIR="$(dirname "$0")"
 APPLE_LLVM_HELPERS_PATH="$(dirname "$BASH_SOURCE")"
 APPLE_LLVM_BIN_DIR="$(dirname "$APPLE_LLVM_HELPERS_PATH")"/..
 

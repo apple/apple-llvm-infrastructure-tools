@@ -1,1 +1,5 @@
-git-apple-llvm.d/forward.sh
+#!/bin/bash
+
+. "$(dirname "$0")"/"$(basename "$0")".d/helpers/init.sh &&
+helper forward &&
+forward "$@"
