@@ -6,7 +6,7 @@ helper mt_split2mono_translate_branch
 
 usage() {
     printf "%s\n"                                                          \
-        " usage: git $COMMAND_FROM_GIT <branch> "                          \
+        " usage: $(print_cmdname) <branch> "                               \
         "           [--upstream <upstream>]..."                            \
         "           [--skip <skip>]..."                                    \
         "           <ref>:<dir>..."                                        \

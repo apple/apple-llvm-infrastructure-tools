@@ -3,7 +3,7 @@
 . "$(dirname "$0")"/../helpers/init.sh
 helper mt_llvm_svn2git
 
-usage() { echo "usage: git $COMMAND_FROM_GIT <llvm-svn-rev>"; }
+usage() { echo "usage: $(print_cmdname) <llvm-svn-rev>"; }
 
 mt_llvm_svn2git_init &&
 mt_llvm_svn2git "$@"

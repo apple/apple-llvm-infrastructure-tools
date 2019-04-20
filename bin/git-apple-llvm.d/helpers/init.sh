@@ -2,7 +2,6 @@
 
 . "$(git --exec-path)/git-sh-setup"
 COMMAND="$(basename "$0")"
-COMMAND_FROM_GIT="${COMMAND#git-}"
 COMMAND_DIR="$(dirname "$0")"
 APPLE_LLVM_HELPERS_PATH="$(dirname "$BASH_SOURCE")"
 APPLE_LLVM_BIN_DIR="$(dirname "$APPLE_LLVM_HELPERS_PATH")"/..
@@ -34,6 +33,27 @@ helper() {
     is_function "$1" && return 0
     local path="$APPLE_LLVM_HELPERS_PATH"/"$1".sh
     . "$path" || error "internal: could not include '$path'"
+}
+
+print_cmdname() {
+    local name part
+    for part in ${COMMAND//-/ }; do
+        case "$name" in
+            "")
+                name="$part"
+                ;;
+            git|"git apple-llvm"|"git apple-llvm mt")
+                name="$name $part"
+                ;;
+            "git apple-llvm am"|"git apple-llvm ci")
+                name="$name $part"
+                ;;
+            *)
+                name="$name-$part"
+                ;;
+        esac
+    done
+    printf "%s\n" "$name"
 }
 
 showpids() { [ ! "${SHOWPIDS:-0}" = 0 ]; }

@@ -5,7 +5,7 @@ helper mt_llvm_svn
 helper mt_llvm_svn2git
 helper bisect
 
-usage() { echo "usage: git $COMMAND_FROM_GIT <commit>"; }
+usage() { echo "usage: $(print_cmdname) <commit>"; }
 
 # Make sure this has a rev.
 COMMIT=$(run --hide-errors git rev-parse "$1"^{commit}) ||

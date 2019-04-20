@@ -12,18 +12,8 @@ forward() {
         exec "$CONSTRUCTED" "$@"
     fi
 
-    # Figure out name.
-    local name part
-    for part in ${COMMAND//-/ }; do
-        if [ "$name" = "git apple" -a "$part" = llvm ]; then
-            name="$name-$part"
-            continue
-        fi
-        name="$name${name:+ }$part"
-    done
-
     # List subcommands
-    printf "%s:\n" "$name"
+    printf "%s:\n" "$(print_cmdname)"
     (cd "$d" && ls -d "$COMMAND"-*) |
     grep -v '\.d$' |
     sed -e s/^$COMMAND-/'    '/
