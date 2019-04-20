@@ -75,6 +75,17 @@ github/llvm/llvm-project
   the commits in its history
 - subsequent calls to `git-mt-llvm-svn2git` will be able to answer queries
 
+#### Mapping split repo versions of llvm.org
+
+`git-mt-split2mono-map-llvm` maps split repo open source LLVM commits to their
+canonical monorepo commits.
+
+Note that grabbing a revision from `git-svn-id:` is not sufficient, since
+without checking ancestry the tool can't know if this is the original commit or
+a cherry-pick.
+
+FIXME: unless, is it safe to compare commit date and author date?
+
 #### Dealing with downstream, split-repo branches
 
 There are a few tools sketched out so far:
