@@ -1,0 +1,43 @@
+#!/bin/bash
+
+APPLE_SPLIT_REPOS="clang clang-tools-extra compiler-rt libcxx lldb llvm"
+print_repos() {
+    echo github/llvm git@github.com:llvm/llvm-project.git
+    local d
+    for d in $APPLE_SPLIT_REPOS; do
+        echo split/apple/$d git@github.com:apple/swift-$d.git
+    done
+}
+
+run() {
+    echo "$*" >&2
+    "$@" || exit 1
+}
+
+mt_setup() {
+    [ -d repo ] ||
+        run git init --bare repo
+    print_repos | {
+        local forks= sleepnext=0
+        while read name url; do
+            # Wait a second if the previous iteration needed a fresh clone.
+            sleep $sleepnext
+            [ -d "$clone" ]
+            sleep_next=$?
+
+            clone=repo/clones/$name.git
+            if [ -d "$clone" ]; then
+                run git -C $clone remote update
+            else
+                run mkdir -p $(dirname $clone)
+                run git clone --mirror $url $clone
+                run git -C repo remote add $name $PWD/$clone
+            fi &
+            forks="$forks $!"
+        done
+        wait "$forks"
+    } &&
+    run git -C repo fetch --no-tags --all
+}
+
+mt_setup

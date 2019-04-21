@@ -7,6 +7,15 @@ compiled on-demand.
 
 ## mt: Tools for the monorepo transition
 
+### Setting up a working transition workspace
+
+`git apple-llvm mt setup` will set up a working transition workspace.  It
+does the following:
+
+- Clones or updates all the relevant repos.
+
+Eventually it should do more.  Also configuration should be split out.
+
 ### Maps maintained in refs
 
 A collection of tools for working downstream with the LLVM project.
