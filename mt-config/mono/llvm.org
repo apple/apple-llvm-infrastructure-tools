@@ -1,1 +1,0 @@
-github/llvm git@github.com:llvm/llvm-project.git

@@ -1,0 +1,44 @@
+repo github/llvm                   git@github.com:llvm/llvm-project.git
+repo split/apple/clang             git@github.com:apple/swift-clang.git
+repo split/apple/clang-tools-extra git@github.com:apple/swift-clang-tools-extra.git
+repo split/apple/compiler-rt       git@github.com:apple/swift-compiler-rt.git
+repo split/apple/libcxx            git@github.com:apple/swift-libcxx.git
+repo split/apple/lldb              git@github.com:apple/swift-lldb.git
+repo split/apple/llvm              git@github.com:apple/swift-llvm.git
+
+branch apple/master
+dir    apple/master clang             split/apple/clang/upstream-with-swift
+dir    apple/master clang-tools-extra split/apple/clang-tools-extra/upstream-with-swift
+dir    apple/master compiler-rt       split/apple/compiler-rt/upstream-with-swift
+dir    apple/master libcxx            split/apple/libcxx/upstream-with-swift
+dir    apple/master llvm              split/apple/llvm/upstream-with-swift
+
+branch apple/stable/20190117
+dir    apple/stable/20190117 clang             split/apple/clang/swift-5.1-branch
+dir    apple/stable/20190117 clang-tools-extra split/apple/clang-tools-extra/swift-5.1-branch
+dir    apple/stable/20190117 compiler-rt       split/apple/compiler-rt/swift-5.1-branch
+dir    apple/stable/20190117 libcxx            split/apple/libcxx/swift-5.1-branch
+dir    apple/stable/20190117 llvm              split/apple/llvm/swift-5.1-branch
+
+branch swift/5.1-branch
+repeat swift/5.1-branch apple/stable/20190117
+dir    swift/5.1-branch lldb split/apple/lldb/swift-5.1-branch
+
+branch swift/master
+dir    swift/master clang             split/apple/clang/stable
+dir    swift/master clang-tools-extra split/apple/clang-tools-extra/stable
+dir    swift/master compiler-rt       split/apple/compiler-rt/stable
+dir    swift/master libcxx            split/apple/libcxx/stable
+dir    swift/master llvm              split/apple/llvm/stable
+dir    swift/master lldb              split/apple/lldb/stable
+
+branch swift/master-next
+repeat swift/master-next apple/master
+dir    swift/master-next lldb split/apple/lldb/upstream-with-swift
+
+generate 0000 mapping  github/llvm
+generate 0010 branch   apple/master
+generate 0020 branch   apple/stable/20190117
+generate 0030 branch   swift/5.1-branch
+generate 0040 branch   swift/master
+generate 0050 branch   swift/master-next

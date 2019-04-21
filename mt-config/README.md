@@ -1,0 +1,82 @@
+# Format of mt-config files
+
+mt-config files consists of declarations of:
+
+- `repo`, for remote repositories;
+- `branch`, for branches to generate;
+- `repeat`, for repeating commits from another generated branch;
+- `dir`, for declaring which remote branches to use for directory content; and
+- `generate`, for declaring what to generate.
+
+## `repo`: Declaring a repository
+
+Format:
+
+```
+repo <name> <url>
+```
+
+where `<name>` is the local name for the remote and `<url>` is its URL.
+
+## `branch`: Declaring a branch to generate
+
+Format:
+
+```
+branch <name>
+```
+
+where `<name>` is the name of the branch to generate, interleaving commits from
+the associated `<dir>` and `<repeat>` declarations.
+
+### `repeat`: Interleaving one generated branch's commits into another
+
+Format:
+
+```
+repeat <branch> <upstream>
+```
+
+Every time there is a commit to `<upstream>`, generate a merge commit on
+`<branch>` that pulls it in, excluding any changes matching `dir` directives.
+
+This can be useful to generate consistent histories "as if" an automerger had
+been pulling in all changes from an upstream branch, when in fact some
+repositories had a single branch being used for two purposes.
+
+### `dir`: Generating commits from a split repo
+
+Format:
+
+```
+dir <branch> ( <name> | '-' ) <source>
+```
+
+`dir` declares the repositories to interleave to generate `<branch>`.  The
+commits are taken from `<source>`, which is expected to be a commitish (branch,
+tag, commit hash, etc.) from one of the `repo` declarations, and interleaved into `<branch>` at the directory named `<name>/`.
+
+`-` can be given instead of `<name>`, which cause `<source>`'s contents to be
+"dereferenced" and put at the root.  This is intended for downstream repos of
+<https://git.llvm.org/git/monorepo-root.git>.  It's recommended that these
+repos only have blobs; all subdirectories should be in a separate split
+repository.
+
+## `generate`: What to do, and in what order
+
+Format:
+
+```
+generate <sort> <type> <object>
+```
+
+`generate` declares what to do, critically specifying an order of action.  The
+declared actions will be completed in sorted order.  `<sort>` is designed to be
+a `0`-padded number.
+
+The currently supported values for `<type>` are:
+
+- `<mapping>`: generate an svn2git mapping from all the branches in the remote
+  named `<object>`.
+- `<branch>`: generate a branch named `<branch>`, using the associated
+  `branch`, `repeat`, and `dir` declarations.

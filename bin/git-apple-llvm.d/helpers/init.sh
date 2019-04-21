@@ -100,3 +100,21 @@ error() {
 log() {
     printf "%s\n" "$*" >&2
 }
+
+parse_cmdline_option() {
+    local param="$1"
+    local var="$2"
+    shift 2
+    [ "${1%%=*}" = "$param" ] ||
+        error "internal: expected '$1' to be '$param[=*]'"
+    local value ret
+    if [ "$param" = "$1" ]; then
+        value="$2"
+        ret=2
+    else
+        value="${1#*=}"
+        ret=1
+    fi
+    eval "$var=\"\$value\""
+    return $ret
+}
