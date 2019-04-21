@@ -2,8 +2,8 @@
 
 . "$(dirname $0)"/../helpers/init.sh
 
-APPLE_LLVM_ETC_MT="$APPLE_LLVM_BIN_DIR/../etc/mt"
-print_repos() { find "$APPLE_LLVM_ETC_MT" -type f | xargs cat; }
+APPLE_LLVM_MT_CONFIG="$APPLE_LLVM_BIN_DIR/../mt-config"
+print_repos() { find "$APPLE_LLVM_MT_CONFIG" -type f | xargs cat; }
 
 run() {
     echo "$*" >&2
