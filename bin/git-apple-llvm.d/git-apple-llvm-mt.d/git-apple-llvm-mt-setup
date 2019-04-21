@@ -1,13 +1,9 @@
 #!/bin/bash
 
-APPLE_SPLIT_REPOS="clang clang-tools-extra compiler-rt libcxx lldb llvm"
-print_repos() {
-    echo github/llvm git@github.com:llvm/llvm-project.git
-    local d
-    for d in $APPLE_SPLIT_REPOS; do
-        echo split/apple/$d git@github.com:apple/swift-$d.git
-    done
-}
+. "$(dirname $0)"/../helpers/init.sh
+
+APPLE_LLVM_ETC_MT="$APPLE_LLVM_BIN_DIR/../etc/mt"
+print_repos() { find "$APPLE_LLVM_ETC_MT" -type f | xargs cat; }
 
 run() {
     echo "$*" >&2
@@ -35,7 +31,7 @@ mt_setup() {
             fi &
             forks="$forks $!"
         done
-        wait "$forks"
+        wait $forks
     } &&
     run git -C repo fetch --no-tags --all
 }
