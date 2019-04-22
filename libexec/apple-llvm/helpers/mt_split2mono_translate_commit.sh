@@ -143,7 +143,7 @@ mt_split2mono_translate_list_tree_with_dups() {
         # not the final llvm-project.
         #
         # Note: An obvious alternative is to blindly take the most recent
-        # commit (includuing merges!).  However, this will do the wrong thing
+        # commit (including merges!).  However, this will do the wrong thing
         # in a common case:
         #
         #   - tree entry: a directory, D, in github/llvm/llvm-project that
