@@ -64,6 +64,7 @@ mt_split2mono_check_refdirs() {
     true
 }
 
+mt_split2mono_is_new_commit() { mt_split2mono "$@" >/dev/null; }
 mt_split2mono_list_new_split_commits() {
     local branch="$1"
     shift
@@ -76,8 +77,7 @@ mt_split2mono_list_new_split_commits() {
         d="${rd##*:}"
         head=$(git rev-parse --verify \
             refs/heads/mt/$branch/$d/mt-split^{commit} 2>/dev/null) ||
-            head=$(bisect mt_split2mono $r)
-        # FIXME: somehow head is getting set to two hashes here....
+            head=$(bisect mt_split2mono_is_new_commit $r)
         run git log --format="${d:--} %ct %H" \
             --first-parent --reverse $r --not $head
     done |
