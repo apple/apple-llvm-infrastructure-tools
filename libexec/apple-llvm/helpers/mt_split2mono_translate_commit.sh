@@ -214,9 +214,28 @@ mt_split2mono_translate_commit_tree() {
         pcmd=( "${pcmd[@]}" -p $mp )
     done
 
+    # Extract committer and author information.
+    # TODO: add a test for committer and author information.
+    local ad an ae cd cn ce
+    ad="$(git log -1 --date=raw --format="%ad" $commit)" ||
+        error "could not extract author date from '$commit'"
+    an="$(git log -1 --date=raw --format="%an" $commit)" ||
+        error "could not extract author name from '$commit'"
+    ae="$(git log -1 --date=raw --format="%ae" $commit)" ||
+        error "could not extract author email from '$commit'"
+    cd="$(git log -1 --date=raw --format="%cd" $commit)" ||
+        error "could not extract committer date from '$commit'"
+    cn="$(git log -1 --date=raw --format="%cn" $commit)" ||
+        error "could not extract committer name from '$commit'"
+    ce="$(git log -1 --date=raw --format="%ce" $commit)" ||
+        error "could not extract committer email from '$commit'"
+
     git log -1 --format=%B $commit |
     git interpret-trailers "${trailers[@]}" |
-    git commit-tree "${pcmd[@]}" $newtree
+    GIT_AUTHOR_NAME="$an" GIT_COMMITTER_NAME="$cn" \
+    GIT_AUTHOR_DATE="$ad" GIT_COMMITTER_DATE="$cd" \
+    GIT_AUTHOR_EMAIL="$ae" GIT_COMMITTER_EMAIL="$ce" \
+    run git commit-tree "${pcmd[@]}" $newtree
 }
 
 mt_split2mono_translate_commit() {
