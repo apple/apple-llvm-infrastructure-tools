@@ -74,5 +74,6 @@ mt_llvm_svn2git_is_commit_mapped() {
             error "unexpected missing SVN rev for $commit"
     fi
 
-    mt_llvm_svn2git "$1" >/dev/null 2>&1
+    # TODO: write testcase that would catch passing "$1" here instead of "$rev".
+    mt_llvm_svn2git "$rev" >/dev/null 2>&1
 }
