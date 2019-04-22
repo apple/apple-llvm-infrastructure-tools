@@ -115,9 +115,16 @@ mt_split2mono_interleave_commits() {
         git update-ref --stdin || exit 1
 
         i=$(( $i + 1 ))
-        [ $i -eq 5000 ] || continue
+        [ $i -eq 50 ] || continue
+
+        # Give a progress update.
         n=$(( $n + $i ))
         i=0
         printf "    interleaved %8d commits\n" $n
     done
+
+    # Give a final count.
+    n=$(( $n + $i ))
+    [ $i -eq 0 ] ||
+        printf "    interleaved %8d commits\n" $n
 }
