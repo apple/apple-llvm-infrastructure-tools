@@ -71,15 +71,15 @@ mt_split2mono_list_new_split_commits() {
     # FIXME: Printing all of them and sorting is really slow, when we could
     # just take commits one at a time from n FIFOs, choosing the best of the
     # bunch.  The problem is that bash could run out of file descriptors.
-    local rd r d head fifo
+    local rd r d head not
     for rd in "$@"; do
         r="${rd%:*}"
         d="${rd##*:}"
         head=$(git rev-parse --verify \
-            refs/heads/mt/$branch/$d/mt-split^{commit} 2>/dev/null) ||
-            head=$(bisect mt_split2mono_is_new_commit $r)
+            refs/heads/mt/$branch/$d/mt-split^{commit} 2>/dev/null)
+        not=$(bisect mt_split2mono_is_new_commit $r "$head")
         run git log --format="${d:--} %ct %H" \
-            --first-parent --reverse $r --not $head
+            --first-parent --reverse $r --not $not
     done |
     sort --stable -n -k 2,2
 }

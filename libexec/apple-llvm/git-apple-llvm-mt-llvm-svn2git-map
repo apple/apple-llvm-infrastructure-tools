@@ -34,13 +34,13 @@ fi
 # TODO: add a testcase for r1.
 # TODO: add a testcase for MT_LLVM_SVN2GIT_SKIP
 log "Looking for the first unmapped commit..."
-LOW=$(bisect mt_llvm_svn2git_is_commit_mapped $COMMIT^) || exit 1
+NOT="$(bisect mt_llvm_svn2git_is_commit_mapped $COMMIT^)" || exit 1
 
 # Update all the refs.
 log "Mapping commits..."
 
 # TODO: add a testcase for searching exactly one commit.
-REVLIST_ARGS=( $COMMIT --not $LOW )
+REVLIST_ARGS=( $COMMIT --not $NOT )
 run git rev-list --reverse --format=raw "${REVLIST_ARGS[@]}" |
 mt_llvm_svn_impl --append-commit |
 mt_llvm_svn2git_insert "${REVLIST_ARGS[@]}"

@@ -18,13 +18,14 @@ mt_split2mono_map_llvm() {
         error "LLVM revision '$rev' (a.k.a. '$split') is not yet mapped"
 
     log "Looking for the first unmapped commit..."
-    LOW=$(bisect mt_llvm_svn2git_is_commit_mapped $head^) || exit 1
+    local not
+    not=$(bisect mt_llvm_svn2git_is_commit_mapped $head^) || exit 1
 
     # Update all the refs.
     log "Mapping commits..."
 
     local mono
-    run git rev-list --reverse $head --not $LOW |
+    run git rev-list --reverse $head --not $not |
     while read split; do
         rev=$(mt_llvm_svn $split 2>/dev/null) ||
             error "invalid LLVM commit '$split'"
