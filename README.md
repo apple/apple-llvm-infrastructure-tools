@@ -7,14 +7,17 @@ compiled on-demand.
 
 ## mt: Tools for the monorepo transition
 
-### Setting up a working transition workspace
+### Generate downstream monorepos
 
-`git apple-llvm mt setup` will set up a working transition workspace.  It
-does the following:
+`git apple-llvm mt generate` will generate downstream monorepos based on a
+configuration in `mt-config/`.
 
-- Clones or updates all the relevant repos.
+- Sets up a bare repo.
+- Reads remotes out of the `.mt-config` file.
+- Clones and syncs remotes.
+- Runs through all the generate commands (in order).
 
-Eventually it should do more.  Also configuration should be split out.
+See the <mt-config/README.md> for more configuration details.
 
 ### Maps maintained in refs
 
