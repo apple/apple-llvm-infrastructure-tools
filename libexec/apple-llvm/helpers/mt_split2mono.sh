@@ -18,6 +18,7 @@ mt_split2mono_init() {
     mt_register_paths_to_clean_up "$d"
     if sha1=$(run --hide-errors git rev-parse $ref^{tree}); then
         MT_SPLIT2MONO_SHA1=$sha1
+        local gitdir="$PWD"
         for name in commits index upstreams; do
             local blob
             blob=$(git rev-parse $sha1:$name) ||
@@ -25,7 +26,7 @@ mt_split2mono_init() {
 
             local gitfile
             gitfile=$(cd "$db" &&
-                run git --git-dir "$GIT_DIR" unpack-file $sha1) ||
+                run git --git-dir "$gitdir" unpack-file $sha1) ||
                 error "could not unpack $name from $ref"
 
             run mv "$d/$gitfile" "$db"/$name ||

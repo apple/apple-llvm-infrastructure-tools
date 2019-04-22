@@ -3,6 +3,8 @@
 NONGIT_OK=1
 . "$(dirname $0)"/helpers/init.sh
 helper canonicalize_path
+helper mt_llvm_svn
+helper mt_llvm_svn2git
 
 usage() {
     printf "%s\n"                                                             \
@@ -18,11 +20,18 @@ APPLE_LLVM_MT_CONFIG="$(
 print_repos() { cat "$MT_CONFIG" | awk '$1 == "repo" {print $2, $3}'; }
 
 mt_setup() {
+    # Always change directory.
+    if ! should_setup; then
+        run cd "$GIT_DIR"
+        return $?
+    fi
+
     log "Setting up and syncing $GIT_DIR"
     log "  (based on $MT_CONFIG)"
     [ -d "$GIT_DIR" ] ||
         run git init --bare "$GIT_DIR" ||
         error "failed to initialize '$GIT_DIR'"
+    run cd "$GIT_DIR" || exit 1
     print_repos | {
         local forks= sleepnext=0
         while read name url; do
@@ -31,7 +40,7 @@ mt_setup() {
             [ -d "$clone" ]
             sleep_next=$?
 
-            clone="$GIT_DIR"/clones/$name.git
+            clone=clones/$name.git
             if [ -d "$clone" ]; then
                 run git --git-dir $clone remote update >/dev/null ||
                     error "failed to update remote '$name'"
@@ -39,8 +48,7 @@ mt_setup() {
                 {
                     run mkdir -p $(dirname $clone) >/dev/null &&
                     run git clone --mirror $url $clone >/dev/null &&
-                    run git --git-dir "$GIT_DIR" \
-                        remote add $name $PWD/$clone >/dev/null
+                    run git remote add $name $PWD/$clone >/dev/null
                 } ||
                     error "failed to mirror remote '$name'"
             fi &
@@ -48,7 +56,7 @@ mt_setup() {
         done
         wait $forks
     } && {
-        run git --git-dir "$GIT_DIR" fetch --no-tags --all >/dev/null ||
+        run git fetch --no-tags --all >/dev/null ||
         error "failed to sync '$GIT_DIR'"
     }
 }
@@ -58,6 +66,9 @@ mt_generate() {
     local action="$1"
     local object="$2"
     local generator="mt_generate_$action"
+
+    mt_llvm_svn2git_init ||
+        error "generate: could not initialize svn2git"
 
     # Check that we have a generator for this.
     is_function "$generator" ||
@@ -75,14 +86,20 @@ mt_generate() {
 
 mt_generate_mapping() {
     local remote=$1
-    local branches="$(git --git-dir "$GIT_DIR" show-ref | awk '{print $2}' |
+    local branches="$(git show-ref | awk '{print $2}' |
     grep ^refs/remotes/$remote)"
 
     [ -n "$branches" ] || error "no branches found under '$remote'"
-    local branch
+    local branch rev
     for branch in $branches; do
-        run --dry git --git-dir "$GIT_DIR" \
-            apple-llvm mt llvm-svn2git-map $branch ||
+        rev=$(mt_llvm_svn $branch) ||
+            error "generate mapping: '$branch' has no LLVM revision"
+        if (mt_llvm_svn2git "$rev" >/dev/null); then
+            log "Mapping for '$branch' up-to-date"
+            continue
+        fi
+        log "Generating mapping for '$branch'"
+        run --dry git apple-llvm mt llvm-svn2git-map $branch ||
             error "failed to generate mapping for '$branch'"
     done
 }
@@ -108,7 +125,7 @@ mt_generate_branch() {
         dir=${refdir#*:}
         [ "$refdir" = "$ref:$dir" ] ||
             error "generate $branch: invalid 'dir' with colon '$refdir'"
-        run git --git-dir "$GIT_DIR" rev-parse $ref^{commit} >/dev/null ||
+        run git rev-parse $ref^{commit} >/dev/null ||
             error "generate $branch: invalid ref '$ref' in dir '$dir'"
         [ "$dir" = "*" ] &&
             error "generate $branch: invalid dir '$dir' for ref '$ref'"
@@ -116,12 +133,11 @@ mt_generate_branch() {
 
     if [ -n "$repeat" ]; then
         [ "${repeat:0:${#heads}}" = $heads ] || repeat=$heads$repeat
-        run git --git-dir "$GIT_DIR" rev-parse $repeat^{commit} >/dev/null ||
+        run git rev-parse $repeat^{commit} >/dev/null ||
             error "generate $branch: invalid repeat ref '$ref'"
     fi
 
-    run --dry git --git-dir "$GIT_DIR"            \
-        apple-llvm mt split2mono-translate-branch \
+    run --dry git apple-llvm mt split2mono-translate-branch \
         ${repeat:+--repeat }$repeat $branch $refdirs ||
         error "failed to generate branch '$branch'"
 }
@@ -129,6 +145,7 @@ mt_generate_branch() {
 DEFAULT_GIT_DIR=mt-repo.git
 GIT_DIR=$DEFAULT_GIT_DIR
 SETUP=1
+should_setup() { [ ! "${SETUP:-0}" = 0 ]; }
 NAME=
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -155,7 +172,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-[ $SETUP -eq 0 ] || mt_setup || exit 1
+mt_setup || exit 1
 cat "$MT_CONFIG" | sort | awk '$1 == "generate" {print $3, $4}' |
 while read action object; do
     mt_generate "$action" "$object" ||
