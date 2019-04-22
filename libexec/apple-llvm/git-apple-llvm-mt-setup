@@ -1,7 +1,7 @@
 #!/bin/bash
 
 export NONGIT_OK=1
-. "$(dirname $0)"/../helpers/init.sh
+. "$(dirname $0)"/helpers/init.sh
 helper canonicalize_path
 
 usage() {
@@ -12,7 +12,7 @@ usage() {
 }
 
 APPLE_LLVM_MT_CONFIG="$(
-    relative_canonicalize_path "$APPLE_LLVM_BIN_DIR/../mt-config")"
+    relative_canonicalize_path "$APPLE_LLVM_LIBEXEC_DIR/../../mt-config")"
 print_repos() { cat "$MT_CONFIG" | awk '$1 == "repo" {print $2, $3}'; }
 
 mt_setup() {

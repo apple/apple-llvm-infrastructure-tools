@@ -8,7 +8,16 @@
 COMMAND="$(basename "$0")"
 COMMAND_DIR="$(dirname "$0")"
 APPLE_LLVM_HELPERS_PATH="$(dirname "$BASH_SOURCE")"
-APPLE_LLVM_BIN_DIR="$(dirname "$APPLE_LLVM_HELPERS_PATH")"/..
+
+is_function() { [ "$(type -t "$1" 2>/dev/null)" = function ]; }
+helper() {
+    is_function "$1" && return 0
+    local path="$APPLE_LLVM_HELPERS_PATH"/"$1".sh
+    . "$path" || die "internal: could not include '$path'"
+}
+helper canonicalize_path
+APPLE_LLVM_HELPERS_PATH="$(canonicalize_path "$APPLE_LLVM_HELPERS_PATH")"
+APPLE_LLVM_LIBEXEC_DIR="$(dirname "$APPLE_LLVM_HELPERS_PATH")"
 
 mt_register_paths_to_clean_up() {
     if [ -z "$MT_CLEANUP_ONCE" ]; then
@@ -30,13 +39,6 @@ NEXTFD=3
 getnextfd() {
     echo $NEXTFD
     NEXTFD=$(( $NEXTFD + 1 ))
-}
-
-is_function() { [ "$(type -t "$1" 2>/dev/null)" = function ]; }
-helper() {
-    is_function "$1" && return 0
-    local path="$APPLE_LLVM_HELPERS_PATH"/"$1".sh
-    . "$path" || die "internal: could not include '$path'"
 }
 
 print_cmdname() {

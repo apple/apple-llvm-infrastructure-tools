@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. "$(dirname "$0")"/../helpers/init.sh
+. "$(dirname "$0")"/helpers/init.sh
 helper mt_split2mono
 
 usage() { echo "usage: $(print_cmdname) <sha1>"; }
