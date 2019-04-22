@@ -200,7 +200,7 @@ mt_split2mono_translate_commit_tree() {
     #
     # FIXME: Using git-interpret-trailers is sketchy, since it handles "---"
     # badly for our commit history.  Given that we can't trust
-    # git-interpret-trailers --parse when mappiung commits in
+    # git-interpret-trailers --parse when mapping commits in
     # mt_llvm_svn2git_map, why should we trust it here?
     trailers=( --trailer apple-llvm-split-commit:$commit )
     [ -n "$splitdir" ] &&
