@@ -10,8 +10,6 @@ mt-config files consists of declarations of:
 
 ## `repo`: Declaring a repository
 
-Format:
-
 ```
 repo <name> <url>
 ```
@@ -19,8 +17,6 @@ repo <name> <url>
 where `<name>` is the local name for the remote and `<url>` is its URL.
 
 ## `branch`: Declaring a branch to generate
-
-Format:
 
 ```
 branch <name>
@@ -30,8 +26,6 @@ where `<name>` is the name of the branch to generate, interleaving commits from
 the associated `<dir>` and `<repeat>` declarations.
 
 ### `repeat`: Interleaving one generated branch's commits into another
-
-Format:
 
 ```
 repeat <branch> <upstream>
@@ -45,8 +39,6 @@ been pulling in all changes from an upstream branch, when in fact some
 repositories had a single branch being used for two purposes.
 
 ### `dir`: Generating commits from a split repo
-
-Format:
 
 ```
 dir <branch> ( <name> | '-' ) <source>
@@ -63,8 +55,6 @@ repos only have blobs; all subdirectories should be in a separate split
 repository.
 
 ## `generate`: What to do, and in what order
-
-Format:
 
 ```
 generate <sort> <type> <object>
