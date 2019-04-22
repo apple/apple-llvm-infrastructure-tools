@@ -11,7 +11,7 @@ mt_llvm_svn_impl() {
     local sha1= committer= author=
     # TODO: testcase for not mapping other git-svn-id: urls.
     local urlstart=https://llvm.org/svn/llvm-project
-    grep -e '^    \(llvm-svn:\|git-svn-id: '$urlstart'\): ' "${extra[@]}" | {
+    grep -e '^    \(llvm-svn: \|git-svn-id: '$urlstart'\)' "${extra[@]}" | {
     none=1
     while read key value rest; do
         # TODO: add a testcase for cherry-picks.
