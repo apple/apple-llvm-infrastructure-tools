@@ -32,8 +32,12 @@ mt_split2mono_translate_map_parents() {
     local p
     local retval=0
     local -a mparents
+    local first=1
     for p in "$@"; do
-        if [ -n "$main_parent_override" -a $commit = $main_commit ]; then
+        # TODO: add a testcase for merge commits, checking that only the first
+        # parent is overridden.
+        if [ $first -eq 1 -a -n "$main_parent_override" -a \
+            $commit = $main_commit ]; then
             mt_split2mono $p >/dev/null ||
                 error "overridden parent of '$commit' must be translated first"
             mparents=( "${mparents[@]}" "$main_parent_override" )
@@ -43,6 +47,7 @@ mt_split2mono_translate_map_parents() {
             mt_split2mono_translate_push $p || exit 1
             retval=1
         fi
+        first=0
     done
     [ $retval -eq 0 ] || return $retval
     MT_SPLIT2MONO_TRANSLATE_MPARENTS=( "${mparents[@]}" )
@@ -246,9 +251,9 @@ mt_split2mono_translate_commit() {
     #   <parent>    overrides first-parent
     #   <pdirs>     dirs to take from <parent> instead of "newest"
 
-    local splitdir="$1" main_commit="$2" parent="$3"
-    local parentdirs=( "$@" )
+    local splitdir="$1" main_commit="$2" main_parent_override="$3"
     shift 3
+    local main_parent_override_dirs=( "$@" )
 
     # FIXME: If there's a big history to map, using a stack like this will be
     # very slow.  It would be better to git rev-list --reverse --topo-order.
@@ -291,7 +296,7 @@ mt_split2mono_translate_commit() {
         # Collect the dirs hard-coded to the parent, if this is the main commit
         # we're mapping.
         [ $commit = $main_commit -a -n "$main_parent_override" ] &&
-            firstpdirs=( "$@" )
+            firstpdirs=( "${main_parent_override_dirs[@]}" )
 
         # commit, map, and pop
         newtree=$(mt_split2mono_translate_make_tree "$splitdir" $commit \

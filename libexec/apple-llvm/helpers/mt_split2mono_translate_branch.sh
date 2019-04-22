@@ -98,8 +98,10 @@ mt_split2mono_interleave_commits() {
     done
     local ct next head i=0 n=0
     while read d ct next; do
-        head=$(mt_split2mono_translate_commit $d $next $head $ds) ||
+        mt_split2mono_translate_commit $d $next $head $ds ||
             error "could not translate $next for $d"
+        head=$(mt_split2mono "$next") ||
+            error "mapping not saved for '$next'"
 
         ref=refs/heads/mt/$branch/$d/mt-split
         git rev-parse --verify $ref^{commit} >/dev/null 2>&1 ||
