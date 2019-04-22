@@ -75,7 +75,8 @@ run() {
         shift
     elif [ "$1" = --dry ]; then
         skip="$DRY_RUN"
-        space="#"
+        # TODO: add a test that --dry only uses an extra '#' when DRY_RUN.
+        [ "${skip:-0}" -eq 0 ] || space="#"
         shift
     fi
 
