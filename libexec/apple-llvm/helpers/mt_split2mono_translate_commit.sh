@@ -19,7 +19,7 @@ mt_split2mono_translate_pop() {
 }
 mt_split2mono_translate_top() {
     mt_split2mono_translate_empty && return 1
-    echo "${MT_SPLIT2MONO_TRANSLATE_TODO_I[$MT_SPLIT2MONO_TRANSLATE_TODO_I]}"
+    echo "${MT_SPLIT2MONO_TRANSLATE_TODO[$MT_SPLIT2MONO_TRANSLATE_TODO_I]}"
 }
 
 MT_SPLIT2MONO_TRANSLATE_MPARENTS=()
@@ -32,17 +32,22 @@ mt_split2mono_translate_map_parents() {
     local p
     local retval=0
     local -a mparents
+    local first=1
     for p in "$@"; do
-        if [ -n "$main_parent_override" -a $commit = $main_commit ]; then
+        # TODO: add a testcase for merge commits, checking that only the first
+        # parent is overridden.
+        if [ $first -eq 1 -a -n "$main_parent_override" -a \
+            $commit = $main_commit ]; then
             mt_split2mono $p >/dev/null ||
                 error "overridden parent of '$commit' must be translated first"
             mparents=( "${mparents[@]}" "$main_parent_override" )
         elif mp=$(mt_split2mono $p); then
             mparents=( "${mparents[@]}" "$mp" )
         else
-            mt_split2mono_translate_map_parents_push $p || exit 1
+            mt_split2mono_translate_push $p || exit 1
             retval=1
         fi
+        first=0
     done
     [ $retval -eq 0 ] || return $retval
     MT_SPLIT2MONO_TRANSLATE_MPARENTS=( "${mparents[@]}" )
@@ -67,8 +72,10 @@ mt_split2mono_translate_list_tree_with_dups() {
     local splitdir="$1"
     local commit=$2
     local mparents="$3"
+    shift 3
+    local -a skipped_dirs
+    skipped_dirs=( "$@" )
     local fparent=${mparents%% *}
-    shift 2
 
     if [ -z "$fparent" ]; then
         # Unparented monorepo commit, from a history that eventually got merged
@@ -92,13 +99,23 @@ mt_split2mono_translate_list_tree_with_dups() {
     # - finally override with the split tree at hand
     #
     # FIXME: not convinced this works for top-level entries that get deleted
-    local  d  ct  mp  mode  type  sha1 name skip in_d
-    local ld lct lmp lmode ltype lsha1
+    #
+    # TODO: add a testcase where sorting matters for putting other split dirs
+    # next to each other.
+    local  d  rev  mode  type  sha1 name skip in_d mp
+    local ld lrev lmode ltype lsha1
     for mp in $mparents; do
-        git ls-tree --full-tree $mp | sed -e "s,^,$mp ,"
+        rev=$(mt_llvm_svn_base $mp) || {
+            echo "poison mktree with junk"
+            error "could not extract base LLVM rev"
+        }
+        git ls-tree --full-tree $mp | sed -e "s,^,$rev ," || {
+            echo "poison mktree with junk"
+            error "sed substitution issue for rev '$rev'"
+        }
     done |
-    sort --stable --field-separator='\t' -k2,2 | uniq |
-    while read -r mp mode type sha1 name; do
+    sort --stable --field-separator='	' -k2,2 | uniq |
+    while read -r rev mode type sha1 name; do
         if [ "$type" = blob ]; then
             d=-
         else
@@ -112,8 +129,8 @@ mt_split2mono_translate_list_tree_with_dups() {
         if [ ! "$ld" = "$d" ]; then
             # if --first-parent has this, it'll be printed here
             printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
-            ld=$d lmp=$mp lmode=$mode ltype=$type lsha1=$sha1
-            skip= lct=
+            ld=$d lrev=$rev lmode=$mode ltype=$type lsha1=$sha1
+            skip=
             continue
         fi
 
@@ -124,26 +141,37 @@ mt_split2mono_translate_list_tree_with_dups() {
         # If --first-parent wants priority then ignore its competition.
         if [ -z "$skip" ]; then
             skip=0
-            for in_d in "$@"; do
+            for in_d in "${skipped_dirs[@]}"; do
                 [ "$d" = "$in_d" ] || continue
                 skip=1 && break
             done
         fi
         [ $skip -eq 1 ] && continue
 
-        # Associate timestamps with each change, and let the newest timestamp
-        # win.  This could be expensive.
+        # Associate LLVM revs with each change, and let the newest one win.
         #
-        # This heuristic just finds the most recent non-merge commit in each
-        # history that touched the path.
+        # FIXME: this will do the wrong thing for split histories not based on
+        # LLVM at all.  Probably drop the trailer in that case and have the rev
+        # be implicitly 0, but need good tests ahead of that.
         #
-        # FIXME: This logic might be sketchy.  Skipping merge commits is
-        # a bit questionable.  We may need to model timestamps more clearly
-        # somehow.  Maybe this is good enough for llvm-project-v0, but perhaps
-        # not the final llvm-project.
+        # FIXME: this is completely wrong if a release branch and mainline get
+        # merged.
+        #
+        # FIXME: this provides a pretty weird heuristic for things that don't
+        # come from LLVM upstream.
+        #
+        # FIXME: this adds a trailer we probably don't need long-term.  The
+        # reason for the trailer is laziness of implementation: it's easier
+        # than tracking out-of-band in split2mono.db.  But if this is the
+        # approach we take we should probably just implement and drop the
+        # trailer.
+        #
+        # Note: An alternative, but expensive, heuristic is to use `git log --
+        # <path>` and compare timestamps.  Look at `git blame` for an
+        # implementation of that.
         #
         # Note: An obvious alternative is to blindly take the most recent
-        # commit (includuing merges!).  However, this will do the wrong thing
+        # commit (including merges!).  However, this will do the wrong thing
         # in a common case:
         #
         #   - tree entry: a directory, D, in github/llvm/llvm-project that
@@ -163,21 +191,14 @@ mt_split2mono_translate_list_tree_with_dups() {
         # Note: Another alternative (not yet deeply considered) is to --grep
         # for apple-llvm-split-subdir: and llvm-svn: trailers, and use the
         # newest timestamp that has one of those (for ...-subdir, only include
-        # the dir in question).  This could be too slow.
-
-        # Grab timestamps.  Note that lct is grabbed lazily, only now.
-        [ -n "$lct" ] ||
-            lct=$(git log --no-merges -1 --date-order --format=format:%ct \
-            $lmp -- "$name")
-        ct=$(git log --no-merges -1 --date-order --format=format:%ct \
-            $mp -- "$name")
+        # the dir in question).  This is probably too slow.
 
         # If ct isn't newer than lct, stick with what we have.
-        [ $ct -gt $lct ] || continue
+        [ $rev -gt $lrev ] || continue
 
         # Print out an override.
         printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
-        ld=$d lct=$ct lmp=$mp lmode=$mode ltype=$type lsha1=$sha1
+        ld=$d lrev=$rev lmode=$mode ltype=$type lsha1=$sha1
     done
 
     # Print out the tree we actually care about.
@@ -190,7 +211,7 @@ mt_split2mono_translate_list_tree() {
 }
 mt_split2mono_translate_make_tree() {
     # Make a tree out of this listing!
-    mt_split2mono_translate_list_tree "$@" | git mk-tree
+    mt_split2mono_translate_list_tree "$@" | git mktree
 }
 
 mt_split2mono_translate_commit_tree() {
@@ -200,7 +221,7 @@ mt_split2mono_translate_commit_tree() {
     #
     # FIXME: Using git-interpret-trailers is sketchy, since it handles "---"
     # badly for our commit history.  Given that we can't trust
-    # git-interpret-trailers --parse when mappiung commits in
+    # git-interpret-trailers --parse when mapping commits in
     # mt_llvm_svn2git_map, why should we trust it here?
     trailers=( --trailer apple-llvm-split-commit:$commit )
     [ -n "$splitdir" ] &&
@@ -208,15 +229,43 @@ mt_split2mono_translate_commit_tree() {
                    --trailer apple-llvm-split-subdir:$splitdir/ )
 
     # Prefix the parents with '-p'.
-    local pcmd
+    local pcmd rev prev
     pcmd=()
     for mp in $mparents; do
+        prev=$(mt_llvm_svn_base $mp) ||
+            error "could not find LLVM base rev for '$mp'"
+        if [ -z "$rev" ]; then
+            rev=$prev
+        elif [ $rev -lt $prev ]; then
+            rev=$prev
+        fi
         pcmd=( "${pcmd[@]}" -p $mp )
     done
 
+    trailers=( "${trailers[@]}" --trailer $MT_LLVM_SVN_BASE_TRAILER:$rev )
+
+    # Extract committer and author information.
+    # TODO: add a test for committer and author information.
+    local ad an ae cd cn ce
+    ad="$(git log -1 --date=raw --format="%ad" $commit)" ||
+        error "could not extract author date from '$commit'"
+    an="$(git log -1 --date=raw --format="%an" $commit)" ||
+        error "could not extract author name from '$commit'"
+    ae="$(git log -1 --date=raw --format="%ae" $commit)" ||
+        error "could not extract author email from '$commit'"
+    cd="$(git log -1 --date=raw --format="%cd" $commit)" ||
+        error "could not extract committer date from '$commit'"
+    cn="$(git log -1 --date=raw --format="%cn" $commit)" ||
+        error "could not extract committer name from '$commit'"
+    ce="$(git log -1 --date=raw --format="%ce" $commit)" ||
+        error "could not extract committer email from '$commit'"
+
     git log -1 --format=%B $commit |
     git interpret-trailers "${trailers[@]}" |
-    git commit-tree $pcmd $newtree
+    GIT_AUTHOR_NAME="$an" GIT_COMMITTER_NAME="$cn" \
+    GIT_AUTHOR_DATE="$ad" GIT_COMMITTER_DATE="$cd" \
+    GIT_AUTHOR_EMAIL="$ae" GIT_COMMITTER_EMAIL="$ce" \
+    run git commit-tree "${pcmd[@]}" $newtree
 }
 
 mt_split2mono_translate_commit() {
@@ -227,9 +276,9 @@ mt_split2mono_translate_commit() {
     #   <parent>    overrides first-parent
     #   <pdirs>     dirs to take from <parent> instead of "newest"
 
-    local splitdir="$1" main_commit="$2" parent="$3"
-    local parentdirs=( "$@" )
+    local splitdir="$1" main_commit="$2" main_parent_override="$3"
     shift 3
+    local main_parent_override_dirs=( "$@" )
 
     # FIXME: If there's a big history to map, using a stack like this will be
     # very slow.  It would be better to git rev-list --reverse --topo-order.
@@ -240,13 +289,15 @@ mt_split2mono_translate_commit() {
     # Maybe we can just collect radars in chunks, going back 100 or so at a
     # time.  Then rev-list all the found radars in topological order to do the
     # real work.  As a first cut this stack is fine though.
-    mt_split2mono_translate_push "$commit" ||
-        error "could not push '$commit' onto the stack"
+    mt_split2mono_translate_push "$main_commit" ||
+        error "could not push '$main_commit' onto the stack"
 
     while ! mt_split2mono_translate_empty; do
         # Take a look at the top of the stack.
         commit="$(mt_split2mono_translate_top)" ||
             error "could not pull out the top of the stack, '$commit'"
+        [ -n "$commit" ] ||
+            error "the stack is not working"
 
         # Pop it off if it's already mapped.
         #
@@ -270,7 +321,7 @@ mt_split2mono_translate_commit() {
         # Collect the dirs hard-coded to the parent, if this is the main commit
         # we're mapping.
         [ $commit = $main_commit -a -n "$main_parent_override" ] &&
-            firstpdirs=( "$@" )
+            firstpdirs=( "${main_parent_override_dirs[@]}" )
 
         # commit, map, and pop
         newtree=$(mt_split2mono_translate_make_tree "$splitdir" $commit \

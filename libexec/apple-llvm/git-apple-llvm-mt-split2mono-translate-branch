@@ -1,0 +1,30 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/helpers/init.sh
+helper mt_split2mono
+helper mt_split2mono_translate_branch
+
+usage() {
+    printf "%s\n"                                                            \
+        "usage: $(print_cmdname) <branch> "                                  \
+        "           [--repeat <upstream>]..."                                \
+        "           [--skip <skip>]..."                                      \
+        "           <ref>:<dir>..."                                          \
+        "   <branch>      the branch to interleave"                          \
+        "   <upstream>    monorepo upstream to interleave with <ref>:<dir>"  \
+        "   <ref>...      the refs for split branches to combine"            \
+        "   <dir>...      the dirs for each split branch; '-' for root"      \
+        ""                                                                   \
+        "   optimization:"                                                   \
+        "   <skip>...     split <ref>s in the upstreams"                     \
+        ""                                                                   \
+        "   updates these:"                                                  \
+        "   refs/heads/mt/<branch>/<dir>/mt-split -> <split-commit>"
+}
+
+[ $# -ge 1 ] || error "missing <branch>"
+[ $# -ge 2 ] || error "missing <ref>:<dir>..."
+
+mt_split2mono_init &&
+mt_split2mono_translate_branch "$@" &&
+mt_split2mono_save

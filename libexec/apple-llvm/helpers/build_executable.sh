@@ -1,6 +1,6 @@
 build_executable() {
     local name="$1"
-    local srcdir="$(dirname "$0")"/../src
+    local srcdir="$APPLE_LLVM_LIBEXEC_DIR"/../../src
     local srcfile="$srcdir"/"$name".cpp
     local makefile="$srcdir"/Makefile
     [ -r "$srcfile" ] || error "could not read '$srcfile'"

@@ -1,15 +1,19 @@
 #!/bin/bash
 
-. "$(dirname "$0")"/mt-helpers/init.sh
+. "$(dirname "$0")"/helpers/init.sh
 helper mt_split2mono_map_llvm
 
 usage() {
     printf "%s\n" \
-        "usage: git $COMMAND_FROM_GIT <commit-ish>" \
+        "usage: $(print_cmdname) <commit-ish>" \
         "" \
         "  extract SVN revisions from <commit-ish> and all ancestors" \
         "  and map them to the canonical commit in the svn2git.db"
 }
 
+[ "$#" -ge 1 ] || error "missing <commit-ish>"
+[ "$#" -eq 1 ] || error "too many positional args"
+
 mt_split2mono_init &&
-mt_split2mono_map_llvm "$@"
+mt_split2mono_map_llvm "$@" &&
+mt_split2mono_save

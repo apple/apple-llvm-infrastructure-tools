@@ -1,6 +1,23 @@
 # Tools for working downstream with the LLVM project
 
+## Deploying `git-apple-llvm`
+
+Add the embedded `bin` to your `PATH`.  That's it for now; the C++ code gets
+compiled on-demand.
+
 ## mt: Tools for the monorepo transition
+
+### Generate downstream monorepos
+
+`git apple-llvm mt generate` will generate downstream monorepos based on a
+configuration in `mt-config/`.
+
+- Sets up a bare repo.
+- Reads remotes out of the `.mt-config` file.
+- Clones and syncs remotes.
+- Runs through all the generate commands (in order).
+
+See the mt-config/README.md for more configuration details.
 
 ### Maps maintained in refs
 
@@ -69,11 +86,26 @@ message.  We need to support a few different formats:
 
 `git-mt-llvm-svn2git-map` updates the map from SVN revision numbers
 from [llvm.org](http://llvm.org/) to monorepo commits on
-github/llvm/llvm-project
+github/llvm/llvm-project, filling up the svn2git map.
 
 - pass in a commit from the canonical monorepo, and it will map all
   the commits in its history
 - subsequent calls to `git-mt-llvm-svn2git` will be able to answer queries
+
+#### Mapping split repo versions of llvm.org
+
+`git-mt-split2mono-map-llvm` maps split repo open source LLVM commits to their
+canonical monorepo commits, filling up the split2mono map.
+
+Note: it's not clear if we need to use this.
+
+- It *looks* like we can detect cherry-picks in `git-mt-llvm-svn` by comparing
+  the committer and author, which means it's safe for `git-mt-split2mono` to
+  defer to `git-mt-llvm-svn` and `git-mt-llvm-svn2git` (leveraging
+  `git-svn-id:`).  But maybe we'll find a counterexample.
+- It *seems* like it's not valuable to explicitly map split LLVM commit
+  histories, which would bloat the maps unnecessarily.  But perhaps
+  `git-mt-split2mono` is too slow without this.
 
 #### Dealing with downstream, split-repo branches
 
@@ -81,7 +113,8 @@ There are a few tools sketched out so far:
 
 `git-mt-split2mono`, to look up an existing mapping
 
-- Leverage `git-mt-llvm-svn2git` for upstream commits?
+- Expects split commits from upstream to have been mapped using
+  `git-mt-split2mono-map-llvm`.
 
 `git-mt-split2mono-translate-commit`, to create monorepo commits out of split
 repo commits

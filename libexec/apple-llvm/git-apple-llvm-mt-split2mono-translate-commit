@@ -1,12 +1,12 @@
 #!/bin/bash
 
-. "$(dirname "$0")"/mt-helpers/init.sh
+. "$(dirname "$0")"/helpers/init.sh
 helper mt_split2mono
 helper mt_split2mono_translate_commit
 
 usage() {
     printf "%s\n"                                                           \
-        "usage: git $COMMAND_FROM_GIT <dir> <commit> [<parent> <pdirs>...]" \
+        "usage: $(print_cmdname) <dir> <commit> [<parent> <pdirs>...]"      \
         "          <dir> <commit> [<parent> <pdirs>...]"                    \
         "  <dir>       the directory to move to; use '-' for root"          \
         "  <commit>    commit hash to translate"                            \
@@ -14,5 +14,9 @@ usage() {
         "  <pdirs>     dirs to take from <parent> instead of \"newest\""
 }
 
+[ "$#" -ge 1 ] || error "missing <dir> <commit>"
+[ "$#" -ge 2 ] || error "missing <commit>"
+
 mt_split2mono_init &&
-mt_split2mono_translate_commit "$@"
+mt_split2mono_translate_commit "$@" &&
+mt_split2mono_save
