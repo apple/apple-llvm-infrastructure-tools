@@ -102,13 +102,20 @@ mt_split2mono_translate_list_tree_with_dups() {
     #
     # TODO: add a testcase where sorting matters for putting other split dirs
     # next to each other.
-    local  d  ct  mp  mode  type  sha1 name skip in_d
-    local ld lct lmp lmode ltype lsha1
+    local  d  rev  mode  type  sha1 name skip in_d mp
+    local ld lrev lmode ltype lsha1
     for mp in $mparents; do
-        git ls-tree --full-tree $mp | sed -e "s,^,$mp ,"
+        rev=$(mt_llvm_svn_base $mp) || {
+            echo "poison mktree with junk"
+            error "could not extract base LLVM rev"
+        }
+        git ls-tree --full-tree $mp | sed -e "s,^,$rev ," || {
+            echo "poison mktree with junk"
+            error "sed substitution issue for rev '$rev'"
+        }
     done |
     sort --stable --field-separator='	' -k2,2 | uniq |
-    while read -r mp mode type sha1 name; do
+    while read -r rev mode type sha1 name; do
         if [ "$type" = blob ]; then
             d=-
         else
@@ -122,8 +129,8 @@ mt_split2mono_translate_list_tree_with_dups() {
         if [ ! "$ld" = "$d" ]; then
             # if --first-parent has this, it'll be printed here
             printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
-            ld=$d lmp=$mp lmode=$mode ltype=$type lsha1=$sha1
-            skip= lct=
+            ld=$d lrev=$rev lmode=$mode ltype=$type lsha1=$sha1
+            skip=
             continue
         fi
 
@@ -141,21 +148,27 @@ mt_split2mono_translate_list_tree_with_dups() {
         fi
         [ $skip -eq 1 ] && continue
 
-        # Associate timestamps with each change, and let the newest timestamp
-        # win.  This could be expensive.
+        # Associate LLVM revs with each change, and let the newest one win.
         #
-        # FIXME: this is expensive in practice.
+        # FIXME: this will do the wrong thing for split histories not based on
+        # LLVM at all.  Probably drop the trailer in that case and have the rev
+        # be implicitly 0, but need good tests ahead of that.
         #
-        # FIXME: the heuritistic doesn't seem to be working, or we're getting
-        # the timestamps from the wrong commits.
+        # FIXME: this is completely wrong if a release branch and mainline get
+        # merged.
         #
-        # This heuristic just finds the most recent non-merge commit in each
-        # history that touched the path.
+        # FIXME: this provides a pretty weird heuristic for things that don't
+        # come from LLVM upstream.
         #
-        # FIXME: This logic might be sketchy.  Skipping merge commits is
-        # a bit questionable.  We may need to model timestamps more clearly
-        # somehow.  Maybe this is good enough for llvm-project-v0, but perhaps
-        # not the final llvm-project.
+        # FIXME: this adds a trailer we probably don't need long-term.  The
+        # reason for the trailer is laziness of implementation: it's easier
+        # than tracking out-of-band in split2mono.db.  But if this is the
+        # approach we take we should probably just implement and drop the
+        # trailer.
+        #
+        # Note: An alternative, but expensive, heuristic is to use `git log --
+        # <path>` and compare timestamps.  Look at `git blame` for an
+        # implementation of that.
         #
         # Note: An obvious alternative is to blindly take the most recent
         # commit (including merges!).  However, this will do the wrong thing
@@ -178,19 +191,14 @@ mt_split2mono_translate_list_tree_with_dups() {
         # Note: Another alternative (not yet deeply considered) is to --grep
         # for apple-llvm-split-subdir: and llvm-svn: trailers, and use the
         # newest timestamp that has one of those (for ...-subdir, only include
-        # the dir in question).  This could be too slow.
-
-        # Grab timestamps.  Note that lct is grabbed lazily, only now.
-        [ -n "$lct" ] ||
-            lct=$(git log -1 --date-order --format=format:%ct $lmp -- "$name")
-        ct=$(git log -1 --date-order --format=format:%ct $mp -- "$name")
+        # the dir in question).  This is probably too slow.
 
         # If ct isn't newer than lct, stick with what we have.
-        [ $ct -gt $lct ] || continue
+        [ $rev -gt $lrev ] || continue
 
         # Print out an override.
         printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
-        ld=$d lct=$ct lmp=$mp lmode=$mode ltype=$type lsha1=$sha1
+        ld=$d lrev=$rev lmode=$mode ltype=$type lsha1=$sha1
     done
 
     # Print out the tree we actually care about.
@@ -221,11 +229,20 @@ mt_split2mono_translate_commit_tree() {
                    --trailer apple-llvm-split-subdir:$splitdir/ )
 
     # Prefix the parents with '-p'.
-    local pcmd
+    local pcmd rev prev
     pcmd=()
     for mp in $mparents; do
+        prev=$(mt_llvm_svn_base $mp) ||
+            error "could not find LLVM base rev for '$mp'"
+        if [ -z "$rev" ]; then
+            rev=$prev
+        elif [ $rev -lt $prev ]; then
+            rev=$prev
+        fi
         pcmd=( "${pcmd[@]}" -p $mp )
     done
+
+    trailers=( "${trailers[@]}" --trailer $MT_LLVM_SVN_BASE_TRAILER:$rev )
 
     # Extract committer and author information.
     # TODO: add a test for committer and author information.
