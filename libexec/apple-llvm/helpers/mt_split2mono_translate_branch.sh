@@ -1,20 +1,28 @@
+# vim: ft=sh
+
+helper mt_split2mono_translate_commit
+
 mt_split2mono_translate_branch() {
     local branch
     local pos=0
-    local -a upstreams
+    local repeat=
     local -a skips
     local -a refdirs
+    local value=
     while [ $# -gt 0 ]; do
         case "$1" in
             --help)
                 usage
                 exit 0
                 ;;
-            --upstream)
-                upstreams=( "${upstreams[@]}" "$1" )
+            --repeat|--repeat=*)
+                parse_cmdline_option --repeat repeat
+                shift $?
                 ;;
-            --skip)
-                skips=( "${skips[@]}" "$1" )
+            --skip|--skip=*)
+                parse_cmdline_option --skip value
+                shift $?
+                skips=( "${skips[@]}" "$value" )
                 ;;
             -*)
                 error "unknown option '$1'"
@@ -26,18 +34,21 @@ mt_split2mono_translate_branch() {
                     refdirs=( "${refdirs[@]}" "$1" )
                 fi
                 pos=1
+                shift
                 ;;
         esac
-        shift
     done
     [ -n "$branch" ] || error "missing <branch>"
+    branch="${branch#refs/heads/}"
+
     [ ${#refdirs[@]} -gt 0 ] || error "missing <ref>:<dir>"
-    mt_split2mono_check_upstreams "${upstreams[@]}"
     mt_split2mono_check_refdirs "${refdirs[@]}"
     mt_split2mono_check_skips "${skips[@]}"
 
-    mt_split2mono_list_new_split_commits "${refdirs[@]}" |
-    mt_split2mono_interleave_commits ||
+    [ -z "$repeat" ] || error "--repeat not implemented"
+
+    mt_split2mono_list_new_split_commits "$branch" "${refdirs[@]}" |
+    mt_split2mono_interleave_commits "$branch" "$repeat" "${refdirs[*]}" ||
         error "failure interleaving commits"
 }
 
@@ -47,15 +58,14 @@ mt_split2mono_check_skips() {
     done
 }
 
-mt_split2mono_check_upstreams() {
-    error "mt_split2mono_check_upstreams not implemented"
-}
-
 mt_split2mono_check_refdirs() {
-    error "mt_split2mono_check_refdirs not implemented"
+    #error "mt_split2mono_check_refdirs not implemented"
+    true
 }
 
 mt_split2mono_list_new_split_commits() {
+    local branch="$1"
+    shift
     # FIXME: Printing all of them and sorting is really slow, when we could
     # just take commits one at a time from n FIFOs, choosing the best of the
     # bunch.  The problem is that bash could run out of file descriptors.
@@ -63,9 +73,8 @@ mt_split2mono_list_new_split_commits() {
     for rd in "$@"; do
         r="${rd%:*}"
         d="${rd##*:}"
-        head=$(git rev-parse refs/heads/mt/$branch/$d/mt-split 2>/dev/null)
-        fifo="$fifos"/$d
-        mkfifo "$fifo" || exit 1
+        head=$(git rev-parse --verify \
+            refs/heads/mt/$branch/$d/mt-split^{commit} 2>/dev/null)
         run git log --format="${d:--} %ct %H" \
             --first-parent --reverse $r --not $skips $head
     done |
@@ -73,12 +82,14 @@ mt_split2mono_list_new_split_commits() {
 }
 
 mt_split2mono_interleave_commits() {
-    local refdirs="$1"
+    local branch="$1"
+    local repeat="$2"
+    local refdirs="$3"
     local d rd ds ref
     for rd in "$all_ds"; do
         d="${rd##*:}"
         ref=refs/heads/mt/$branch/$d/mt-split
-        run git rev-parse $ref^{commit} >/dev/null 2>&1 ||
+        run git rev-parse --verify $ref^{commit} >/dev/null 2>&1 ||
             continue
         ds="$ds${ds:+ }$d"
     done
@@ -88,7 +99,7 @@ mt_split2mono_interleave_commits() {
             error "could not translate $next for $d"
 
         ref=refs/heads/mt/$branch/$d/mt-split
-        git rev-parse $ref^{commit} >/dev/null 2>&1 ||
+        git rev-parse --verify $ref^{commit} >/dev/null 2>&1 ||
             ds="$ds${ds:+ }$d"
         {
             printf "update %s %s\n" $ref $next

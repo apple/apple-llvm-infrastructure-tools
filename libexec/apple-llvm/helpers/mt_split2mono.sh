@@ -6,6 +6,8 @@ mt_split2mono_init() {
     [ -n "$MT_SPLIT2MONO_INIT_ONCE" ] && return 0
     MT_SPLIT2MONO_INIT_ONCE=1
 
+    mt_llvm_svn2git_init || exit 1
+
     local ref=refs/mt/split2mono
     local d
     d="$(run mktemp -d -t mt-split2mono)" || error "could not create tempdir"
@@ -19,15 +21,15 @@ mt_split2mono_init() {
         for name in commits index upstreams; do
             local blob
             blob=$(git rev-parse $sha1:$name) ||
-                error "could not unpack $sha1 from $ref"
+                error "could not unpack $name from $ref"
 
             local gitfile
             gitfile=$(cd "$db" &&
                 run git --git-dir "$GIT_DIR" unpack-file $sha1) ||
-                error "could not unpack $sha1 from $ref"
+                error "could not unpack $name from $ref"
 
             run mv "$d/$gitfile" "$db"/$name ||
-                error "could not rename unpacked $sha1 from $ref"
+                error "could not rename unpacked $name from $ref"
         done
         return 0
     fi
@@ -52,8 +54,12 @@ mt_split2mono_save() {
 mt_split2mono_mktree() {
     local sha1
     for name in commits index upstreams; do
-        sha1=$(run git hash-object -w -- "$MT_SPLIT2MONO_DB") ||
+        sha1=$(run git hash-object -w -- "$MT_SPLIT2MONO_DB"/$name) || {
+            # Poison the tree.
+            # TODO: add testcase to catch this.
+            printf "invalid tree entry"
             error "could not hash mt-split2mono db"
+        }
         printf "100644 blob %s \t%s\n" "$sha1" "$name"
     done |
     run git mktree

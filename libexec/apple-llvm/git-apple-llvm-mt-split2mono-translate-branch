@@ -5,20 +5,20 @@ helper mt_split2mono
 helper mt_split2mono_translate_branch
 
 usage() {
-    printf "%s\n"                                                          \
-        "usage: $(print_cmdname) <branch> "                                \
-        "           [--upstream <upstream>]..."                            \
-        "           [--skip <skip>]..."                                    \
-        "           <ref>:<dir>..."                                        \
-        "   <branch>      the branch to interleave"                        \
-        "   <upstream>... monorepo upstream branches for <branch>"         \
-        "   <ref>...      the refs for split branches to combine"          \
-        "   <dir>...      the dirs for each split branch; '-' for root"    \
-        ""                                                                 \
-        "   optimization:"                                                 \
-        "   <skip>...     split <ref>s in the upstreams"                   \
-        ""                                                                 \
-        "   updates these:"                                                \
+    printf "%s\n"                                                            \
+        "usage: $(print_cmdname) <branch> "                                  \
+        "           [--repeat <upstream>]..."                                \
+        "           [--skip <skip>]..."                                      \
+        "           <ref>:<dir>..."                                          \
+        "   <branch>      the branch to interleave"                          \
+        "   <upstream>    monorepo upstream to interleave with <ref>:<dir>"  \
+        "   <ref>...      the refs for split branches to combine"            \
+        "   <dir>...      the dirs for each split branch; '-' for root"      \
+        ""                                                                   \
+        "   optimization:"                                                   \
+        "   <skip>...     split <ref>s in the upstreams"                     \
+        ""                                                                   \
+        "   updates these:"                                                  \
         "   refs/heads/mt/<branch>/<dir>/mt-split -> <split-commit>"
 }
 

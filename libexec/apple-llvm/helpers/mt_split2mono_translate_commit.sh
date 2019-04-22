@@ -19,7 +19,7 @@ mt_split2mono_translate_pop() {
 }
 mt_split2mono_translate_top() {
     mt_split2mono_translate_empty && return 1
-    echo "${MT_SPLIT2MONO_TRANSLATE_TODO_I[$MT_SPLIT2MONO_TRANSLATE_TODO_I]}"
+    echo "${MT_SPLIT2MONO_TRANSLATE_TODO[$MT_SPLIT2MONO_TRANSLATE_TODO_I]}"
 }
 
 MT_SPLIT2MONO_TRANSLATE_MPARENTS=()
@@ -240,13 +240,15 @@ mt_split2mono_translate_commit() {
     # Maybe we can just collect radars in chunks, going back 100 or so at a
     # time.  Then rev-list all the found radars in topological order to do the
     # real work.  As a first cut this stack is fine though.
-    mt_split2mono_translate_push "$commit" ||
-        error "could not push '$commit' onto the stack"
+    mt_split2mono_translate_push "$main_commit" ||
+        error "could not push '$main_commit' onto the stack"
 
     while ! mt_split2mono_translate_empty; do
         # Take a look at the top of the stack.
         commit="$(mt_split2mono_translate_top)" ||
             error "could not pull out the top of the stack, '$commit'"
+        [ -n "$commit" ] ||
+            error "the stack is not working"
 
         # Pop it off if it's already mapped.
         #
