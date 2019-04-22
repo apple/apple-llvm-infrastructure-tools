@@ -90,18 +90,22 @@ mt_generate_mapping() {
 mt_generate_branch() {
     # Get the branch name and prepend refs/heads/.
     local heads=refs/heads/
-    local branch=$1
+    local rawbranch=$1
+    local branch=$rawbranch
     [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
 
     local refdirs="$(cat "$MT_CONFIG" |
-    awk -v branch=$branch '$1=="dir"&&$2==branch{print $4":"$3}')"
+    awk -v branch=$rawbranch '$1=="dir"&&$2==branch{print $4":"$3}')"
     local repeat="$(cat "$MT_CONFIG" |
-    awk -v branch=$branch '$1=="repeat"&&$2==branch{print $3}')"
+    awk -v branch=$rawbranch '$1=="repeat"&&$2==branch{print $3}')"
+
+    [ -n "$refdirs" ] ||
+        error "generate $branch: no 'dir' declarations"
 
     local refdir ref dir
     for refdir in $refdirs; do
-        ref=${ref%:*}
-        dir=${dir#*:}
+        ref=${refdir%:*}
+        dir=${refdir#*:}
         [ "$refdir" = "$ref:$dir" ] ||
             error "generate $branch: invalid 'dir' with colon '$refdir'"
         run git --git-dir "$GIT_DIR" rev-parse $ref^{commit} >/dev/null ||
