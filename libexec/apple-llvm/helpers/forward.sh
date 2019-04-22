@@ -39,7 +39,13 @@ forward_list() {
         while read cmd; do
             prev_prefix=$prev-
             prev_len=${#prev_prefix}
-            [ "${cmd:0:$prev_len}" = "$prev_prefix" ] && continue
+            if [ "${cmd:0:$prev_len}" = "$prev_prefix" ]; then
+                case "$prev" in
+                    # Catch false positives.
+                    *-split2mono|*-svn2git) true ;;
+                    *) continue ;;
+                esac
+            fi
             printf "%s\n" ${cmd:$len}
             prev=$cmd
         done
