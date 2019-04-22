@@ -241,7 +241,6 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
     return 1;
 
   char sha1[41] = {0};
-  std::string spaces(' ', 8);
   long offset = 20 * rev;
   return offset + 20 > db.num_bytes || bintosha1(sha1, bytes + offset) ||
          printf("%s\n", sha1) != 41;
