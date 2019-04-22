@@ -40,7 +40,7 @@ mt_split2mono_translate_map_parents() {
         elif mp=$(mt_split2mono $p); then
             mparents=( "${mparents[@]}" "$mp" )
         else
-            mt_split2mono_translate_map_parents_push $p || exit 1
+            mt_split2mono_translate_push $p || exit 1
             retval=1
         fi
     done
@@ -216,7 +216,7 @@ mt_split2mono_translate_commit_tree() {
 
     git log -1 --format=%B $commit |
     git interpret-trailers "${trailers[@]}" |
-    git commit-tree $pcmd $newtree
+    git commit-tree "${pcmd[@]}" $newtree
 }
 
 mt_split2mono_translate_commit() {
