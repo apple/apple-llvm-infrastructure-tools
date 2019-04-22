@@ -72,8 +72,10 @@ mt_split2mono_translate_list_tree_with_dups() {
     local splitdir="$1"
     local commit=$2
     local mparents="$3"
+    shift 3
+    local -a skipped_dirs
+    skipped_dirs=( "$@" )
     local fparent=${mparents%% *}
-    shift 2
 
     if [ -z "$fparent" ]; then
         # Unparented monorepo commit, from a history that eventually got merged
@@ -97,12 +99,15 @@ mt_split2mono_translate_list_tree_with_dups() {
     # - finally override with the split tree at hand
     #
     # FIXME: not convinced this works for top-level entries that get deleted
+    #
+    # TODO: add a testcase where sorting matters for putting other split dirs
+    # next to each other.
     local  d  ct  mp  mode  type  sha1 name skip in_d
     local ld lct lmp lmode ltype lsha1
     for mp in $mparents; do
         git ls-tree --full-tree $mp | sed -e "s,^,$mp ,"
     done |
-    sort --stable --field-separator='\t' -k2,2 | uniq |
+    sort --stable --field-separator='	' -k2,2 | uniq |
     while read -r mp mode type sha1 name; do
         if [ "$type" = blob ]; then
             d=-
@@ -129,7 +134,7 @@ mt_split2mono_translate_list_tree_with_dups() {
         # If --first-parent wants priority then ignore its competition.
         if [ -z "$skip" ]; then
             skip=0
-            for in_d in "$@"; do
+            for in_d in "${skipped_dirs[@]}"; do
                 [ "$d" = "$in_d" ] || continue
                 skip=1 && break
             done
@@ -138,6 +143,11 @@ mt_split2mono_translate_list_tree_with_dups() {
 
         # Associate timestamps with each change, and let the newest timestamp
         # win.  This could be expensive.
+        #
+        # FIXME: this is expensive in practice.
+        #
+        # FIXME: the heuritistic doesn't seem to be working, or we're getting
+        # the timestamps from the wrong commits.
         #
         # This heuristic just finds the most recent non-merge commit in each
         # history that touched the path.
@@ -172,10 +182,8 @@ mt_split2mono_translate_list_tree_with_dups() {
 
         # Grab timestamps.  Note that lct is grabbed lazily, only now.
         [ -n "$lct" ] ||
-            lct=$(git log --no-merges -1 --date-order --format=format:%ct \
-            $lmp -- "$name")
-        ct=$(git log --no-merges -1 --date-order --format=format:%ct \
-            $mp -- "$name")
+            lct=$(git log -1 --date-order --format=format:%ct $lmp -- "$name")
+        ct=$(git log -1 --date-order --format=format:%ct $mp -- "$name")
 
         # If ct isn't newer than lct, stick with what we have.
         [ $ct -gt $lct ] || continue

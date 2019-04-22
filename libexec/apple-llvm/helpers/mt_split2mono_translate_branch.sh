@@ -91,18 +91,23 @@ mt_split2mono_interleave_commits() {
         ref=refs/heads/mt/$branch/$d/mt-split
         run git rev-parse --verify $ref^{commit} >/dev/null 2>&1 ||
             continue
+
+        # Add d to ds if it has already been referenced.
         ds="$ds${ds:+ }$d"
     done
     local ct next head i=0 n=0
     while read d ct next; do
-        mt_split2mono_translate_commit $d $next $head $ds ||
+        run mt_split2mono_translate_commit $d $next $head $ds ||
             error "could not translate $next for $d"
         head=$(mt_split2mono "$next") ||
             error "mapping not saved for '$next'"
 
+        # Add d to ds if it's the first it has been updated.
         ref=refs/heads/mt/$branch/$d/mt-split
         git rev-parse --verify $ref^{commit} >/dev/null 2>&1 ||
             ds="$ds${ds:+ }$d"
+
+        # Update refs.
         {
             printf "update %s %s\n" $ref $next
             printf "update refs/heads/%s %s\n" $branch $head
