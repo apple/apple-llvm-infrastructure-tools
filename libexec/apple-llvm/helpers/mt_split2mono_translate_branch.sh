@@ -1,6 +1,7 @@
 # vim: ft=sh
 
 helper mt_split2mono_translate_commit
+helper bisect
 
 mt_split2mono_translate_branch() {
     local branch
@@ -74,9 +75,11 @@ mt_split2mono_list_new_split_commits() {
         r="${rd%:*}"
         d="${rd##*:}"
         head=$(git rev-parse --verify \
-            refs/heads/mt/$branch/$d/mt-split^{commit} 2>/dev/null)
+            refs/heads/mt/$branch/$d/mt-split^{commit} 2>/dev/null) ||
+            head=$(bisect mt_split2mono $r)
+        # FIXME: somehow head is getting set to two hashes here....
         run git log --format="${d:--} %ct %H" \
-            --first-parent --reverse $r --not $skips $head
+            --first-parent --reverse $r --not $head
     done |
     sort --stable -n -k 2,2
 }
