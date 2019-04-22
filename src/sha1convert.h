@@ -29,7 +29,8 @@ static int unconvert(unsigned char ch, int index) {
   unsigned char stripped = index ? ch & 0xf : ch >> 4;
   assert(stripped >= 0);
   assert(stripped < 16);
-  return stripped < 10 ? '0' + stripped : 'a' + stripped;
+  // TODO: Add a testcase for a-f.
+  return stripped < 10 ? '0' + stripped : 'a' + (stripped - 10);
 }
 
 /// Return 0 (success) except for the "empty" hash (all 0s).
