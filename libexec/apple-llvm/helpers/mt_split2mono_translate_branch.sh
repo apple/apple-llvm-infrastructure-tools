@@ -68,9 +68,6 @@ mt_split2mono_is_new_commit() { mt_split2mono "$@" >/dev/null; }
 mt_split2mono_list_new_split_commits() {
     local branch="$1"
     shift
-    # FIXME: Printing all of them and sorting is really slow, when we could
-    # just take commits one at a time from n FIFOs, choosing the best of the
-    # bunch.  The problem is that bash could run out of file descriptors.
     local rd r d head not
     for rd in "$@"; do
         r="${rd%:*}"
