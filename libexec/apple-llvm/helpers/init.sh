@@ -64,16 +64,23 @@ print_cmdname() {
 
 showpids() { [ ! "${SHOWPIDS:-0}" = 0 ]; }
 verbose() { [ ! "${VERBOSE:-0}" = 0 ]; }
+DRY_RUN=0
 run() {
     # Support hiding errors so that clients don't hide the verbose-mode
     # logging.
     local hide_errors=0
+    local skip=0 space=" "
     if [ "$1" = --hide-errors ]; then
         hide_errors=1
         shift
+    elif [ "$1" = --dry ]; then
+        skip="$DRY_RUN"
+        space="#"
+        shift
     fi
 
-    verbose && echo "#${SHOWPIDS:+ [$$]} $*" >&2
+    verbose && echo "#$space${SHOWPIDS:+[$$] }$*" >&2
+    [ "${skip:-0}" -eq 0 ] || return 0
 
     if [ $hide_errors -eq 1 ]; then
         "$@" 2>/dev/null
