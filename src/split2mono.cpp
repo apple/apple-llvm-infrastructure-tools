@@ -626,7 +626,8 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
   char mono[41] = {0};
   if (lookup_commit(db, split, mono))
     return 1;
-  return printf("%s\n", mono);
+  // TODO: add a test for the exit status.
+  return printf("%s\n", mono) != 41;
 }
 
 static int
