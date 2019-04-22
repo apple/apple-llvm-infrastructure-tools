@@ -17,7 +17,7 @@ configuration in `mt-config/`.
 - Clones and syncs remotes.
 - Runs through all the generate commands (in order).
 
-See the <mt-config/README.md> for more configuration details.
+See the mt-config/README.md for more configuration details.
 
 ### Maps maintained in refs
 
