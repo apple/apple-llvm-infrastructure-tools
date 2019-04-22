@@ -190,7 +190,7 @@ mt_split2mono_translate_list_tree() {
 }
 mt_split2mono_translate_make_tree() {
     # Make a tree out of this listing!
-    mt_split2mono_translate_list_tree "$@" | git mk-tree
+    mt_split2mono_translate_list_tree "$@" | git mktree
 }
 
 mt_split2mono_translate_commit_tree() {
