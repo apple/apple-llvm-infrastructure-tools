@@ -1,0 +1,7 @@
+docs/_build
+__pycache__
+
+###
+# Tracking files from `pip install` for make
+###
+.requirements.txt.install_log

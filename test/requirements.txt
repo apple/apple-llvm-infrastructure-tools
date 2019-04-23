@@ -1,0 +1,2 @@
+pytest
+GitPython==2.1.11
