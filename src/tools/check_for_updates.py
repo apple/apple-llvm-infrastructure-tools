@@ -115,5 +115,5 @@ def update_repository() -> bool:
 
 
 if __name__ == "__main__":
-    # FIXME: Need to rerun the makefile once update completes.
+    # Don't need to rerun any makefiles, as the tools are built automatically.
     update_repository()
