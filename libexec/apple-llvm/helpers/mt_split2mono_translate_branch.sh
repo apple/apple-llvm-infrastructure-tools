@@ -64,23 +64,23 @@ mt_split2mono_check_refdirs() {
     true
 }
 
-mt_split2mono_is_new_commit() { mt_split2mono "$@" >/dev/null; }
 mt_split2mono_list_new_split_commits() {
     local branch="$1"
     shift
-    local rd r d head not
+    local rd r d not format
     for rd in "$@"; do
         r="${rd%:*}"
         d="${rd##*:}"
-        head=$(git rev-parse --verify \
-            refs/heads/mt/$branch/$d/mt-split^{commit} 2>/dev/null)
-        not=$(bisect mt_split2mono_is_new_commit $r "$head")
-        run git log --format="${d:--} %ct %H" \
-            --first-parent --reverse $r --not $not
+        format="%H %ct %T $d %P<%an<%ae<%ad<%cn<%ce<%cd"
+        not="$(git show-ref "$d"/mt-split | awk '{print $1}')"
+        run git log --date=raw $r --not $not --format="$format" --first-parent
+        run git log --date=raw $r --not $not --format="$format"
     done |
-    sort --stable -n -k 2,2
+    sort -k 1,1 | sort --stable -k 4,4 | sort --stable -n -k 2,2 |
+    uniq -c
 }
 
+mt_split2mono_is_new_commit() { ! mt_split2mono "$@" >/dev/null 2>&1; }
 mt_split2mono_interleave_commits() {
     local branch="$1"
     local repeat="$2"
@@ -95,12 +95,33 @@ mt_split2mono_interleave_commits() {
         # Add d to ds if it has already been referenced.
         ds="$ds${ds:+ }$d"
     done
-    local ct next head i=0 n=0
-    while read d ct next; do
-        run mt_split2mono_translate_commit $d $next $head $ds ||
+    local count commit ct tree d rest
+    local is_branch_commit parents ad an ae cd cn ce override
+    local i=0 n=0
+    while read count commit ct tree d rest; do
+        mt_split2mono_is_new_commit "$commit" ||
+            continue
+
+        parents="${rest%%<*}"; rest="${rest#*<}"
+        an="${rest%%<*}"     ; rest="${rest#*<}"
+        ae="${rest%%<*}"     ; rest="${rest#*<}"
+        ad="${rest%%<*}"     ; rest="${rest#*<}"
+        cn="${rest%%<*}"     ; rest="${rest#*<}"
+        ce="${rest%%<*}"     ; rest="${rest#*<}"
+        cd="${rest%%<*}"     ; rest="${rest#*<}"
+
+        if [ "$count" = 2 ]; then
+            override="--override-parent $prev"
+        else
+            override=
+        fi
+
+        GIT_AUTHOR_NAME="$an"  GIT_COMMITTER_NAME="$cn"  \
+        GIT_AUTHOR_DATE="$ad"  GIT_COMMITTER_DATE="$cd"  \
+        GIT_AUTHOR_EMAIL="$ae" GIT_COMMITTER_EMAIL="$ce" \
+        run mt_split2mono_translate_commit_impl          \
+            $override $commit $tree "$d" "$parents" "$ds" ||
             error "could not translate $next for $d"
-        head=$(mt_split2mono "$next") ||
-            error "mapping not saved for '$next'"
 
         # Add d to ds if it's the first it has been updated.
         ref=refs/heads/mt/$branch/$d/mt-split

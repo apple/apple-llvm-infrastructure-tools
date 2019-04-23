@@ -23,26 +23,38 @@ mt_split2mono_translate_top() {
 }
 
 MT_SPLIT2MONO_TRANSLATE_MPARENTS=()
+mt_split2mono_translate_map_parent() {
+    local parent="$1"
+    local first="$2"
+    local first_parent_override="$3"
+
+    # TODO: add a testcase for merge commits, checking that only the first
+    # parent is overridden.
+    if [ $first -eq 1 -a -n "$first_parent_override" ]; then
+        mt_split2mono $first_parent_override >/dev/null ||
+            error "overridden parent of '$commit' must be translated first"
+        echo "$first_parent_override"
+        return 0
+    fi
+    mt_split2mono $parent
+}
 mt_split2mono_translate_map_parents() {
     local main_commit=$1
     local main_parent_override="$2"
     local commit=$3
     shift 3
 
-    local p
+    [ "$commit" = "$main_commit" ] || main_parent_override=
+    local p mp
     local retval=0
     local -a mparents
     local first=1
+    # TODO: add a testcase for merge commits, checking that only the first
+    # parent is overridden.
     for p in "$@"; do
-        # TODO: add a testcase for merge commits, checking that only the first
-        # parent is overridden.
-        if [ $first -eq 1 -a -n "$main_parent_override" -a \
-            $commit = $main_commit ]; then
-            mt_split2mono $p >/dev/null ||
-                error "overridden parent of '$commit' must be translated first"
+        if mp=$(mt_split2mono_translate_map_parent $p $first \
+            "$main_parent_override"); then
             mparents=( "${mparents[@]}" "$main_parent_override" )
-        elif mp=$(mt_split2mono $p); then
-            mparents=( "${mparents[@]}" "$mp" )
         else
             mt_split2mono_translate_push $p || exit 1
             retval=1
@@ -55,22 +67,19 @@ mt_split2mono_translate_map_parents() {
 
 mt_split2mono_translate_list_split_tree() {
     local splitdir="$1"
-    local commit=$2
-    local tree
+    local tree=$2
     if [ $splitdir = - ]; then
         # Dereference if this is a root.
-        git ls-tree --full-tree $commit: ||
-            error "could not dereference $commit"
-    else
-        tree=$(git rev-parse $commit:) ||
-            error "problem with rev-parse"
-        printf "%s %s %s\t%s\n" 040000 tree $tree $splitdir
+        git ls-tree --full-tree $tree ||
+            error "could not dereference tree '$tree'"
+        return 0
     fi
+    printf "%s %s %s\t%s\n" 040000 tree $tree $splitdir
 }
 
 mt_split2mono_translate_list_tree_with_dups() {
     local splitdir="$1"
-    local commit=$2
+    local tree=$2
     local mparents="$3"
     shift 3
     local -a skipped_dirs
@@ -80,13 +89,13 @@ mt_split2mono_translate_list_tree_with_dups() {
     if [ -z "$fparent" ]; then
         # Unparented monorepo commit, from a history that eventually got merged
         # in.  Just list it.
-        mt_split2mono_translate_list_split_tree $splitdir $commit
+        mt_split2mono_translate_list_split_tree $splitdir $tree
         return 0
     fi
     if [ $fparent = "$mparents" ]; then
         # Only one parent.  List its tree, and then override with this tree.
         git ls-tree --full-tree $fparent &&
-            mt_split2mono_translate_list_split_tree $splitdir $commit
+            mt_split2mono_translate_list_split_tree $splitdir $tree
         return 0
     fi
 
@@ -125,8 +134,21 @@ mt_split2mono_translate_list_tree_with_dups() {
         # Skip this if it's coming from the split commit.
         [ "$d" = "$splitdir" ] && continue
 
-        # Print this if it's our first sighting of d.
-        if [ ! "$ld" = "$d" ]; then
+        # If --first-parent wants priority then ignore its competition.
+        # TODO: add a testcase where we have an out-of-tree '-' dir
+        if [ -z "$skip" ]; then
+            skip=0
+            for in_d in "${skipped_dirs[@]}"; do
+                [ "$d" = "$in_d" ] || continue
+                skip=1 && break
+            done
+        fi
+        [ $skip -eq 1 ] && continue
+
+        # Print this if it's our first sighting of name.
+        # FIXME: this will fail to delete blobs when there is no out-of-tree
+        # '-' dir.
+        if [ ! "$lname" = "$name" ]; then
             # if --first-parent has this, it'll be printed here
             printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
             ld=$d lrev=$rev lmode=$mode ltype=$type lsha1=$sha1
@@ -137,16 +159,6 @@ mt_split2mono_translate_list_tree_with_dups() {
         # If the content is identical don't look any further.
         [ $mode = $lmode -a $type = $ltype -a $sha1 = $lsha1 ] &&
             continue
-
-        # If --first-parent wants priority then ignore its competition.
-        if [ -z "$skip" ]; then
-            skip=0
-            for in_d in "${skipped_dirs[@]}"; do
-                [ "$d" = "$in_d" ] || continue
-                skip=1 && break
-            done
-        fi
-        [ $skip -eq 1 ] && continue
 
         # Associate LLVM revs with each change, and let the newest one win.
         #
@@ -202,7 +214,7 @@ mt_split2mono_translate_list_tree_with_dups() {
     done
 
     # Print out the tree we actually care about.
-    mt_split2mono_translate_list_split_tree $splitdir $commit
+    mt_split2mono_translate_list_split_tree $splitdir $tree
 }
 mt_split2mono_translate_list_tree() {
     # Remove duplicate tree entries, treating repeats as overrides.
@@ -223,49 +235,25 @@ mt_split2mono_translate_commit_tree() {
     # badly for our commit history.  Given that we can't trust
     # git-interpret-trailers --parse when mapping commits in
     # mt_llvm_svn2git_map, why should we trust it here?
-    trailers=( --trailer apple-llvm-split-commit:$commit )
-    [ -n "$splitdir" ] &&
-        trailers=( "${trailers[@]}"
-                   --trailer apple-llvm-split-subdir:$splitdir/ )
+    trailers="--trailer apple-llvm-split-commit:$commit"
+    trailers="$trailers --trailer apple-llvm-split-subdir:$splitdir"
+    [ "$splitdir" = - ] || trailers="$trailers/"
 
     # Prefix the parents with '-p'.
     local pcmd rev prev
-    pcmd=()
+    pcmd=
     for mp in $mparents; do
         prev=$(mt_llvm_svn_base $mp) ||
             error "could not find LLVM base rev for '$mp'"
-        if [ -z "$rev" ]; then
-            rev=$prev
-        elif [ $rev -lt $prev ]; then
-            rev=$prev
-        fi
-        pcmd=( "${pcmd[@]}" -p $mp )
+        [ -z "$rev" -o "$rev" -lt "$prev" ] && rev=$prev
+        pcmd="$pcmd${pcmd:+ }-p $mp"
     done
 
-    trailers=( "${trailers[@]}" --trailer $MT_LLVM_SVN_BASE_TRAILER:$rev )
-
-    # Extract committer and author information.
-    # TODO: add a test for committer and author information.
-    local ad an ae cd cn ce
-    ad="$(git log -1 --date=raw --format="%ad" $commit)" ||
-        error "could not extract author date from '$commit'"
-    an="$(git log -1 --date=raw --format="%an" $commit)" ||
-        error "could not extract author name from '$commit'"
-    ae="$(git log -1 --date=raw --format="%ae" $commit)" ||
-        error "could not extract author email from '$commit'"
-    cd="$(git log -1 --date=raw --format="%cd" $commit)" ||
-        error "could not extract committer date from '$commit'"
-    cn="$(git log -1 --date=raw --format="%cn" $commit)" ||
-        error "could not extract committer name from '$commit'"
-    ce="$(git log -1 --date=raw --format="%ce" $commit)" ||
-        error "could not extract committer email from '$commit'"
+    trailers="$trailers --trailer $MT_LLVM_SVN_BASE_TRAILER:$rev"
 
     git log -1 --format=%B $commit |
-    git interpret-trailers "${trailers[@]}" |
-    GIT_AUTHOR_NAME="$an" GIT_COMMITTER_NAME="$cn" \
-    GIT_AUTHOR_DATE="$ad" GIT_COMMITTER_DATE="$cd" \
-    GIT_AUTHOR_EMAIL="$ae" GIT_COMMITTER_EMAIL="$ce" \
-    run git commit-tree "${pcmd[@]}" $newtree
+    git interpret-trailers $trailers |
+    run git commit-tree $pcmd $newtree
 }
 
 mt_split2mono_translate_commit() {
@@ -316,24 +304,79 @@ mt_split2mono_translate_commit() {
         mt_split2mono_translate_map_parents $main_commit \
             "$main_parent_override" $commit $(git rev-parse $commit^@) ||
             continue
-        mparents="${MT_SPLIT2MONO_TRANSLATE_MPARENTS[*]}"
 
-        # Collect the dirs hard-coded to the parent, if this is the main commit
-        # we're mapping.
-        [ $commit = $main_commit -a -n "$main_parent_override" ] &&
-            firstpdirs=( "${main_parent_override_dirs[@]}" )
+        local override= tree
+        if [ -n "$main_parent_override" -a "$commit" = "$main_commit" ]; then
+            override="--override-parent $main_parent_override"
+        fi
+        tree=$(git rev-parse $commit:)
 
-        # commit, map, and pop
-        newtree=$(mt_split2mono_translate_make_tree "$splitdir" $commit \
-            "$mparents" "${firstpdirs[@]}") ||
-            exit 1
-        newcommit=$(mt_split2mono_translate_commit_tree "$splitdir" $commit \
-            "$mparents" $newtree) ||
-            exit 1
-        mt_split2mono_insert $commit $newcommit ||
-            error "failed to insert mapping '$commit' -> '$newcommit'"
+
+        # Extract committer and author information.
+        # TODO: add a test for committer and author information.
+        local ad an ae cd cn ce
+        ad="$(git log -1 --date=raw --format="%ad" $commit)" ||
+            error "could not extract author date from '$commit'"
+        an="$(git log -1 --date=raw --format="%an" $commit)" ||
+            error "could not extract author name from '$commit'"
+        ae="$(git log -1 --date=raw --format="%ae" $commit)" ||
+            error "could not extract author email from '$commit'"
+        cd="$(git log -1 --date=raw --format="%cd" $commit)" ||
+            error "could not extract committer date from '$commit'"
+        cn="$(git log -1 --date=raw --format="%cn" $commit)" ||
+            error "could not extract committer name from '$commit'"
+        ce="$(git log -1 --date=raw --format="%ce" $commit)" ||
+            error "could not extract committer email from '$commit'"
+        GIT_AUTHOR_NAME="$an"  GIT_COMMITTER_NAME="$cn"                 \
+        GIT_AUTHOR_DATE="$ad"  GIT_COMMITTER_DATE="$cd"                 \
+        GIT_AUTHOR_EMAIL="$ae" GIT_COMMITTER_EMAIL="$ce"                \
+        mt_split2mono_translate_commit_impl $override "$commit" "$tree" \
+            "$splitdir" "" "${main_parent_override_dirs[*]}" ||
+            continue
+
         mt_split2mono_translate_pop ||
             error "problem popping the top of the stack"
     done
     return 0
+}
+
+mt_split2mono_translate_commit_impl() {
+    local parent_override=
+    if [ "$1" = --override-parent ]; then
+        parent_override="$2"
+        shift 2
+    fi
+    local commit="$1"
+    local tree="$2"
+    local d="$3"
+    local parents="$4"
+    local ds="$5"
+
+    # Lookup the split commit's parents' monorepo commits.  This will
+    # return non-zero if one of the parents is not mapped (and was pushed
+    # on the stack).
+    local mparents=
+    if [ -z "$parents" ]; then
+        # May have been mapped by mt_split2mono_translate_map_parents.
+        [ ${#MT_SPLIT2MONO_TRANSLATE_MPARENTS[@]} -eq 0 ] ||
+            mparents="${MT_SPLIT2MONO_TRANSLATE_MPARENTS[*]}"
+    else
+        local first=1 p= mp=
+        for p in $parents; do
+            mp=$(mt_split2mono_translate_map_parent $p $first \
+                "$parent_override") ||
+                return 1
+            mparents="$mparents${mparents:+ }$mp"
+            first=0
+        done
+    fi
+
+    # commit, map, and pop
+    newtree=$(mt_split2mono_translate_make_tree "$d" $tree "$mparents" $ds) ||
+        exit 1
+    newcommit=$(mt_split2mono_translate_commit_tree "$d" $commit "$mparents" \
+        $newtree) ||
+        exit 1
+    mt_split2mono_insert $commit $newcommit ||
+        error "failed to insert mapping '$commit' -> '$newcommit'"
 }
