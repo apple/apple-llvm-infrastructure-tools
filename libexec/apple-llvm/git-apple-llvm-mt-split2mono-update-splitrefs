@@ -12,8 +12,8 @@ usage() {
         "  <ref>:<dir> info"
 }
 
-[ "$#" -ge 1 ] || error "missing <commit-ish>"
-[ "$#" -eq 1 ] || error "too many positional args"
+[ "$#" -ge 1 ] || error "missing <branch>"
+[ "$#" -ge 2 ] || error "missing <ref>:<dir> (minimum 1)"
 
 main() {
     local branch="$1"
@@ -41,7 +41,9 @@ update_splitref() {
     refcommit=$(run git rev-parse --verify $ref^{commit} 2>/dev/null)
     [ -n "$refcommit" ] || error "ref '$ref' is not a commit"
     [ "$already_mapped" = "$refcommit" ] && return 0
-    local last_mapped=$(bisect is_mapped $ref $already_mapped)
+    local mapped="$(bisect is_mapped $ref $already_mapped)"
+    [ -n "$mapped" ] || return 0
+    local last_mapped="$(run git rev-list -1 $mapped)"
     [ -n "$last_mapped" ] || return 0
     [ "$already_mapped" = "$last_mapped" ] && return 0
     log "Updating $mtref to $last_mapped"
