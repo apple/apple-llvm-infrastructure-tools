@@ -100,7 +100,7 @@ def update_repository() -> bool:
         # And update the repository.
         print('checking for `git apple-llvm` updates from `{}`...'.format(remote_name))
         # FIXME: What if the rebase failed? Should we abort it?
-        repo.run_git_command(['pull', '-r', remote_name])
+        repo.run_git_command(['pull', '--ff-only', remote_name])
         # FIXME: Return true when tree hash changed only.
         # FIXME: Garbage-collect old update markers periodically.
         return True
