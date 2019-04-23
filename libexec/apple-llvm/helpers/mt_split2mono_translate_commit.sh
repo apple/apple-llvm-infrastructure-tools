@@ -31,7 +31,7 @@ mt_split2mono_translate_map_parent() {
     # TODO: add a testcase for merge commits, checking that only the first
     # parent is overridden.
     if [ $first -eq 1 -a -n "$first_parent_override" ]; then
-        mt_split2mono $first_parent_override >/dev/null ||
+        mt_split2mono $parent >/dev/null ||
             error "overridden parent of '$commit' must be translated first"
         echo "$first_parent_override"
         return 0
@@ -111,8 +111,8 @@ mt_split2mono_translate_list_tree_with_dups() {
     #
     # TODO: add a testcase where sorting matters for putting other split dirs
     # next to each other.
-    local  d  rev  mode  type  sha1 name skip in_d mp
-    local ld lrev lmode ltype lsha1
+    local  rev  mode  type  sha1  name d skip in_d mp
+    local lrev lmode ltype lsha1 lname
     for mp in $mparents; do
         rev=$(mt_llvm_svn_base $mp) || {
             echo "poison mktree with junk"
@@ -134,6 +134,21 @@ mt_split2mono_translate_list_tree_with_dups() {
         # Skip this if it's coming from the split commit.
         [ "$d" = "$splitdir" ] && continue
 
+        # Print this if it's our first sighting of name.
+        # FIXME: this will fail to delete blobs when there is no out-of-tree
+        # '-' dir.
+        if [ ! "$lname" = "$name" ]; then
+            # if --first-parent has this, it'll be printed here
+            printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
+            lrev=$rev lmode=$mode ltype=$type lsha1=$sha1 lname=$name
+            skip=
+            continue
+        fi
+
+        # If the content is identical don't look any further.
+        [ $mode = $lmode -a $type = $ltype -a $sha1 = $lsha1 ] &&
+            continue
+
         # If --first-parent wants priority then ignore its competition.
         # TODO: add a testcase where we have an out-of-tree '-' dir
         if [ -z "$skip" ]; then
@@ -144,21 +159,6 @@ mt_split2mono_translate_list_tree_with_dups() {
             done
         fi
         [ $skip -eq 1 ] && continue
-
-        # Print this if it's our first sighting of name.
-        # FIXME: this will fail to delete blobs when there is no out-of-tree
-        # '-' dir.
-        if [ ! "$lname" = "$name" ]; then
-            # if --first-parent has this, it'll be printed here
-            printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
-            ld=$d lrev=$rev lmode=$mode ltype=$type lsha1=$sha1
-            skip=
-            continue
-        fi
-
-        # If the content is identical don't look any further.
-        [ $mode = $lmode -a $type = $ltype -a $sha1 = $lsha1 ] &&
-            continue
 
         # Associate LLVM revs with each change, and let the newest one win.
         #
@@ -210,7 +210,7 @@ mt_split2mono_translate_list_tree_with_dups() {
 
         # Print out an override.
         printf "%s %s %s\t%s\n" $mode $type $sha1 "$name"
-        ld=$d lrev=$rev lmode=$mode ltype=$type lsha1=$sha1
+        lrev=$rev lmode=$mode ltype=$type lsha1=$sha1 lname=$name
     done
 
     # Print out the tree we actually care about.
@@ -240,20 +240,22 @@ mt_split2mono_translate_commit_tree() {
     [ "$splitdir" = - ] || trailers="$trailers/"
 
     # Prefix the parents with '-p'.
-    local pcmd rev prev
-    pcmd=
+    local p_cmd rev p_rev
+    p_cmd=
     for mp in $mparents; do
-        prev=$(mt_llvm_svn_base $mp) ||
+        p_rev=$(mt_llvm_svn_base $mp) ||
             error "could not find LLVM base rev for '$mp'"
-        [ -z "$rev" -o "$rev" -lt "$prev" ] && rev=$prev
-        pcmd="$pcmd${pcmd:+ }-p $mp"
+        if [ -z "$rev" ] || [ "$rev" -lt "$p_rev" ]; then
+            rev=$p_rev
+        fi
+        p_cmd="$p_cmd${p_cmd:+ }-p $mp"
     done
-
+    [ -n "$rev" ] || error "no $MT_LLVM_SVN_BASE_TRAILER in $mparents"
     trailers="$trailers --trailer $MT_LLVM_SVN_BASE_TRAILER:$rev"
 
     git log -1 --format=%B $commit |
     git interpret-trailers $trailers |
-    run git commit-tree $pcmd $newtree
+    run git commit-tree $p_cmd $newtree
 }
 
 mt_split2mono_translate_commit() {
@@ -379,4 +381,5 @@ mt_split2mono_translate_commit_impl() {
         exit 1
     mt_split2mono_insert $commit $newcommit ||
         error "failed to insert mapping '$commit' -> '$newcommit'"
+    echo "$newcommit"
 }
