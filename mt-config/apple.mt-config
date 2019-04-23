@@ -5,6 +5,12 @@ repo split/apple/compiler-rt       git@github.com:apple/swift-compiler-rt.git
 repo split/apple/libcxx            git@github.com:apple/swift-libcxx.git
 repo split/apple/lldb              git@github.com:apple/swift-lldb.git
 repo split/apple/llvm              git@github.com:apple/swift-llvm.git
+repo split/llvm/clang              https://git.llvm.org/git/clang.git
+repo split/llvm/clang-tools-extra  https://git.llvm.org/git/clang-tools-extra.git
+repo split/llvm/compiler-rt        https://git.llvm.org/git/compiler-rt.git
+repo split/llvm/libcxx             https://git.llvm.org/git/libcxx.git
+repo split/llvm/lldb               https://git.llvm.org/git/lldb.git
+repo split/llvm/llvm               https://git.llvm.org/git/llvm.git
 
 dir apple/master clang             split/apple/clang/upstream-with-swift
 dir apple/master clang-tools-extra split/apple/clang-tools-extra/upstream-with-swift
@@ -31,9 +37,17 @@ dir swift/master lldb              split/apple/lldb/stable
 repeat swift/master-next apple/master
 dir    swift/master-next lldb split/apple/lldb/upstream-with-swift
 
-generate 0000 mapping  github/llvm
-generate 0010 branch   apple/master
-generate 0020 branch   apple/stable/20190117
-generate 0030 branch   swift/5.1-branch
-generate 0040 branch   swift/master
-generate 0050 branch   swift/master-next
+dir github/llvm/master clang             split/llvm/clang/master
+dir github/llvm/master clang-tools-extra split/llvm/clang-tools-extra/master
+dir github/llvm/master compiler-rt       split/llvm/compiler-rt/master
+dir github/llvm/master libcxx            split/llvm/libcxx/master
+dir github/llvm/master llvm              split/llvm/llvm/master
+dir github/llvm/master lldb              split/llvm/lldb/master
+
+generate 0000 mapping   github/llvm
+generate 0001 splitrefs github/llvm/master
+generate 0010 branch    apple/master
+generate 0020 branch    apple/stable/20190117
+generate 0030 branch    swift/5.1-branch
+generate 0040 branch    swift/master
+generate 0050 branch    swift/master-next

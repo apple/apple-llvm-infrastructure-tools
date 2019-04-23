@@ -142,6 +142,39 @@ mt_generate_branch() {
         error "failed to generate branch '$branch'"
 }
 
+mt_generate_splitrefs() {
+    # Get the branch name and prepend refs/heads/.
+    local heads=refs/heads/
+    local rawbranch=$1
+    local branch=$rawbranch
+    [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
+
+    local refdirs="$(cat "$MT_CONFIG" |
+    awk -v branch=$rawbranch '$1=="dir"&&$2==branch{print $4":"$3}')"
+    local repeat="$(cat "$MT_CONFIG" |
+    awk -v branch=$rawbranch '$1=="repeat"&&$2==branch{print $3}')"
+
+    [ -n "$refdirs" ] ||
+        error "generate $branch: no 'dir' declarations"
+    [ -z "$repeat" ] || error "generate: splitrefs does not support repeat"
+
+    local refdir ref dir
+    for refdir in $refdirs; do
+        ref=${refdir%:*}
+        dir=${refdir#*:}
+        [ "$refdir" = "$ref:$dir" ] ||
+            error "generate $branch: invalid 'dir' with colon '$refdir'"
+        run git rev-parse $ref^{commit} >/dev/null ||
+            error "generate $branch: invalid ref '$ref' in dir '$dir'"
+        [ "$dir" = "*" ] &&
+            error "generate $branch: invalid dir '$dir' for ref '$ref'"
+    done
+
+    run --dry git apple-llvm mt split2mono-update-splitrefs \
+        $branch $refdirs ||
+        error "failed to update splitrefs for '$branch'"
+}
+
 DEFAULT_GIT_DIR=mt-repo.git
 GIT_DIR=$DEFAULT_GIT_DIR
 SETUP=1

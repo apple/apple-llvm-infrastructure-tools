@@ -1,0 +1,52 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/helpers/init.sh
+helper bisect
+helper mt_split2mono
+
+usage() {
+    printf "%s\n" \
+        "usage: $(print_cmdname) <branch> <ref>:<dir>..." \
+        "" \
+        "  update <branch> refs ending in /mt-split based on the given" \
+        "  <ref>:<dir> info"
+}
+
+[ "$#" -ge 1 ] || error "missing <commit-ish>"
+[ "$#" -eq 1 ] || error "too many positional args"
+
+main() {
+    local branch="$1"
+    shift
+    mt_split2mono_init || exit 1
+    local refdir
+    local forks=
+    for refdir in "$@"; do
+        update_splitref "$branch" "$refdir" &
+        forks="$forks${forks:+ }$!"
+    done
+    wait $forks
+}
+
+is_mapped() { mt_split2mono "$@" >/dev/null; }
+update_splitref() {
+    local branch="$1"
+    local refdir="$2"
+    local ref=${refdir%:*}
+    local dir=${refdir#*:}
+
+    local mtref=refs/heads/mt/$branch/$dir/mt-split
+    local already_mapped refcommit
+    already_mapped=$(run git rev-parse --verify $mtref^{commit} 2>/dev/null)
+    refcommit=$(run git rev-parse --verify $ref^{commit} 2>/dev/null)
+    [ -n "$refcommit" ] || error "ref '$ref' is not a commit"
+    [ "$already_mapped" = "$refcommit" ] && return 0
+    local last_mapped=$(bisect is_mapped $ref $already_mapped)
+    [ -n "$last_mapped" ] || return 0
+    [ "$already_mapped" = "$last_mapped" ] && return 0
+    log "Updating $mtref to $last_mapped"
+    run git update-ref $mtref $last_mapped ||
+        error "failed to update $mtref"
+}
+
+main "$@"

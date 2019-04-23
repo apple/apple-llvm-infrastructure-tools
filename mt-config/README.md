@@ -61,7 +61,13 @@ a `0`-padded number.
 
 The currently supported values for `<type>` are:
 
-- `<mapping>`: generate an svn2git mapping from all the branches in the remote
+- `mapping`: generate an svn2git mapping from all the branches in the remote
   named `<object>`.
-- `<branch>`: generate a branch named `<branch>`, using the associated
-  `branch`, `repeat`, and `dir` declarations.
+- `branch`: generate a branch named `<object>`, using the associated
+  `repeat`, and `dir` declarations.
+- `splitrefs`: create splitrefs ending in `/mt-split` for the given
+  pseudo-branch, updating anything that has already been mapped.
+    - Like `branch`, looks for `dir` declarations.  `repeat` is not supported.
+    - Only useful as a follow-up to the `mapping` command.
+    - This optimization reduces work in `branch` directives by calculating and
+      efficiently caching the implicitly mapped svn2git commits.
