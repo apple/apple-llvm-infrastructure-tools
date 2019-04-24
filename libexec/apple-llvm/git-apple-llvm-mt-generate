@@ -29,9 +29,10 @@ mt_setup() {
     log "Setting up and syncing $GIT_DIR"
     log "  (based on $MT_CONFIG)"
     [ -d "$GIT_DIR" ] ||
-        run git init --bare "$GIT_DIR" ||
+        run --hide-errors git init --bare "$GIT_DIR" ||
         error "failed to initialize '$GIT_DIR'"
     run cd "$GIT_DIR" || exit 1
+    log "Updating remotes in parallel"
     print_repos | {
         local forks= sleepnext=0
         while read name url; do
@@ -40,15 +41,18 @@ mt_setup() {
             [ -d "$clone" ]
             sleep_next=$?
 
+            log "  - $name"
             clone=clones/$name.git
             if [ -d "$clone" ]; then
-                run git --git-dir $clone remote update >/dev/null ||
+                run --hide-errors git --git-dir $clone remote update \
+                        >/dev/null ||
                     error "failed to update remote '$name'"
             else
                 {
-                    run mkdir -p $(dirname $clone) >/dev/null &&
-                    run git clone --mirror $url $clone >/dev/null &&
-                    run git remote add $name $PWD/$clone >/dev/null
+                    run --hide-errors mkdir -p $(dirname $clone) >/dev/null &&
+                    run --hide-errors git clone --mirror $url $clone \
+                        >/dev/null &&
+                    run --hide-errors git remote add $name $PWD/$clone >/dev/null
                 } ||
                     error "failed to mirror remote '$name'"
             fi &
@@ -56,7 +60,8 @@ mt_setup() {
         done
         wait $forks
     } && {
-        run git fetch --no-tags --all >/dev/null ||
+        log "Combining object databases"
+        run --hide-errors git fetch --no-tags --all >/dev/null ||
         error "failed to sync '$GIT_DIR'"
     }
 }
@@ -204,6 +209,8 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
+
+[ -n "$NAME" ] || usage_error "missing name of mt-config"
 
 mt_setup || exit 1
 cat "$MT_CONFIG" | sort | awk '$1 == "generate" {print $3, $4}' |
