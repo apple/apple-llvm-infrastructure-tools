@@ -40,31 +40,6 @@
 #include <string>
 #include <vector>
 
-static unsigned get_bits(const unsigned char *binsha1, int start, int count) {
-  assert(count > 0);
-  assert(count <= 32);
-  assert(start >= 0);
-  assert(start <= 159);
-  assert(start + count <= 160);
-
-  // Use unsigned char to avoid weird promitions.
-  // TODO: add a test where this matters.
-  if (start >= 8) {
-    binsha1 += start / 8;
-    start = start % 8;
-  }
-  int totake = count + start; // could be more than 32
-  unsigned long long bits = 0;
-  while (totake > 0) {
-    bits <<= 8;
-    bits |= *binsha1++;
-    totake -= 8;
-  }
-  if (totake < 0)
-    bits >>= -totake;
-  bits &= (1ull << count) - 1;
-  return bits;
-}
 static int show_progress(int n, int total) {
   return fprintf(stderr, "   %9d / %d commits mapped\n", n, total) < 0;
 }
@@ -507,11 +482,11 @@ static int lookup_index_entry(split2monodb &db, int bitmap_offset,
                               unsigned *bitmap_byte_offset,
                               unsigned *bitmap_bit_offset,
                               unsigned char *bitmap_byte, int entries_offset,
-                              const unsigned char *sha1, int start_bit,
+                              const binary_sha1 &sha1, int start_bit,
                               int num_bits, int *found, int *entry_offset,
                               unsigned char *entry) {
   *found = 0;
-  unsigned i = get_bits(sha1, start_bit, num_bits);
+  unsigned i = sha1.get_bits(start_bit, num_bits);
   *entry_offset = entries_offset + i * index_entry_size;
   *bitmap_byte_offset = bitmap_offset + i / 8;
   *bitmap_bit_offset = i % 8;
@@ -530,8 +505,8 @@ static int lookup_index_entry(split2monodb &db, int bitmap_offset,
 }
 
 static int
-lookup_commit_bin_impl(split2monodb &db, const unsigned char *split,
-                       int *num_bits_in_hash, unsigned char *found_split,
+lookup_commit_bin_impl(split2monodb &db, const binary_sha1 &split,
+                       int *num_bits_in_hash, binary_sha1 &found_split,
                        int *commit_pair_offset, unsigned *bitmap_byte_offset,
                        unsigned *bitmap_bit_offset, unsigned char *bitmap_byte,
                        unsigned char *index_entry, int *index_entry_offset) {
@@ -570,11 +545,12 @@ lookup_commit_bin_impl(split2monodb &db, const unsigned char *split,
   // Look it up in the commits list.
   int i = extract_offset_from_index_entry(index_entry);
   *commit_pair_offset = commit_pairs_offset + commit_pair_size * i;
-  if (db.commits.seek_and_read(*commit_pair_offset, found_split, 20) != 20)
+  if (db.commits.seek_and_read(*commit_pair_offset, found_split.bytes, 20) !=
+      20)
     return 1;
   // Don't try to get num_bits_in_hash exactly right unless it's a full match.
   // It's good enough to say how many bits matched in the index.
-  if (!memcmp(split, found_split, 20))
+  if (split == found_split)
     *num_bits_in_hash = 160;
   return 0;
 }
@@ -588,9 +564,9 @@ static int lookup_commit(split2monodb &db, const char *split, char *mono) {
   unsigned char bitmap_byte = 0;
   int index_entry_offset = 0;
   unsigned char index_entry[index_entry_size];
-  unsigned char found_binsplit[21] = {0};
-  unsigned char binsplit[21];
-  sha1tobin(binsplit, split);
+  binary_sha1 found_binsplit;
+  binary_sha1 binsplit;
+  binsplit.from_textual(split);
   if (lookup_commit_bin_impl(db, binsplit, &num_bits_in_hash, found_binsplit,
                              &commit_pair_offset, &bitmap_byte_offset,
                              &bitmap_bit_offset, &bitmap_byte, index_entry,
@@ -631,9 +607,9 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
 }
 
 static int
-insert_one_bin_impl(split2monodb &db, const unsigned char *binsplit,
-                    const unsigned char *binmono, int num_bits_in_hash,
-                    const unsigned char *found_binsplit, int commit_pair_offset,
+insert_one_bin_impl(split2monodb &db, const binary_sha1 &binsplit,
+                    const binary_sha1 &binmono, int num_bits_in_hash,
+                    const binary_sha1 &found_binsplit, int commit_pair_offset,
                     unsigned bitmap_byte_offset, unsigned bitmap_bit_offset,
                     unsigned char bitmap_byte, int index_entry_offset) {
   bool need_new_subtrie = commit_pair_offset ? true : false;
@@ -647,8 +623,8 @@ insert_one_bin_impl(split2monodb &db, const unsigned char *binsplit,
       (new_commit_pair_offset - commit_pairs_offset) / commit_pair_size;
   assert((new_commit_pair_offset - commit_pairs_offset) % commit_pair_size ==
          0);
-  if (db.commits.write(binsplit, 20) != 20 ||
-      db.commits.write(binmono, 20) != 20)
+  if (db.commits.write(binsplit.bytes, 20) != 20 ||
+      db.commits.write(binmono.bytes, 20) != 20)
     return error("could not write commits");
 
   if (!need_new_subtrie) {
@@ -668,25 +644,7 @@ insert_one_bin_impl(split2monodb &db, const unsigned char *binsplit,
 
   // add subtrie(s) with full contents so far
   // TODO: add test that covers this.
-  int first_mismatched_bit = -1;
-  for (int i = 0; i < 160; i += 8) {
-    int byte_i = i / 8;
-    if (binsplit[byte_i] == found_binsplit[byte_i])
-      continue;
-    first_mismatched_bit = i;
-    unsigned sbyte = binsplit[byte_i];
-    unsigned mbyte = found_binsplit[byte_i];
-    unsigned mismatch = sbyte ^ mbyte;
-    assert(mismatch & 0x000000ff);
-    assert(!(mismatch & 0xffffff00));
-    mismatch <<= 1;
-    while (!(mismatch & 0x100)) {
-      ++first_mismatched_bit;
-      mismatch <<= 1;
-    }
-    break;
-  }
-  assert(first_mismatched_bit != -1);
+  int first_mismatched_bit = binsplit.get_mismatched_bit(found_binsplit);
   assert(first_mismatched_bit < 160);
   assert(first_mismatched_bit >= num_bits_in_hash - num_subtrie_bits);
 
@@ -733,8 +691,8 @@ insert_one_bin_impl(split2monodb &db, const unsigned char *binsplit,
     // Calculate the entries for the next subtrie.
     subtrie_offset = subtrie_indexes_offset + top->num * subtrie_index_size;
     bitmap_offset = subtrie_offset + subtrie_index_bitmap_offset;
-    n = get_bits(binsplit, num_bits_in_hash, num_subtrie_bits);
-    f = get_bits(found_binsplit, num_bits_in_hash, num_subtrie_bits);
+    n = binsplit.get_bits(num_bits_in_hash, num_subtrie_bits);
+    f = found_binsplit.get_bits(num_bits_in_hash, num_subtrie_bits);
     n_entry_offset =
         subtrie_offset + subtrie_index_entries_offset + n * index_entry_size;
     f_entry_offset =
@@ -805,16 +763,16 @@ insert_one_bin_impl(split2monodb &db, const unsigned char *binsplit,
 static int insert_one_bin(split2monodb &db, const unsigned char *binsplit,
                           const unsigned char *binmono) {
   int num_bits_in_hash = 0;
-  unsigned char found_binsplit[21] = {0};
+  binary_sha1 found_split, split, mono;
+  split.from_binary(binsplit);
+  mono.from_binary(binmono);
   int commit_pair_offset = 0;
   unsigned bitmap_byte_offset = 0;
   unsigned bitmap_bit_offset = 0;
   unsigned char bitmap_byte = 0;
   unsigned char index_entry[index_entry_size];
   int index_entry_offset = 0;
-  // FIXME: protect against bugs mixing up binsplit and split by using
-  // different type wrappers.
-  if (lookup_commit_bin_impl(db, binsplit, &num_bits_in_hash, found_binsplit,
+  if (lookup_commit_bin_impl(db, split, &num_bits_in_hash, found_split,
                              &commit_pair_offset, &bitmap_byte_offset,
                              &bitmap_bit_offset, &bitmap_byte, index_entry,
                              &index_entry_offset))
@@ -825,17 +783,16 @@ static int insert_one_bin(split2monodb &db, const unsigned char *binsplit,
   if (num_bits_in_hash == 160)
     return error("split is already mapped");
 
-  return insert_one_bin_impl(db, binsplit, binmono, num_bits_in_hash,
-                             found_binsplit, commit_pair_offset,
-                             bitmap_byte_offset, bitmap_bit_offset, bitmap_byte,
-                             index_entry_offset);
+  return insert_one_bin_impl(
+      db, split, mono, num_bits_in_hash, found_split, commit_pair_offset,
+      bitmap_byte_offset, bitmap_bit_offset, bitmap_byte, index_entry_offset);
 }
 
 static int insert_one(split2monodb &db, const char *split, const char *mono) {
-  unsigned char binsplit[21] = {0};
-  sha1tobin(binsplit, split);
+  binary_sha1 binsplit;
+  binsplit.from_textual(split);
   int num_bits_in_hash = 0;
-  unsigned char found_binsplit[21] = {0};
+  binary_sha1 found_binsplit;
   int commit_pair_offset = 0;
   unsigned bitmap_byte_offset = 0;
   unsigned bitmap_bit_offset = 0;
@@ -853,8 +810,8 @@ static int insert_one(split2monodb &db, const char *split, const char *mono) {
   if (num_bits_in_hash == 160)
     return error("split is already mapped");
 
-  unsigned char binmono[21] = {0};
-  sha1tobin(binmono, mono);
+  binary_sha1 binmono;
+  binmono.from_textual(mono);
   return insert_one_bin_impl(db, binsplit, binmono, num_bits_in_hash,
                              found_binsplit, commit_pair_offset,
                              bitmap_byte_offset, bitmap_bit_offset, bitmap_byte,

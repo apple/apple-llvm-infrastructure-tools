@@ -123,11 +123,11 @@ static int opendb(const char *cmd, svn2gitdb &db, const char *dbfile,
 static int insert_one_impl(svn2gitdb &db, int rev, const char *sha1) {
   if (rev < 1)
     return error("invalid rev < 1");
-  unsigned char binsha1[21] = {0};
-  sha1tobin(binsha1, sha1);
+  binary_sha1 binsha1;
+  binsha1.from_textual(sha1);
   if (fseek(db.out, rev * 20, SEEK_SET))
     return error("could not seek to rev");
-  int written = fwrite(binsha1, 1, 20, db.out);
+  int written = fwrite(binsha1.bytes, 1, 20, db.out);
   if (!written)
     return error("no bytes written");
   if (written != 20) {
@@ -172,10 +172,10 @@ static int insert_bulk(const char *cmd, const char *dbfile,
   if (opendb(cmd, db, dbfile, /*only_create=*/false))
     return 1;
 
-  char sha1[41] = {0};
+  char sha1[42] = {0};
   int rev = 0;
   int n = 0;
-  while (scanf("%d %40s", &rev, sha1) == 2) {
+  while (scanf("%d %41s", &rev, sha1) == 2) {
     if (int EC = insert_one_impl(db, rev, sha1[0] == '-' ? sha1 + 1 : sha1))
       return EC;
     if ((++n % 5000) == 0)
@@ -201,7 +201,7 @@ static int main_dump(const char *cmd, int argc, const char *argv[]) {
   if (check_db(bytes, db.num_bytes))
     return 1;
 
-  char sha1[41] = {0};
+  textual_sha1 sha1;
   std::string spaces(8, ' ');
   long drop_space_at = 10;
   for (long offset = 20; offset < db.num_bytes; offset += 20) {
@@ -210,10 +210,10 @@ static int main_dump(const char *cmd, int argc, const char *argv[]) {
       spaces.pop_back();
     }
     // skip all zeros.
-    if (bintosha1(sha1, bytes + offset))
+    if (sha1.from_binary(bytes + offset))
       continue;
     int rev = offset / 20;
-    if (!printf("r%d%s %s\n", rev, spaces.c_str(), sha1))
+    if (!printf("r%d%s %s\n", rev, spaces.c_str(), sha1.bytes))
       return 1;
   }
   return 0;
@@ -240,10 +240,10 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
   if (cmdline_rev(cmd, rev, revstr))
     return 1;
 
-  char sha1[41] = {0};
+  textual_sha1 sha1;
   long offset = 20 * rev;
-  return offset + 20 > db.num_bytes || bintosha1(sha1, bytes + offset) ||
-         printf("%s\n", sha1) != 41;
+  return offset + 20 > db.num_bytes || sha1.from_binary(bytes + offset) ||
+         printf("%s\n", sha1.bytes) != 41;
 }
 
 static int main_insert(const char *cmd, int argc, const char *argv[]) {

@@ -1,6 +1,9 @@
 // sha1convert.h
 #pragma once
 
+#include <cassert>
+#include <cstring>
+
 static unsigned char convert(int ch) {
   switch (ch) {
   default:
@@ -38,7 +41,6 @@ static int sha1tobin(unsigned char *bin, const char *text) {
   bool any = false;
   for (int i = 0; i < 40; i += 2)
     any |= bin[i / 2] = (convert(text[i]) << 4) | convert(text[i + 1]);
-  bin[20] = '\0';
   return any ? 0 : 1;
 }
 /// Return 0 (success) except for the "empty" hash (all 0s).
@@ -50,4 +52,79 @@ static int bintosha1(char *text, const unsigned char *bin) {
   }
   text[40] = '\0';
   return any ? 0 : 1;
+}
+
+namespace {
+struct binary_sha1 {
+  unsigned char bytes[20] = {0};
+  void from_binary(const unsigned char *sha1) { std::memcpy(bytes, sha1, 20); }
+  int from_textual(const char *sha1) { return sha1tobin(bytes, sha1); }
+  unsigned get_bits(int start, int count) const;
+  int get_mismatched_bit(const binary_sha1 &x) const;
+  friend bool operator==(const binary_sha1 &lhs, const binary_sha1 &rhs) {
+    return !memcmp(lhs.bytes, rhs.bytes, 20);
+  }
+};
+struct textual_sha1 {
+  char bytes[41] = {0};
+  int from_binary(const unsigned char *sha1) { return bintosha1(bytes, sha1); }
+  textual_sha1() = default;
+  explicit textual_sha1(const binary_sha1 &bin) { from_binary(bin.bytes); }
+  explicit operator binary_sha1() const {
+    binary_sha1 bin;
+    bin.from_textual(bytes);
+    return bin;
+  }
+};
+} // end namespace
+
+unsigned binary_sha1::get_bits(int start, int count) const {
+  assert(count > 0);
+  assert(count <= 32);
+  assert(start >= 0);
+  assert(start <= 159);
+  assert(start + count <= 160);
+
+  // Use unsigned char to avoid weird promitions.
+  // TODO: add a test where this matters.
+  int index = 0;
+  if (start >= 8) {
+    index += start / 8;
+    start = start % 8;
+  }
+  int totake = count + start; // could be more than 32
+  unsigned long long bits = 0;
+  while (totake > 0) {
+    bits <<= 8;
+    bits |= bytes[index++];
+    totake -= 8;
+  }
+  if (totake < 0)
+    bits >>= -totake;
+  bits &= (1ull << count) - 1;
+  return bits;
+}
+
+int binary_sha1::get_mismatched_bit(const binary_sha1 &x) const {
+  int i = 0;
+  for (; i < 160; i += 8) {
+    int byte_i = i / 8;
+    if (bytes[byte_i] != x.bytes[byte_i])
+      break;
+  }
+  if (i == 160)
+    return i;
+
+  int byte_i = i / 8;
+  unsigned lhs = bytes[byte_i];
+  unsigned rhs = x.bytes[byte_i];
+  unsigned mismatch = lhs ^ rhs;
+  assert(mismatch & 0x000000ff);
+  assert(!(mismatch & 0xffffff00));
+  mismatch <<= 1;
+  while (!(mismatch & 0x100)) {
+    ++i;
+    mismatch <<= 1;
+  }
+  return i;
 }
