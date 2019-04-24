@@ -185,21 +185,21 @@ while [ $# -gt 0 ]; do
         --git-dir|--git-dir=*)
             parse_cmdline_option --git-dir GIT_DIR "$@"
             shift $?
-            [ -n "$GIT_DIR" ] || error "--git-dir cannot be empty"
+            [ -n "$GIT_DIR" ] || usage_error "--git-dir cannot be empty"
             ;;
         --dry-run)  DRY_RUN=1; shift ;;
         --setup)    SETUP=1; shift ;;
         --no-setup) SETUP=0; shift ;;
         --help|--usage|-h) usage; exit 0 ;;
-        -*) error "unknown option '$1'" ;;
+        -*) usage_error "unknown option '$1'" ;;
         *)
-            [ -z "$NAME" ] || error "too many positional arguments"
-            [ -n "$1" ] || error "empty name for downstream"
-            has_no_spaces "$1" || error "branch name '$1' has spaces"
+            [ -z "$NAME" ] || usage_error "too many positional arguments"
+            [ -n "$1" ] || usage_error "empty name for downstream"
+            has_no_spaces "$1" || usage_error "branch name '$1' has spaces"
             NAME=$1
             MT_CONFIG="$APPLE_LLVM_MT_CONFIG/$NAME.mt-config"
             [ -f "$MT_CONFIG" ] ||
-                error "config for '$NAME' not found at '$MT_CONFIG'"
+                usage_error "config for '$NAME' not found at '$MT_CONFIG'"
             shift
             ;;
     esac

@@ -2,7 +2,7 @@
 
 . "$(dirname "$0")"/helpers/init.sh
 helper mt_split2mono
-helper mt_split2mono_translate_branch
+helper mt_split2mono_interleave_commits
 
 usage() {
     printf "%s\n"                                                            \
@@ -22,9 +22,63 @@ usage() {
         "   refs/heads/mt/<branch>/<dir>/mt-split -> <split-commit>"
 }
 
-[ $# -ge 1 ] || error "missing <branch>"
-[ $# -ge 2 ] || error "missing <ref>:<dir>..."
+main() {
+    [ $# -ge 1 ] || usage_error "missing <branch>"
+    [ $# -ge 2 ] || usage_error "missing <ref>:<dir>..."
 
-mt_split2mono_init &&
-mt_split2mono_translate_branch "$@" &&
-mt_split2mono_save
+    mt_split2mono_init &&
+    translate_branch "$@" &&
+    mt_split2mono_save
+}
+
+translate_branch() {
+    local branch
+    local pos=0
+    local repeat=
+    local -a skips
+    local -a refdirs
+    local value=
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --help)
+                usage
+                exit 0
+                ;;
+            --repeat|--repeat=*)
+                parse_cmdline_option --repeat repeat
+                shift $?
+                ;;
+            --skip|--skip=*)
+                parse_cmdline_option --skip value
+                shift $?
+                skips=( "${skips[@]}" "$value" )
+                ;;
+            -*)
+                usage_error "unknown option '$1'"
+                ;;
+            *)
+                if [ $pos -eq 0 ]; then
+                    branch="$1"
+                else
+                    refdirs=( "${refdirs[@]}" "$1" )
+                fi
+                pos=1
+                shift
+                ;;
+        esac
+    done
+    [ -n "$branch" ] || usage_error "missing <branch>"
+    branch="${branch#refs/heads/}"
+
+    [ ${#refdirs[@]} -gt 0 ] || usage_error "missing <ref>:<dir>"
+    mt_split2mono_check_refdirs "${refdirs[@]}"
+    mt_split2mono_check_skips "${skips[@]}"
+
+    [ -z "$repeat" ] || error "--repeat not implemented"
+
+    mt_split2mono_list_new_split_commits "$branch" "${refdirs[@]}" |
+    mt_split2mono_interleave_commits "$branch" "$repeat" "${refdirs[*]}" ||
+        error "failure interleaving commits"
+}
+
+main "$@"

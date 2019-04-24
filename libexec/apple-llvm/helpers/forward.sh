@@ -4,12 +4,16 @@ forward() {
     local subcmd="$1"
     shift
 
-    usage() { echo "usage: $(print_cmdname) <sub-command>"; }
+    usage() {
+        printf "usage: %s <subcommand>\n" "$(print_cmdname)"
+        printf "\n"
+        printf "    subcommands:\n"
+        printf "        %s\n" $(forward_list)
+        return 0
+    }
 
     if [ -z "$subcmd" ]; then
-        # List subcommands
-        printf "%s:\n" "$(print_cmdname)"
-        printf "    %s\n" $(forward_list)
+        usage
         return 0
     fi
 
@@ -18,11 +22,11 @@ forward() {
     for sub in $(forward_list); do
         [ "$sub" = "$subcmd" ] || continue
         which "$constructed" >/dev/null ||
-            error "broken subcommand '$subcmd'"
+            usage_error "broken subcommand '$subcmd'"
         exec "$constructed" "$@"
     done
 
-    error "unknown subcommand '$subcmd'"
+    usage_error "unknown subcommand '$subcmd'"
 }
 
 forward_list() {

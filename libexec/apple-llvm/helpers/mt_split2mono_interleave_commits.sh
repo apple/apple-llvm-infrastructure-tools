@@ -3,56 +3,6 @@
 helper mt_split2mono_translate_commit
 helper bisect
 
-mt_split2mono_translate_branch() {
-    local branch
-    local pos=0
-    local repeat=
-    local -a skips
-    local -a refdirs
-    local value=
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --help)
-                usage
-                exit 0
-                ;;
-            --repeat|--repeat=*)
-                parse_cmdline_option --repeat repeat
-                shift $?
-                ;;
-            --skip|--skip=*)
-                parse_cmdline_option --skip value
-                shift $?
-                skips=( "${skips[@]}" "$value" )
-                ;;
-            -*)
-                error "unknown option '$1'"
-                ;;
-            *)
-                if [ $pos -eq 0 ]; then
-                    branch="$1"
-                else
-                    refdirs=( "${refdirs[@]}" "$1" )
-                fi
-                pos=1
-                shift
-                ;;
-        esac
-    done
-    [ -n "$branch" ] || error "missing <branch>"
-    branch="${branch#refs/heads/}"
-
-    [ ${#refdirs[@]} -gt 0 ] || error "missing <ref>:<dir>"
-    mt_split2mono_check_refdirs "${refdirs[@]}"
-    mt_split2mono_check_skips "${skips[@]}"
-
-    [ -z "$repeat" ] || error "--repeat not implemented"
-
-    mt_split2mono_list_new_split_commits "$branch" "${refdirs[@]}" |
-    mt_split2mono_interleave_commits "$branch" "$repeat" "${refdirs[*]}" ||
-        error "failure interleaving commits"
-}
-
 mt_split2mono_check_skips() {
     for s in "$@"; do
         mt_split2mono "$s" || exit 1
@@ -127,7 +77,7 @@ mt_split2mono_interleave_commits() {
             GIT_AUTHOR_NAME="$an"  GIT_COMMITTER_NAME="$cn"  \
             GIT_AUTHOR_DATE="$ad"  GIT_COMMITTER_DATE="$cd"  \
             GIT_AUTHOR_EMAIL="$ae" GIT_COMMITTER_EMAIL="$ce" \
-            run mt_split2mono_translate_commit_impl          \
+            run mt_split2mono_translate_commit               \
             $override $commit $tree "$d" "$parents" "$ds") ||
             error "could not translate $commit for $d"
 

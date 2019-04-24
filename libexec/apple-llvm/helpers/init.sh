@@ -89,6 +89,7 @@ run() {
         "$@"
     fi
 }
+
 error() {
     local exit=1
     if [ "$1" = "--no-exit" ]; then
@@ -97,13 +98,23 @@ error() {
     fi
 
     printf "error: %s\n" "$*" >&2
+    [ $exit -eq 0 ] || exit 1
+    return 1
+}
+
+usage_error() {
+    local exit=1
+    if [ "$1" = "--no-exit" ]; then
+        shift
+        exit=0
+    fi
+
+    error --no-exit "$@"
     if is_function usage; then
         printf "\n"
         usage
     fi >&2
-    if [ $exit -eq 1 ]; then
-        exit 1
-    fi
+    [ $exit -eq 0 ] || exit 1
     return 1
 }
 

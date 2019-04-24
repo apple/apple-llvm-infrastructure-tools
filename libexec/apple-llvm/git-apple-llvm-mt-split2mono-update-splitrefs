@@ -12,8 +12,8 @@ usage() {
         "  <ref>:<dir> info"
 }
 
-[ "$#" -ge 1 ] || error "missing <branch>"
-[ "$#" -ge 2 ] || error "missing <ref>:<dir> (minimum 1)"
+[ "$#" -ge 1 ] || usage_error "missing <branch>"
+[ "$#" -ge 2 ] || usage_error "missing <ref>:<dir> (minimum 1)"
 
 main() {
     local branch="$1"

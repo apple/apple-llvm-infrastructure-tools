@@ -7,12 +7,12 @@ helper bisect
 
 usage() { echo "usage: $(print_cmdname) <commit>"; }
 
-[ "$#" -ge 1 ] || error "missing <commit>"
-[ "$#" -eq 1 ] || error "too many positional args"
+[ "$#" -ge 1 ] || usage_error "missing <commit>"
+[ "$#" -eq 1 ] || usage_error "too many positional args"
 
 # Make sure this has a rev.
 COMMIT=$(run --hide-errors git rev-parse "$1"^{commit}) ||
-    error "invalid commit"
+    usage_error "invalid commit"
 REV=$(mt_llvm_svn $COMMIT) ||
     error "no rev for $COMMIT"
 
