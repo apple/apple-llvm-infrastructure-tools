@@ -12,6 +12,19 @@ forward() {
         return 0
     }
 
+    case "$1" in
+        --help|-h|--usage)
+            usage
+            exit 0
+            ;;
+        -*)
+            usage_error "unrecognized option $1"
+            ;;
+        *)
+            true
+            ;;
+    esac
+
     if [ -z "$subcmd" ]; then
         usage
         return 0
