@@ -521,14 +521,9 @@ static int lookup_index_entry(split2monodb &db, index_query &q) {
   return 0;
 }
 
-static int lookup_commit_bin_impl(split2monodb &db, index_query &q,
-                                  int *num_bits_in_hash,
-                                  binary_sha1 &found_sha1,
-                                  int *commit_pair_offset) {
-  // Lookup commit in index to check for a duplicate.
+static int lookup_index_entry_from_root(split2monodb &db, index_query &q,
+                                        int *num_bits_in_hash) {
   *num_bits_in_hash = 0;
-  *commit_pair_offset = 0;
-
   q.in.start_bit = 0;
   q.in.num_bits = num_root_bits;
   q.in.bitmap_offset = root_index_bitmap_offset;
@@ -555,8 +550,20 @@ static int lookup_commit_bin_impl(split2monodb &db, index_query &q,
     if (!q.out.found)
       return 0;
   }
+  return 0;
+}
+
+static int lookup_commit_bin_impl(split2monodb &db, index_query &q,
+                                  int *num_bits_in_hash,
+                                  binary_sha1 &found_sha1,
+                                  int *commit_pair_offset) {
+  if (lookup_index_entry_from_root(db, q, num_bits_in_hash))
+    return 1;
+  if (!q.out.found)
+    return 0;
 
   // Look it up in the commits list.
+  *commit_pair_offset = 0;
   int i = extract_offset_from_index_entry(q.out.entry);
   *commit_pair_offset = commit_pairs_offset + commit_pair_size * i;
   if (db.commits.seek_and_read(*commit_pair_offset, found_sha1.bytes, 20) != 20)
