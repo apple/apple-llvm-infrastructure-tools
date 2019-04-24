@@ -7,11 +7,13 @@ mt_db_init() {
     [ -z "$MT_DB_INIT_ONCE" ] || return 0
     MT_DB_INIT_ONCE=1
 
-    MT_DB_SPLIT2MONO_DB=split2mono.db
-    MT_DB_SVN2GIT_DB=svn2git.db
+    local wt="$(mt_db_worktree)"
+    MT_DB_SVN2GIT_DB="$wt"/svn2git.db
+    MT_DB_SPLIT2MONO_DB="$wt/"split2mono.db
 
     local ref=$(mt_db)
     if git rev-parse --verify $ref^{commit} >/dev/null 2>&1; then
+        local count=$(run git -C "$wt" rev-list --count HEAD)
         case $count in
             2) true ;;
             *) error "expected 2 commits in $(mt_db)" ;;
@@ -33,10 +35,10 @@ mt_db_make_ref() {
 
 mt_db_make_worktree() {
     local wt="$(mt_db_worktree)"
-    run git worktree "$wt" "$(mt_db)" ||
+    run git worktree add -q "$wt" "$(mt_db)" ||
         error "failed to create worktree for $(mt_db) at '$wt'"
     local count
-    count=$(run git --work-tree "$wt" rev-list HEAD --count) ||
+    count=$(run git -C "$wt" rev-list --count HEAD) ||
         error "failed to get number of commits in $(mt_db)"
     case $count in
         1) true ;;
@@ -51,36 +53,38 @@ mt_db_make_worktree() {
         error "could not build split2mono"
 
     # Only one commit.  Make some databases.
-    svn2git_db="$wt"/"$MT_DB_SVN2GIT_DB"
-    split2mono_db="$wt"/"$MT_DB_SPLIT2MONO_DB"
     {
-        mkdir "$split2monodb" &&
-            "$svn2git" create "$svn2git_db" &&
-            "$split2mono" create "$split2mono_db"
+        run mkdir "$MT_DB_SPLIT2MONO_DB" &&
+            run "$svn2git" create "$MT_DB_SVN2GIT_DB" &&
+            run "$split2mono" create "$MT_DB_SPLIT2MONO_DB"
     } || error "could not create initial db for '$ref'"
 
     {
-        run git --work-tree "$wt" add "$svn2git_db" "$split2mono_db" &&
-            run git --work-tree "$wt" commit -am "mt-db 0"
+        run git -C "$wt" add "$MT_DB_SVN2GIT_DB" &&
+            run git -C "$wt" add "$MT_DB_SPLIT2MONO_DB" &&
+            run git -C "$wt" commit -q -am "mt-db 0" &&
+            run git -C "$wt" update-ref $ref HEAD
     } || error "could not commit empty db for '$ref'"
 }
 
-mt_db_save_worktree() {
+mt_db_save() {
     local ref=$(mt_db) wt="$(mt_db_worktree)"
-    run git --work-tree "$wt" add -u ||
+    run git -C "$wt" add -u ||
         error "failed to add current mt-db to the index"
     local new old
-    new=$(run git --work-tree "$wt" write-tree) ||
+    new=$(run git -C "$wt" write-tree) ||
         error "failed to write new tree for $ref"
     old=$(run git rev-parse $ref:) ||
         error "failed to parse old tree for $ref"
     [ "$new" = "$old" ] && return 0
 
     local subject num
-    subject="$(git log --format=%s "$ref")" ||
+    subject="$(git log -1 --format=%s "$ref")" ||
         error "failed to find extract subject from $ref"
     num=${subject#mt-db }
     num=$(( $num + 1 )) || error "failed to rev mt-db"
-    run git --work-tree "$wt" commit --amend -m "mt-db $num" ||
+    run git -C "$wt" commit -q --amend -m "mt-db $num" ||
         error "failed to commit mt-db to $ref"
+    run git -C "$wt" update-ref $ref HEAD ||
+        error "failed to update $ref to HEAD"
 }

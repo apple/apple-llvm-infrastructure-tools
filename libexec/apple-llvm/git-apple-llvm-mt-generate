@@ -20,6 +20,8 @@ APPLE_LLVM_MT_CONFIG="$(
 print_repos() { cat "$MT_CONFIG" | awk '$1 == "repo" {print $2, $3}'; }
 
 mt_setup() {
+    GIT_DIR="$(canonicalize_path "$GIT_DIR")"
+
     # Always change directory.
     if ! should_setup; then
         run cd "$GIT_DIR"
