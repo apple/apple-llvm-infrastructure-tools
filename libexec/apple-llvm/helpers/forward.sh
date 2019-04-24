@@ -11,24 +11,22 @@ forward() {
         printf "        %s\n" $(forward_list)
         return 0
     }
-
-    case "$1" in
+    if [ -z "$subcmd" ]; then
+        usage
+        return 0
+    fi
+    case "$subcmd" in
         --help|-h|--usage)
             usage
             exit 0
             ;;
         -*)
-            usage_error "unrecognized option $1"
+            usage_error "unrecognized option $subcmd"
             ;;
         *)
             true
             ;;
     esac
-
-    if [ -z "$subcmd" ]; then
-        usage
-        return 0
-    fi
 
     # Make sure it's a legal subcommand.
     local constructed="$APPLE_LLVM_LIBEXEC_DIR"/"$COMMAND"-"$subcmd"
