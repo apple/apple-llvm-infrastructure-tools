@@ -68,16 +68,18 @@ static int usage(const char *msg, const char *cmd) {
   if (const char *slash = strrchr(cmd, '/'))
     cmd = slash + 1;
   fprintf(stderr,
-          "usage: %s create <dbdir>\n"
-          "       %s lookup <dbdir> <split>\n"
-          "       %s upstream <dbdir> <upstream-dbdir>\n"
-          "       %s insert <dbdir> [<split> <mono>]\n"
-          "       %s dump <dbdir>\n"
+          "usage: %s create         <dbdir>\n"
+          "       %s lookup         <dbdir> <split>\n"
+          "       %s lookup-svnbase <dbdir> <sha1>\n"
+          "       %s upstream       <dbdir> <upstream-dbdir>\n"
+          "       %s insert         <dbdir> [<split> <mono>]\n"
+          "       %s insert-svnbase <dbdir> <sha1> <rev>\n"
+          "       %s dump           <dbdir>\n"
           "\n"
           "   <dbdir>/upstreams: merged upstreams (text)\n"
           "   <dbdir>/commits: translated commits (bin)\n"
           "   <dbdir>/index: translated commits (bin)\n",
-          cmd, cmd, cmd, cmd, cmd);
+          cmd, cmd, cmd, cmd, cmd, cmd, cmd);
   return 1;
 }
 
@@ -85,6 +87,8 @@ namespace {
 struct svnbaserev {
   unsigned char bytes[4] = {0};
 
+  svnbaserev() = default;
+  explicit svnbaserev(int rev) { set_rev(rev); }
   static svnbaserev make_from_binary(const unsigned char *bytes);
   int get_rev() const;
   void set_rev(int rev);
@@ -808,6 +812,31 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
   return printf("%s\n", mono.bytes) != 41;
 }
 
+static int main_lookup_svnbase(const char *cmd, int argc, const char *argv[]) {
+  if (argc < 1)
+    return usage("lookup: missing <dbdir>", cmd);
+  if (argc < 2)
+    return usage("lookup: missing <sha1>", cmd);
+  if (argc > 2)
+    return usage("lookup: too may positional args", cmd);
+  const char *dbdir = argv[0];
+  textual_sha1 key;
+  if (key.from_input(argv[1]))
+    return usage("lookup: <sha1> is not a valid sha1", cmd);
+
+  split2monodb db;
+  db.is_read_only = true;
+  if (db.opendb(dbdir))
+    return 1;
+
+  svnbaserev rev;
+  if (svnbase_query(key).lookup_data(db.svnbase, rev))
+    return 1;
+
+  // TODO: add a test for the exit status.
+  return printf("%d\n", rev.get_rev()) != 0;
+}
+
 int index_query::insert_new_entry(file_stream &index, int new_num) const {
   // update the existing trie/subtrie
   index_entry entry(/*is_data=*/true, new_num);
@@ -1014,6 +1043,29 @@ static int main_insert(const char *cmd, int argc, const char *argv[]) {
   return usage("insert: wrong number of positional arguments", cmd);
 }
 
+static int main_insert_svnbase(const char *cmd, int argc, const char *argv[]) {
+  if (argc != 3)
+    return usage("insert: wrong number of positional arguments", cmd);
+
+  split2monodb db;
+  if (db.opendb(argv[0]))
+    return 1;
+
+  textual_sha1 key;
+  if (key.from_input(argv[1]))
+    return usage("insert: <sha1> is not a valid sha1", cmd);
+
+  const char *start_rev = argv[2];
+  if (start_rev[0] == 'r')
+    ++start_rev;
+  char *end_rev = nullptr;
+  long rev = strtol(start_rev, &end_rev, 10);
+  if (*end_rev || rev < 0)
+    return usage("insert: <rev> is not a valid revision", cmd);
+
+  return svnbase_query(key).insert_data(db.svnbase, svnbaserev(rev));
+}
+
 static int main_create(const char *cmd, int argc, const char *argv[]) {
   if (argc != 1)
     return usage("create: wrong number of positional arguments", cmd);
@@ -1217,6 +1269,7 @@ template <class T> static int dump_table(split2monodb::table_streams &ts) {
   }
   if (!i)
     printf("  <empty>\n");
+  printf("\n");
 
   // Print the indexes, starting with the root (-1).
   i = -1;
@@ -1235,6 +1288,7 @@ static int main_dump(const char *cmd, int argc, const char *argv[]) {
 
   bool has_error = false;
   has_error |= dump_table<commits_table>(db.commits);
+  printf("\n");
   has_error |= dump_table<svnbase_table>(db.svnbase);
   return has_error ? 1 : 0;
 }
@@ -1252,6 +1306,14 @@ int main(int argc, const char *argv[]) {
   SUBMAIN(insert);
   SUBMAIN(upstream);
   SUBMAIN(dump);
+#undef SUBMAIN
+#define SUBMAIN(X)                                                             \
+  do {                                                                         \
+    if (!strcmp(argv[1], #X "-svnbase"))                                       \
+      return main_##X##_svnbase(argv[0], argc - 2, argv + 2);                  \
+  } while (false)
+  SUBMAIN(lookup);
+  SUBMAIN(insert);
 #undef SUBMAIN
   return usage("unknown command", argv[0]);
 }
