@@ -68,6 +68,7 @@ struct binary_sha1 {
 struct textual_sha1 {
   char bytes[41] = {0};
   int from_binary(const unsigned char *sha1) { return bintosha1(bytes, sha1); }
+  int from_input(const char *sha1);
   textual_sha1() = default;
   explicit textual_sha1(const binary_sha1 &bin) { from_binary(bin.bytes); }
   explicit operator binary_sha1() const {
@@ -127,4 +128,20 @@ int binary_sha1::get_mismatched_bit(const binary_sha1 &x) const {
     mismatch <<= 1;
   }
   return i;
+}
+
+int textual_sha1::from_input(const char *sha1) {
+  const char *ch = sha1;
+  for (; *ch; ++ch) {
+    // Allow "[0-9a-z]".
+    if (*ch >= '0' && *ch <= '9')
+      continue;
+    if (*ch >= 'a' && *ch <= 'z')
+      continue;
+    return 1;
+  }
+  if (ch - sha1 != 40)
+    return 1;
+  strncpy(bytes, sha1, 41);
+  return 0;
 }
