@@ -80,30 +80,60 @@ static int usage(const char *msg, const char *cmd) {
   return 1;
 }
 
+namespace {
+struct svnbaserev {
+  unsigned char bytes[4] = {0};
+};
+
 // Some constants.
-constexpr const long magic_size = 8;
-constexpr const long commit_pairs_offset = magic_size;
-constexpr const long svnbase_pairs_offset = magic_size;
-constexpr const long commit_pair_size = 40;
-constexpr const long svnbase_pair_size = 24;
-constexpr const long num_root_bits = 14;
-constexpr const long num_subtrie_bits = 6;
-constexpr const long root_index_bitmap_offset = magic_size;
-constexpr const long index_entry_size = 3;
-constexpr long compute_index_bitmap_size(long num_bits) {
+static constexpr const long magic_size = 8;
+static constexpr const long num_root_bits = 14;
+static constexpr const long num_subtrie_bits = 6;
+static constexpr const long root_index_bitmap_offset = magic_size;
+
+static_assert(sizeof(binary_sha1) == 20);
+template <class T> struct data_entry_impl {
+  static constexpr const long value_size = sizeof(typename T::value_type);
+  static constexpr const long size = sizeof(binary_sha1) + value_size;
+};
+
+struct commits_table : data_entry_impl<commits_table> {
+  static constexpr const long table_offset = magic_size;
+  typedef binary_sha1 value_type;
+};
+
+struct svnbase_table : data_entry_impl<svnbase_table> {
+  static constexpr const long table_offset = magic_size;
+  typedef svnbaserev value_type;
+};
+
+struct index_entry {
+  static constexpr const long size = 3;
+
+  unsigned char bytes[size] = {0};
+
+  index_entry() = default;
+  index_entry(bool is_data, int offset);
+
+  bool is_data() const;
+  int num() const;
+};
+} // end namespace
+
+static constexpr long compute_index_bitmap_size(long num_bits) {
   return 1ull << (num_bits - 3);
 }
-constexpr long compute_index_entries_size(long num_bits) {
-  return (1ull << num_bits) * index_entry_size;
+static constexpr long compute_index_entries_size(long num_bits) {
+  return (1ull << num_bits) * index_entry::size;
 }
-constexpr const long root_index_entries_offset =
+static constexpr const long root_index_entries_offset =
     root_index_bitmap_offset + compute_index_bitmap_size(num_root_bits);
-constexpr const long subtrie_indexes_offset =
+static constexpr const long subtrie_indexes_offset =
     root_index_entries_offset + compute_index_entries_size(num_root_bits);
-constexpr const long subtrie_index_bitmap_offset = 0;
-constexpr const long subtrie_index_entries_offset =
+static constexpr const long subtrie_index_bitmap_offset = 0;
+static constexpr const long subtrie_index_entries_offset =
     compute_index_bitmap_size(num_subtrie_bits);
-constexpr const long subtrie_index_size =
+static constexpr const long subtrie_index_size =
     subtrie_index_entries_offset + compute_index_entries_size(num_subtrie_bits);
 
 namespace {
@@ -173,8 +203,8 @@ struct split2monodb {
   int opendb(const char *dbdir);
   int parse_upstreams();
   long num_commits() const {
-    return (commits.data.get_num_bytes() - commit_pairs_offset) /
-           commit_pair_size;
+    return (commits.data.get_num_bytes() - commits_table::table_offset) /
+           commits_table::size;
   }
 
   int close_files();
@@ -185,15 +215,7 @@ struct split2monodb {
     fprintf(stderr, "log: %s\n", x.c_str());
   }
 };
-struct index_entry {
-  unsigned char bytes[index_entry_size] = {0};
 
-  index_entry() = default;
-  index_entry(bool is_commit, int offset);
-
-  bool is_commit() const;
-  int num() const;
-};
 struct bitmap_ref {
   int byte_offset = 0;
   int bit_offset = 0;
@@ -236,44 +258,49 @@ struct index_query {
   int lookup_impl(file_stream &index);
   int num_bits_so_far() const;
   int advance();
-  int insert_new_entry(file_stream &index, int new_commit_num) const;
-  int update_after_collision(file_stream &index, int new_commit_num,
+  int insert_new_entry(file_stream &index, int new_num) const;
+  int update_after_collision(file_stream &index, int new_num,
                              const binary_sha1 &existing_sha1,
-                             int existing_commit_num) const;
+                             int existing_num) const;
 };
-struct commit_query : index_query {
-  bool found_commit = false;
-  binary_sha1 found_sha1;
-  int commit_pair_offset = 0;
+template <class T> struct data_query : index_query {
+  typedef T table_type;
+  typedef typename table_type::value_type value_type;
 
-  commit_query(index_query &&q) : index_query(std::move(q)) {}
-  explicit commit_query(const textual_sha1 &sha1) : index_query(sha1) {}
-  explicit commit_query(const binary_sha1 &sha1) : index_query(sha1) {}
-  static commit_query from_binary(const unsigned char *key) {
+  bool found_data = false;
+  binary_sha1 found_sha1;
+  int data_offset = 0;
+
+  data_query(index_query &&q) : index_query(std::move(q)) {}
+  explicit data_query(const textual_sha1 &sha1) : index_query(sha1) {}
+  explicit data_query(const binary_sha1 &sha1) : index_query(sha1) {}
+  static data_query from_binary(const unsigned char *key) {
     return index_query::from_binary(key);
   }
-  static commit_query from_textual(const char *key) {
+  static data_query from_textual(const char *key) {
     return index_query::from_textual(key);
   }
 
-  int lookup_commit_impl(split2monodb &db);
-  int lookup_commit(split2monodb &db, textual_sha1 &mono);
-  int insert_commit(split2monodb &db, const binary_sha1 &mono);
-  int insert_commit_impl(split2monodb &db, const binary_sha1 &mono);
+  typedef split2monodb::table_streams table_streams;
+  int lookup_data_impl(table_streams &ts);
+  int lookup_data(table_streams &ts, value_type &value);
+  int insert_data(table_streams &ts, const value_type &value);
+  int insert_data_impl(table_streams &ts, const value_type &value);
 
-  int insert_new_entry(split2monodb &db, int new_commit_num) const {
-    return index_query::insert_new_entry(db.commits.index, new_commit_num);
+  int insert_new_entry(table_streams &ts, int new_num) const {
+    return index_query::insert_new_entry(ts.index, new_num);
   }
-  int update_after_collision(split2monodb &db, int new_commit_num) const {
-    int found_commit_num =
-        (this->commit_pair_offset - commit_pairs_offset) / commit_pair_size;
-    assert((this->commit_pair_offset - commit_pairs_offset) %
-               commit_pair_size ==
+  int update_after_collision(table_streams &ts, int new_num) const {
+    int existing_num =
+        (this->data_offset - table_type::table_offset) / table_type::size;
+    assert((this->data_offset - table_type::table_offset) % table_type::size ==
            0);
-    return index_query::update_after_collision(db.commits.index, new_commit_num,
-                                               found_sha1, found_commit_num);
+    return index_query::update_after_collision(ts.index, new_num, found_sha1,
+                                               existing_num);
   }
 };
+typedef data_query<commits_table> commits_query;
+typedef data_query<svnbase_table> svnbase_query;
 } // end namespace
 
 int file_stream::init_stream(int fd) {
@@ -365,7 +392,7 @@ int split2monodb::close_files() {
   return commits.close_files() | svnbase.close_files();
 }
 
-bool index_entry::is_commit() const { return bytes[0] >> 7; }
+bool index_entry::is_data() const { return bytes[0] >> 7; }
 
 int index_entry::num() const {
   unsigned data = 0;
@@ -375,10 +402,10 @@ int index_entry::num() const {
   return data & ((1ull << 23) - 1);
 }
 
-index_entry::index_entry(bool is_commit, int num) {
+index_entry::index_entry(bool is_data, int num) {
   assert(num >= 0);
   assert(num < (1 << 23));
-  bytes[0] = static_cast<int>(is_commit) << 7 | num >> 16;
+  bytes[0] = static_cast<int>(is_data) << 7 | num >> 16;
   bytes[1] = (num >> 8) & 0xff;
   bytes[2] = num & 0xff;
 }
@@ -627,10 +654,10 @@ int split2monodb::opendb(const char *dbdir) {
     return error("could not open <dbdir>");
 
   int flags = db.is_read_only ? O_RDONLY : (O_RDWR | O_CREAT);
-  if (db.commits.init(dbfd, db.is_read_only, commits_magic, commit_pairs_offset,
-                      commit_pair_size) ||
+  if (db.commits.init(dbfd, db.is_read_only, commits_magic,
+                      commits_table::table_offset, commits_table::size) ||
       db.svnbase.init(dbfd, db.is_read_only, svnbase_magic,
-                      svnbase_pairs_offset, svnbase_pair_size))
+                      svnbase_table::table_offset, svnbase_table::size))
     return 1;
 
   int upstreamsfd = openat(dbfd, "upstreams", flags);
@@ -646,7 +673,7 @@ int split2monodb::opendb(const char *dbdir) {
 int index_query::lookup_impl(file_stream &index) {
   out.found = false;
   unsigned i = in.sha1.get_bits(in.start_bit, in.num_bits);
-  out.entry_offset = in.entries_offset + i * index_entry_size;
+  out.entry_offset = in.entries_offset + i * index_entry::size;
   out.bits.initialize(in.bitmap_offset, i);
 
   // Not found.  Be resilient to an unwritten bitmap.
@@ -656,7 +683,7 @@ int index_query::lookup_impl(file_stream &index) {
 
   out.found = true;
   if (index.seek_and_read(out.entry_offset, out.entry.bytes,
-                          index_entry_size) != index_entry_size)
+                          index_entry::size) != index_entry::size)
     return 1;
   return 0;
 }
@@ -666,7 +693,7 @@ int index_query::lookup(file_stream &index) {
     return 1;
   if (!out.found)
     return 0;
-  while (!out.entry.is_commit()) {
+  while (!out.entry.is_data()) {
     advance();
     if (lookup_impl(index))
       return 1;
@@ -676,33 +703,31 @@ int index_query::lookup(file_stream &index) {
   return 0;
 }
 
-int commit_query::lookup_commit_impl(split2monodb &db) {
-  if (lookup(db.commits.index))
+template <class T> int data_query<T>::lookup_data_impl(table_streams &ts) {
+  if (lookup(ts.index))
     return 1;
   if (!out.found)
     return 0;
 
   // Look it up in the commits list.
   int i = out.entry.num();
-  commit_pair_offset = commit_pairs_offset + commit_pair_size * i;
-  if (db.commits.data.seek_and_read(commit_pair_offset, found_sha1.bytes, 20) !=
-      20)
+  data_offset = table_type::table_offset + table_type::size * i;
+  if (ts.data.seek_and_read(data_offset, found_sha1.bytes, 20) != 20)
     return 1;
   if (in.sha1 == found_sha1)
-    found_commit = true;
+    found_data = true;
   return 0;
 }
 
-int commit_query::lookup_commit(split2monodb &db, textual_sha1 &mono) {
-  if (lookup_commit_impl(db))
+template <class T>
+int data_query<T>::lookup_data(table_streams &ts, value_type &value) {
+  if (lookup_data_impl(ts))
     return error("problem looking up split commit");
-  if (!found_commit)
+  if (!found_data)
     return 1;
-  binary_sha1 binmono;
-  if (db.commits.data.seek_and_read(commit_pair_offset + 20, binmono.bytes,
-                                    20) != 20)
+  if (ts.data.seek_and_read(data_offset + 20, value.bytes, T::value_size) !=
+      T::value_size)
     return error("could not extract mono commit");
-  mono = textual_sha1(binmono);
   return 0;
 }
 
@@ -723,19 +748,20 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
   if (db.opendb(dbdir))
     return 1;
 
-  textual_sha1 mono;
-  if (commit_query(split).lookup_commit(db, mono))
+  binary_sha1 binmono;
+  if (commits_query(split).lookup_data(db.commits, binmono))
     return 1;
+
   // TODO: add a test for the exit status.
+  textual_sha1 mono(binmono);
   return printf("%s\n", mono.bytes) != 41;
 }
 
-int index_query::insert_new_entry(file_stream &index,
-                                  int new_commit_num) const {
+int index_query::insert_new_entry(file_stream &index, int new_num) const {
   // update the existing trie/subtrie
-  index_entry entry(/*is_commit=*/true, new_commit_num);
+  index_entry entry(/*is_data=*/true, new_num);
   if (index.seek(out.entry_offset) ||
-      index.write(entry.bytes, index_entry_size) != index_entry_size)
+      index.write(entry.bytes, index_entry::size) != index_entry::size)
     return error("could not write index entry");
 
   // update the bitmap
@@ -746,9 +772,9 @@ int index_query::insert_new_entry(file_stream &index,
   return 0;
 }
 
-int index_query::update_after_collision(file_stream &index, int new_commit_num,
+int index_query::update_after_collision(file_stream &index, int new_num,
                                         const binary_sha1 &existing_sha1,
-                                        int existing_commit_num) const {
+                                        int existing_num) const {
   // add subtrie(s) with full contents so far
   // TODO: add test that covers this.
   int first_mismatched_bit = in.sha1.get_mismatched_bit(existing_sha1);
@@ -762,7 +788,7 @@ int index_query::update_after_collision(file_stream &index, int new_commit_num,
     bitmap_ref bits;
 
     int entry_offset = 0;
-    bool is_commit = false;
+    bool is_data = false;
     int num = 0;
   };
 
@@ -797,9 +823,9 @@ int index_query::update_after_collision(file_stream &index, int new_commit_num,
     n = in.sha1.get_bits(num_bits_so_far, num_subtrie_bits);
     f = existing_sha1.get_bits(num_bits_so_far, num_subtrie_bits);
     n_entry_offset =
-        subtrie_offset + subtrie_index_entries_offset + n * index_entry_size;
+        subtrie_offset + subtrie_index_entries_offset + n * index_entry::size;
     f_entry_offset =
-        subtrie_offset + subtrie_index_entries_offset + f * index_entry_size;
+        subtrie_offset + subtrie_index_entries_offset + f * index_entry::size;
 
     if (n != f)
       break;
@@ -818,15 +844,15 @@ int index_query::update_after_collision(file_stream &index, int new_commit_num,
   int fbyte_offset = bitmap_offset + f / 8;
   int nbyte_offset = bitmap_offset + n / 8;
   ++top;
-  top->is_commit = true;
-  top->num = existing_commit_num;
+  top->is_data = true;
+  top->num = existing_num;
   top->entry_offset = f_entry_offset;
   top->bits.initialize_and_set(bitmap_offset, f);
   assert(top->bits.byte);
 
   ++top;
-  top->is_commit = true;
-  top->num = new_commit_num;
+  top->is_data = true;
+  top->num = new_num;
   top->entry_offset = n_entry_offset;
   top->bits.initialize_and_set(bitmap_offset, n);
   top->skip_bitmap_update = top[-1].bits.byte_offset == top->bits.byte_offset;
@@ -840,9 +866,9 @@ int index_query::update_after_collision(file_stream &index, int new_commit_num,
     --top;
 
     // Update the index entry.
-    index_entry entry(top->is_commit, top->num);
+    index_entry entry(top->is_data, top->num);
     if (index.seek(top->entry_offset) ||
-        index.write(entry.bytes, index_entry_size) != index_entry_size)
+        index.write(entry.bytes, index_entry::size) != index_entry::size)
       return error("could not write index entry");
 
     if (top->skip_bitmap_update)
@@ -857,37 +883,38 @@ int index_query::update_after_collision(file_stream &index, int new_commit_num,
   return 0;
 }
 
-int commit_query::insert_commit_impl(split2monodb &db,
-                                     const binary_sha1 &mono) {
-  bool need_new_subtrie = commit_pair_offset ? true : false;
+template <class T>
+int data_query<T>::insert_data_impl(table_streams &ts,
+                                    const value_type &value) {
+  bool need_new_subtrie = data_offset ? true : false;
 
   // add the commit to *commits*
-  if (db.commits.data.seek_end())
+  if (ts.data.seek_end())
     return error("could not seek in commits");
-  int new_commit_pair_offset = db.commits.data.tell();
-  int new_commit_num =
-      (new_commit_pair_offset - commit_pairs_offset) / commit_pair_size;
-  assert((new_commit_pair_offset - commit_pairs_offset) % commit_pair_size ==
-         0);
-  if (db.commits.data.write(in.sha1.bytes, 20) != 20 ||
-      db.commits.data.write(mono.bytes, 20) != 20)
+  int new_data_offset = ts.data.tell();
+  int new_num = (new_data_offset - table_type::table_offset) / table_type::size;
+  assert((new_data_offset - table_type::table_offset) % table_type::size == 0);
+  if (ts.data.write(in.sha1.bytes, 20) != 20 ||
+      ts.data.write(value.bytes, table_type::value_size) !=
+          table_type::value_size)
     return error("could not write commits");
 
   if (!need_new_subtrie)
-    return insert_new_entry(db, new_commit_num);
+    return insert_new_entry(ts, new_num);
 
-  return update_after_collision(db, new_commit_num);
+  return update_after_collision(ts, new_num);
 }
 
-int commit_query::insert_commit(split2monodb &db, const binary_sha1 &mono) {
-  if (lookup_commit_impl(db))
+template <class T>
+int data_query<T>::insert_data(table_streams &ts, const value_type &value) {
+  if (lookup_data_impl(ts))
     return error("index issue");
   assert(out.entry_offset);
 
-  if (found_commit)
-    return error("split is already mapped");
+  if (found_data)
+    return error("sha1 is already mapped");
 
-  return insert_commit_impl(db, mono);
+  return insert_data_impl(ts, value);
 }
 
 static int main_insert_one(const char *cmd, const char *dbdir,
@@ -902,7 +929,7 @@ static int main_insert_one(const char *cmd, const char *dbdir,
   if (db.opendb(dbdir))
     return 1;
 
-  return commit_query(split).insert_commit(db, binary_sha1(mono));
+  return commits_query(split).insert_data(db.commits, binary_sha1(mono));
 }
 
 static int main_insert_stdin(const char *cmd, const char *dbdir) {
@@ -919,7 +946,7 @@ static int main_insert_stdin(const char *cmd, const char *dbdir) {
       return error("invalid sha1 for <split>");
     if (mono.from_input(rawmono))
       return error("invliad sha1 for <mono>");
-    if (commit_query(split).insert_commit(db, binary_sha1(mono)))
+    if (commits_query(split).insert_data(db.commits, binary_sha1(mono)))
       return 1;
   }
   if (scanned != EOF)
@@ -995,10 +1022,10 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   }
 
   // Read all missing commits and merge them.
-  long first_offset = commit_pairs_offset +
-                      commit_pair_size * existing_entry->second.num_commits;
-  long num_bytes = commit_pair_size * (upstream.num_commits() -
-                                       existing_entry->second.num_commits);
+  long first_offset = commits_table::table_offset +
+                      commits_table::size * existing_entry->second.num_commits;
+  long num_bytes = commits_table::size * (upstream.num_commits() -
+                                          existing_entry->second.num_commits);
   if (num_bytes) {
     // FIXME: This copy is dumb.  We should be using mmap for the upstream
     // commits, not FILE streams.
@@ -1010,9 +1037,10 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
 
     for (const unsigned char *b = bytes.data(),
                              *be = bytes.data() + bytes.size();
-         b != be; b += commit_pair_size)
-      if (commit_query::from_binary(b).insert_commit(
-              main, binary_sha1::make_from_binary(b + commit_pair_size / 2)))
+         b != be; b += commits_table::size)
+      if (commits_query::from_binary(b).insert_data(
+              main.commits,
+              binary_sha1::make_from_binary(b + commits_table::size / 2)))
         return error("error inserting new commit from upstream");
   }
 
@@ -1072,10 +1100,10 @@ static int dump_index(split2monodb &db, int num) {
 
       any = 1;
       int entry_i = i * 8 + bit;
-      int offset = entries_offset + index_entry_size * entry_i;
+      int offset = entries_offset + index_entry::size * entry_i;
       index_entry entry;
-      if (db.commits.index.seek_and_read(offset, entry.bytes,
-                                         index_entry_size) != index_entry_size)
+      if (db.commits.index.seek_and_read(
+              offset, entry.bytes, index_entry::size) != index_entry::size)
         return 1;
 
       char bits[num_root_bits + 1] = {0};
@@ -1083,7 +1111,7 @@ static int dump_index(split2monodb &db, int num) {
         bits[i] = entry_i & ((1u << (num_bits - i)) >> 1) ? '1' : '0';
 
       int entry_num = entry.num();
-      if (entry.is_commit())
+      if (entry.is_data())
         printf("  entry: bits=%s commit=%08d\n", bits, entry_num);
       else
         printf("  entry: bits=%s  index=%04d\n", bits, entry_num);
@@ -1106,12 +1134,14 @@ static int main_dump(const char *cmd, int argc, const char *argv[]) {
   unsigned char binmono[21] = {0};
   char split[41] = {0};
   char mono[41] = {0};
-  if (db.commits.data.seek(commit_pairs_offset))
+  if (db.commits.data.seek(commits_table::table_offset))
     return error("could not read any commit pairs");
   int i = 0;
-  while (db.commits.data.seek_and_read(commit_pairs_offset + i * 40, binsplit,
-                                       20) == 20 &&
-         db.commits.data.seek_and_read(commit_pairs_offset + i * 40 + 20,
+  while (db.commits.data.seek_and_read(commits_table::table_offset +
+                                           i * commits_table::size,
+                                       binsplit, 20) == 20 &&
+         db.commits.data.seek_and_read(commits_table::table_offset +
+                                           i * commits_table::size + 20,
                                        binmono, 20) == 20) {
     bintosha1(split, binsplit);
     bintosha1(mono, binmono);
