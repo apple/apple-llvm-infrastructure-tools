@@ -218,6 +218,10 @@ struct index_query {
   int lookup_impl(stream_gimmick &index);
   int num_bits_so_far() const;
   int advance();
+  int insert_new_entry(stream_gimmick &index, int new_commit_num) const;
+  int update_after_collision(stream_gimmick &index, int new_commit_num,
+                             const binary_sha1 &existing_sha1,
+                             int existing_commit_num) const;
 };
 struct commit_query : index_query {
   bool found_commit = false;
@@ -237,6 +241,20 @@ struct commit_query : index_query {
   int lookup_commit_impl(split2monodb &db);
   int lookup_commit(split2monodb &db, textual_sha1 &mono);
   int insert_commit(split2monodb &db, const binary_sha1 &mono);
+  int insert_commit_impl(split2monodb &db, const binary_sha1 &mono);
+
+  int insert_new_entry(split2monodb &db, int new_commit_num) const {
+    return index_query::insert_new_entry(db.index, new_commit_num);
+  }
+  int update_after_collision(split2monodb &db, int new_commit_num) const {
+    int found_commit_num =
+        (this->commit_pair_offset - commit_pairs_offset) / commit_pair_size;
+    assert((this->commit_pair_offset - commit_pairs_offset) %
+               commit_pair_size ==
+           0);
+    return index_query::update_after_collision(db.index, new_commit_num,
+                                               found_sha1, found_commit_num);
+  }
 };
 } // end namespace
 
@@ -672,43 +690,31 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
   return printf("%s\n", mono.bytes) != 41;
 }
 
-static int insert_commit_impl(split2monodb &db, const commit_query &q,
-                              const binary_sha1 &binmono) {
-  const auto &binsplit = q.in.sha1;
-  bool need_new_subtrie = q.commit_pair_offset ? true : false;
+int index_query::insert_new_entry(stream_gimmick &index,
+                                  int new_commit_num) const {
+  // update the existing trie/subtrie
+  index_entry entry(/*is_commit=*/true, new_commit_num);
+  if (index.seek(out.entry_offset) ||
+      index.write(entry.bytes, index_entry_size) != index_entry_size)
+    return error("could not write index entry");
 
-  // add the commit to *commits*
-  if (db.commits.seek_end())
-    return error("could not seek in commits");
-  int new_commit_pair_offset = db.commits.tell();
-  int new_commit_num =
-      (new_commit_pair_offset - commit_pairs_offset) / commit_pair_size;
-  assert((new_commit_pair_offset - commit_pairs_offset) % commit_pair_size ==
-         0);
-  if (db.commits.write(binsplit.bytes, 20) != 20 ||
-      db.commits.write(binmono.bytes, 20) != 20)
-    return error("could not write commits");
+  // update the bitmap
+  bitmap_ref new_bits = out.bits;
+  new_bits.set_bit();
+  if (index.seek(new_bits.byte_offset) || index.write(&new_bits.byte, 1) != 1)
+    return error("could not update index bitmap");
+  return 0;
+}
 
-  if (!need_new_subtrie) {
-    // update the existing trie/subtrie
-    index_entry entry(/*is_commit=*/true, new_commit_num);
-    if (db.index.seek(q.out.entry_offset) ||
-        db.index.write(entry.bytes, index_entry_size) != index_entry_size)
-      return error("could not write index entry");
-
-    // update the bitmap
-    bitmap_ref bits = q.out.bits;
-    bits.set_bit();
-    if (db.index.seek(bits.byte_offset) || db.index.write(&bits.byte, 1) != 1)
-      return error("could not update index bitmap");
-    return 0;
-  }
-
+int index_query::update_after_collision(stream_gimmick &index,
+                                        int new_commit_num,
+                                        const binary_sha1 &existing_sha1,
+                                        int existing_commit_num) const {
   // add subtrie(s) with full contents so far
   // TODO: add test that covers this.
-  int first_mismatched_bit = binsplit.get_mismatched_bit(q.found_sha1);
+  int first_mismatched_bit = in.sha1.get_mismatched_bit(existing_sha1);
   assert(first_mismatched_bit < 160);
-  int num_bits_so_far = q.num_bits_so_far();
+  int num_bits_so_far = this->num_bits_so_far();
   assert(first_mismatched_bit >= num_bits_so_far - num_subtrie_bits);
 
   // Make new subtries.
@@ -721,9 +727,9 @@ static int insert_commit_impl(split2monodb &db, const commit_query &q,
     int num = 0;
   };
 
-  if (db.index.seek_end())
+  if (index.seek_end())
     return error("could not seek to end to discover num subtries");
-  int end_offset = db.index.tell();
+  int end_offset = index.tell();
   int next_subtrie =
       end_offset <= subtrie_indexes_offset
           ? 0
@@ -738,22 +744,19 @@ static int insert_commit_impl(split2monodb &db, const commit_query &q,
   // commit.  Note that the bitmap is already set, we just need to make it
   // point at the right place.
   top->skip_bitmap_update = true;
-  top->entry_offset = q.out.entry_offset;
+  top->entry_offset = out.entry_offset;
   top->num = next_subtrie++;
 
   // Add some variables that need to last past the while loop.
-  int commit_num =
-      (q.commit_pair_offset - commit_pairs_offset) / commit_pair_size;
   int subtrie_offset, bitmap_offset;
   int n, n_entry_offset;
   int f, f_entry_offset;
-  assert((q.commit_pair_offset - commit_pairs_offset) % commit_pair_size == 0);
   while (true) {
     // Calculate the entries for the next subtrie.
     subtrie_offset = subtrie_indexes_offset + top->num * subtrie_index_size;
     bitmap_offset = subtrie_offset + subtrie_index_bitmap_offset;
-    n = binsplit.get_bits(num_bits_so_far, num_subtrie_bits);
-    f = q.found_sha1.get_bits(num_bits_so_far, num_subtrie_bits);
+    n = in.sha1.get_bits(num_bits_so_far, num_subtrie_bits);
+    f = existing_sha1.get_bits(num_bits_so_far, num_subtrie_bits);
     n_entry_offset =
         subtrie_offset + subtrie_index_entries_offset + n * index_entry_size;
     f_entry_offset =
@@ -777,7 +780,7 @@ static int insert_commit_impl(split2monodb &db, const commit_query &q,
   int nbyte_offset = bitmap_offset + n / 8;
   ++top;
   top->is_commit = true;
-  top->num = commit_num;
+  top->num = existing_commit_num;
   top->entry_offset = f_entry_offset;
   top->bits.initialize_and_set(bitmap_offset, f);
   assert(top->bits.byte);
@@ -799,20 +802,42 @@ static int insert_commit_impl(split2monodb &db, const commit_query &q,
 
     // Update the index entry.
     index_entry entry(top->is_commit, top->num);
-    if (db.index.seek(top->entry_offset) ||
-        db.index.write(entry.bytes, index_entry_size) != index_entry_size)
+    if (index.seek(top->entry_offset) ||
+        index.write(entry.bytes, index_entry_size) != index_entry_size)
       return error("could not write index entry");
 
     if (top->skip_bitmap_update)
       continue;
 
     // Update the bitmap to point at the index entry.
-    if (db.index.seek(top->bits.byte_offset) ||
-        db.index.write(&top->bits.byte, 1) != 1)
+    if (index.seek(top->bits.byte_offset) ||
+        index.write(&top->bits.byte, 1) != 1)
       return error("could not write to index bitmap");
   }
 
   return 0;
+}
+
+int commit_query::insert_commit_impl(split2monodb &db,
+                                     const binary_sha1 &mono) {
+  bool need_new_subtrie = commit_pair_offset ? true : false;
+
+  // add the commit to *commits*
+  if (db.commits.seek_end())
+    return error("could not seek in commits");
+  int new_commit_pair_offset = db.commits.tell();
+  int new_commit_num =
+      (new_commit_pair_offset - commit_pairs_offset) / commit_pair_size;
+  assert((new_commit_pair_offset - commit_pairs_offset) % commit_pair_size ==
+         0);
+  if (db.commits.write(in.sha1.bytes, 20) != 20 ||
+      db.commits.write(mono.bytes, 20) != 20)
+    return error("could not write commits");
+
+  if (!need_new_subtrie)
+    return insert_new_entry(db, new_commit_num);
+
+  return update_after_collision(db, new_commit_num);
 }
 
 int commit_query::insert_commit(split2monodb &db, const binary_sha1 &mono) {
@@ -823,7 +848,7 @@ int commit_query::insert_commit(split2monodb &db, const binary_sha1 &mono) {
   if (found_commit)
     return error("split is already mapped");
 
-  return insert_commit_impl(db, *this, mono);
+  return insert_commit_impl(db, mono);
 }
 
 static int main_insert_one(const char *cmd, const char *dbdir,
