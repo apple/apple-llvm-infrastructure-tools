@@ -3,13 +3,6 @@
 // Format description below:
 //
 // tree: split2mono
-// - blob: commits (file size: num-commits)
-//   0x0000-0x0007: magic
-//   0x0008-0x...: commit pairs
-//   - commit: 0x28
-//     0x00-0x13: split
-//     0x14-0x27: mono
-//
 // - blob: repos (text file)
 //   <header>
 //   <upstream>...
@@ -17,7 +10,28 @@
 //   <header>::   'name:' SP <name> LF
 //   <upstream>:: 'upstream:' SP <name> SP <num-commits> SP <num-upstreams> LF
 //
-// - blob: index
+// - blob: commits
+//   0x0000-0x0027: magic
+//   0x0028-0x...: commit pairs
+//   - commit: 0x28
+//     0x00-0x13: split
+//     0x14-0x27: mono
+//
+// - blob: commits.index
+//   <index>
+//
+// - blob: llvm-svn-base
+//   0x0000-0x0017: magic
+//   0x0018-0x...: commit pairs
+//   - commit: 0x28
+//     0x00-0x13: sha1 (mono)
+//     0x14-0x17: llvm svn base rev
+//
+// - blob: llvm-svn-base.index
+//   <index>
+//
+//
+// <index>
 //   0x0000-0x0007: magic
 //   0x0008-0x0807: root index bitmap (0x4000 bits)
 //   0x0808-0xc807: index entries
