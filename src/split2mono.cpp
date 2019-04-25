@@ -112,7 +112,7 @@ struct upstream_entry {
   long num_commits = -1;
   long num_upstreams = -1;
 };
-class stream_gimmick {
+class file_stream {
   FILE *stream = nullptr;
   mmapped_file mmapped;
   size_t num_bytes = -1;
@@ -121,7 +121,7 @@ class stream_gimmick {
   long position = 0;
 
 public:
-  stream_gimmick() = default;
+  file_stream() = default;
   int init(int fd, bool is_read_only) {
     return is_read_only ? init_mmap(fd) : init_stream(fd);
   }
@@ -138,13 +138,13 @@ public:
   int write(const unsigned char *bytes, int count);
 
   int close();
-  ~stream_gimmick() { close(); }
+  ~file_stream() { close(); }
 };
 struct split2monodb {
   struct table_streams {
     std::string name;
-    stream_gimmick data;
-    stream_gimmick index;
+    file_stream data;
+    file_stream index;
 
     explicit table_streams(std::string &&name) : name(std::move(name)) {}
 
@@ -232,12 +232,12 @@ struct index_query {
   static index_query from_binary(const unsigned char *key);
   static index_query from_textual(const char *key);
 
-  int lookup(stream_gimmick &index);
-  int lookup_impl(stream_gimmick &index);
+  int lookup(file_stream &index);
+  int lookup_impl(file_stream &index);
   int num_bits_so_far() const;
   int advance();
-  int insert_new_entry(stream_gimmick &index, int new_commit_num) const;
-  int update_after_collision(stream_gimmick &index, int new_commit_num,
+  int insert_new_entry(file_stream &index, int new_commit_num) const;
+  int update_after_collision(file_stream &index, int new_commit_num,
                              const binary_sha1 &existing_sha1,
                              int existing_commit_num) const;
 };
@@ -276,7 +276,7 @@ struct commit_query : index_query {
 };
 } // end namespace
 
-int stream_gimmick::init_stream(int fd) {
+int file_stream::init_stream(int fd) {
   assert(fd != -1);
   assert(!is_initialized);
   if (!(stream = fdopen(fd, "w+b")) || fseek(stream, 0, SEEK_END) ||
@@ -288,7 +288,7 @@ int stream_gimmick::init_stream(int fd) {
   is_stream = true;
   return 0;
 }
-int stream_gimmick::init_mmap(int fd) {
+int file_stream::init_mmap(int fd) {
   assert(!is_initialized);
   is_initialized = true;
   is_stream = false;
@@ -296,21 +296,21 @@ int stream_gimmick::init_mmap(int fd) {
   num_bytes = mmapped.num_bytes;
   return 0;
 }
-int stream_gimmick::seek_end() {
+int file_stream::seek_end() {
   assert(is_initialized);
   if (is_stream)
     return fseek(stream, 0, SEEK_END);
   position = num_bytes;
   return 0;
 }
-long stream_gimmick::tell() {
+long file_stream::tell() {
   assert(is_initialized);
   if (is_stream)
     return ftell(stream);
   return position;
 }
 static void limit_position(long &pos, int &count, size_t &num_bytes) {}
-int stream_gimmick::seek_and_read(long pos, unsigned char *bytes, int count) {
+int file_stream::seek_and_read(long pos, unsigned char *bytes, int count) {
   assert(is_initialized);
   // Check that the position is valid first.
   if (position >= num_bytes)
@@ -323,7 +323,7 @@ int stream_gimmick::seek_and_read(long pos, unsigned char *bytes, int count) {
     return 0;
   return read(bytes, count);
 }
-int stream_gimmick::seek(long pos) {
+int file_stream::seek(long pos) {
   assert(is_initialized);
   if (is_stream)
     return fseek(stream, pos, SEEK_SET);
@@ -332,7 +332,7 @@ int stream_gimmick::seek(long pos) {
   position = pos;
   return 0;
 }
-int stream_gimmick::read(unsigned char *bytes, int count) {
+int file_stream::read(unsigned char *bytes, int count) {
   assert(is_initialized);
   if (is_stream)
     return fread(bytes, 1, count, stream);
@@ -343,13 +343,13 @@ int stream_gimmick::read(unsigned char *bytes, int count) {
   position += count;
   return count;
 }
-int stream_gimmick::write(const unsigned char *bytes, int count) {
+int file_stream::write(const unsigned char *bytes, int count) {
   assert(is_initialized);
   assert(is_stream);
   return fwrite(bytes, 1, count, stream);
 }
 
-int stream_gimmick::close() {
+int file_stream::close() {
   if (!is_initialized)
     return 0;
   is_initialized = false;
@@ -643,7 +643,7 @@ int split2monodb::opendb(const char *dbdir) {
   return 0;
 }
 
-int index_query::lookup_impl(stream_gimmick &index) {
+int index_query::lookup_impl(file_stream &index) {
   out.found = false;
   unsigned i = in.sha1.get_bits(in.start_bit, in.num_bits);
   out.entry_offset = in.entries_offset + i * index_entry_size;
@@ -661,7 +661,7 @@ int index_query::lookup_impl(stream_gimmick &index) {
   return 0;
 }
 
-int index_query::lookup(stream_gimmick &index) {
+int index_query::lookup(file_stream &index) {
   if (lookup_impl(index))
     return 1;
   if (!out.found)
@@ -730,7 +730,7 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
   return printf("%s\n", mono.bytes) != 41;
 }
 
-int index_query::insert_new_entry(stream_gimmick &index,
+int index_query::insert_new_entry(file_stream &index,
                                   int new_commit_num) const {
   // update the existing trie/subtrie
   index_entry entry(/*is_commit=*/true, new_commit_num);
@@ -746,8 +746,7 @@ int index_query::insert_new_entry(stream_gimmick &index,
   return 0;
 }
 
-int index_query::update_after_collision(stream_gimmick &index,
-                                        int new_commit_num,
+int index_query::update_after_collision(file_stream &index, int new_commit_num,
                                         const binary_sha1 &existing_sha1,
                                         int existing_commit_num) const {
   // add subtrie(s) with full contents so far
