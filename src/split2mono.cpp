@@ -20,14 +20,14 @@
 // - blob: commits.index
 //   <index>
 //
-// - blob: llvm-svn-base
+// - blob: svnbase
 //   0x0000-0x0017: magic
 //   0x0018-0x...: commit pairs
 //   - commit: 0x28
 //     0x00-0x13: sha1 (mono)
 //     0x14-0x17: llvm svn base rev
 //
-// - blob: llvm-svn-base.index
+// - blob: svnbase.index
 //   <index>
 //
 //
@@ -57,8 +57,8 @@
 static int show_progress(int n, int total) {
   return fprintf(stderr, "   %9d / %d commits mapped\n", n, total) < 0;
 }
-static int error(const char *msg) {
-  fprintf(stderr, "error: %s\n", msg);
+static int error(const std::string &msg) {
+  fprintf(stderr, "error: %s\n", msg.c_str());
   return 1;
 }
 
@@ -140,8 +140,18 @@ public:
 };
 struct split2monodb {
   bool is_verbose = false;
-  stream_gimmick commits;
-  stream_gimmick index;
+  struct table_streams {
+    std::string name;
+    stream_gimmick data;
+    stream_gimmick index;
+
+    explicit table_streams(std::string &&name) : name(std::move(name)) {}
+
+    int init(int dbfd, bool is_read_only, const unsigned char *magic,
+             int record_offset, int record_size);
+  };
+  table_streams commits;
+  table_streams svnbase;
   bool is_read_only = false;
 
   bool has_read_upstreams = false;
@@ -527,7 +537,75 @@ int split2monodb::parse_upstreams() {
   return 0;
 }
 
+int split2monodb::table_streams.init(int dbfd, bool is_read_only,
+                                     const unsigned char *magic,
+                                     int record_offset, int record_size) {
+  int flags = is_read_only ? O_RDONLY : (O_RDWR | O_CREAT);
+  std::string index_name = name + ".magic";
+  int datafd = openat(dbfd, name.c_str(), flags);
+  int indexfd = openat(dbfd, index_name.c_str(), flags);
+  int has_error = 0;
+  if (datafd == -1)
+    has_error |= is_read_only ? 1 : error("could not open <dbdir>/" + name);
+  if (indexfd == -1)
+    has_error |=
+        is_read_only ? 1 : error("could not open <dbdir>/" + index_name);
+  if (has_error) {
+    close(indexfd);
+    close(datafd);
+    return 1;
+  }
+  if (!is_read_only) {
+    fchmod(indexfd, 0644);
+    fchmod(datafd, 0644);
+  }
+
+  if (data.init(datafd, is_read_only))
+    return error("could not open <dbdir>/" + name);
+  if (index.init(indexfd, is_read_only))
+    return error("could not open <dbdir>/" + index_name);
+
+  // Check that file sizes make sense.
+  const unsigned char index_magic[] = {'s', 2, 'm', 0x1, 'n', 0xd, 0xe, 'x'};
+  assert(sizeof(index_magic) == magic_size);
+  if (data.get_num_bytes()) {
+    if (!index.get_num_bytes())
+      return error("unexpected data without index for " + name);
+    if (data.get_num_bytes() < magic_size ||
+        (data.get_num_bytes() - record_offset) % record_size)
+      return error("invalid data for " + name);
+
+    unsigned char file_magic[magic_size];
+    if (data.seek(0) || data.read(file_magic, magic_size) != magic_size ||
+        memcmp(file_magic, magic, magic_size))
+      return error("bad magic for " + name);
+  } else if (!is_read_only) {
+    if (data.seek(0) || data.write(magic, magic_size) != magic_size)
+      return error("could not write magic for " + name);
+  }
+  if (index.get_num_bytes()) {
+    if (!data.get_num_bytes())
+      return error("unexpected index without " + name);
+    if (index.get_num_bytes() < magic_size)
+      return error("invalid index for " + name);
+
+    unsigned char file_magic[magic_size];
+    if (index.seek(0) || index.read(file_magic, magic_size) != magic_size ||
+        memcmp(file_magic, index_magic, magic_size))
+      return error("bad index magic for " + name);
+  } else if (!is_read_only) {
+    if (index.seek(0) || index.write(index_magic, magic_size) != magic_size)
+      return error("could not write index magic for " + name);
+  }
+  return 0;
+}
+
 int split2monodb::opendb(const char *dbdir) {
+  const unsigned char commits_magic[] = {'s', 2, 'm', 0xc, 0x0, 'm', 't', 's'};
+  const unsigned char svnbase_magic[] = {'s', 2, 'm', 0xb, 0xa, 0x5, 0xe, 'r'};
+  assert(sizeof(commits_magic) == magic_size);
+  assert(sizeof(svnbase_magic) == magic_size);
+
   if (const char *verbose = getenv("VERBOSE"))
     if (strcmp(verbose, "0"))
       is_verbose = true;
@@ -535,72 +613,20 @@ int split2monodb::opendb(const char *dbdir) {
   dbfd = open(dbdir, O_RDONLY);
   if (dbfd == -1)
     return error("could not open <dbdir>");
+
   int flags = db.is_read_only ? O_RDONLY : (O_RDWR | O_CREAT);
-  int commitsfd = openat(dbfd, "commits", flags);
-  int indexfd = openat(dbfd, "index", flags);
-  int upstreamsfd = openat(dbfd, "upstreams", flags);
-  int has_error = 0;
-  if (commitsfd == -1)
-    has_error |= db.is_read_only ? 1 : error("could not open <dbdir>/commits");
-  if (indexfd == -1)
-    has_error |= db.is_read_only ? 1 : error("could not open <dbdir>/index");
-  if (upstreamsfd == -1)
-    has_error |=
-        db.is_read_only ? 1 : error("could not open <dbdir>/upstreams");
-  if (has_error) {
-    close(indexfd);
-    close(commitsfd);
-    close(upstreamsfd);
+  if (db.commits.init(dbfd, db.is_read_only, commits_magic, commit_pairs_offset,
+                      commit_pair_size) ||
+      db.svnbase.init(dbfd, db.is_read_only, svnbase_magic,
+                      svnbase_pairs_offset, svnbase_pair_size))
     return 1;
-  }
-  if (!db.is_read_only) {
-    fchmod(indexfd, 0644);
-    fchmod(commitsfd, 0644);
+
+  int upstreamsfd = openat(dbfd, "upstreams", flags);
+  if (upstreamsfd == -1)
+    return db.is_read_only ? 1 : error("could not open <dbdir>/upstreams");
+  if (!db.is_read_only)
     fchmod(upstreamsfd, 0644);
-  }
 
-  if (db.commits.init(commitsfd, db.is_read_only))
-    return error("could not open <dbdir>/commits");
-  if (db.index.init(indexfd, db.is_read_only))
-    return error("could not open <dbdir>/index");
-
-  // Check that file sizes make sense.
-  const unsigned char commits_magic[] = {'s', 2, 'm', 0xc, 0x0, 'm', 't', 's'};
-  const unsigned char index_magic[] = {'s', 2, 'm', 0x1, 'n', 0xd, 0xe, 'x'};
-  assert(sizeof(commits_magic) == magic_size);
-  assert(sizeof(index_magic) == magic_size);
-  if (db.commits.get_num_bytes()) {
-    if (!db.index.get_num_bytes())
-      return error("unexpected commits without index");
-    if (db.commits.get_num_bytes() < magic_size ||
-        (db.commits.get_num_bytes() - commit_pairs_offset) % commit_pair_size)
-      return error("invalid commits");
-
-    unsigned char magic[magic_size];
-    if (db.commits.seek(0) ||
-        db.commits.read(magic, magic_size) != magic_size ||
-        memcmp(magic, commits_magic, magic_size))
-      return error("bad commits magic");
-  } else if (!db.is_read_only) {
-    if (db.commits.seek(0) ||
-        db.commits.write(commits_magic, magic_size) != magic_size)
-      return error("could not write commits magic");
-  }
-  if (db.index.get_num_bytes()) {
-    if (!db.commits.get_num_bytes())
-      return error("unexpected index without commits");
-    if (db.index.get_num_bytes() < magic_size)
-      return error("invalid index");
-
-    unsigned char magic[magic_size];
-    if (db.index.seek(0) || db.index.read(magic, magic_size) != magic_size ||
-        memcmp(magic, index_magic, magic_size))
-      return error("bad index magic");
-  } else if (!db.is_read_only) {
-    if (db.index.seek(0) ||
-        db.index.write(index_magic, magic_size) != magic_size)
-      return error("could not write index magic");
-  }
   this->upstreamsfd = upstreamsfd;
   return 0;
 }
