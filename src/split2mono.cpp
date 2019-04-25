@@ -66,19 +66,6 @@ static int usage(const char *msg, const char *cmd) {
   return 1;
 }
 
-static int check_sha1(const char *sha1) {
-  const char *ch = sha1;
-  for (; *ch; ++ch) {
-    // Allow "[0-9a-z]".
-    if (*ch >= '0' && *ch <= '9')
-      continue;
-    if (*ch >= 'a' && *ch <= 'z')
-      continue;
-    return 1;
-  }
-  return ch - sha1 == 40 ? 0 : 1;
-}
-
 // Some constants.
 constexpr const long magic_size = 8;
 constexpr const long commit_pairs_offset = magic_size;
