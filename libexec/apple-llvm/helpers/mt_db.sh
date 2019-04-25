@@ -13,10 +13,12 @@ mt_db_init() {
 
     local ref=$(mt_db)
     if git rev-parse --verify $ref^{commit} >/dev/null 2>&1; then
-        local count=$(run git -C "$wt" rev-list --count HEAD)
+        local count
+        count=$(run --hide-errors git -C "$wt" rev-list --count HEAD) ||
+            error "internal: failed to verify $wt"
         case $count in
             2) true ;;
-            *) error "expected 2 commits in $(mt_db)" ;;
+            *) error "expected 2 commits in $rev" ;;
         esac
         return 0
     fi
