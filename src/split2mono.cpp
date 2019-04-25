@@ -1293,27 +1293,36 @@ static int main_dump(const char *cmd, int argc, const char *argv[]) {
   return has_error ? 1 : 0;
 }
 
+static int main_translate_commits(const char *cmd, int argc,
+                                  const char *argv[]) {
+  if (argc != 1)
+    return usage("translate-commits: extra positional arguments", cmd);
+  split2monodb db;
+  if (db.opendb(argv[0]))
+    return usage("could not open <dbdir>", cmd);
+
+  return error("not implemented");
+}
+
 int main(int argc, const char *argv[]) {
   if (argc < 2)
     return usage("missing command", argv[0]);
-#define SUBMAIN(X)                                                             \
+#define SUB_MAIN_IMPL(STR, F)                                                  \
   do {                                                                         \
-    if (!strcmp(argv[1], #X))                                                  \
-      return main_##X(argv[0], argc - 2, argv + 2);                            \
+    if (!strcmp(argv[1], STR))                                                 \
+      return main_##F(argv[0], argc - 2, argv + 2);                            \
   } while (false)
-  SUBMAIN(create);
-  SUBMAIN(lookup);
-  SUBMAIN(insert);
-  SUBMAIN(upstream);
-  SUBMAIN(dump);
-#undef SUBMAIN
-#define SUBMAIN(X)                                                             \
-  do {                                                                         \
-    if (!strcmp(argv[1], #X "-svnbase"))                                       \
-      return main_##X##_svnbase(argv[0], argc - 2, argv + 2);                  \
-  } while (false)
-  SUBMAIN(lookup);
-  SUBMAIN(insert);
-#undef SUBMAIN
-  return usage("unknown command", argv[0]);
+#define SUB_MAIN(X) SUB_MAIN_IMPL(#X, X)
+#define SUB_MAIN_SVNBASE(X) SUB_MAIN_IMPL(#X "-svnbase", X##_svnbase)
+  SUB_MAIN(create);
+  SUB_MAIN(lookup);
+  SUB_MAIN(insert);
+  SUB_MAIN(upstream);
+  SUB_MAIN(dump);
+  SUB_MAIN_SVNBASE(lookup);
+  SUB_MAIN_SVNBASE(insert);
+  SUB_MAIN_IMPL("translate-commits", translate_commits);
+#undef SUB_MAIN_IMPL
+#undef SUB_MAIN
+#undef SUB_MAIN_SVNBASE
 }
