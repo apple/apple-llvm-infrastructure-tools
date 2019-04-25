@@ -57,6 +57,11 @@ static int bintosha1(char *text, const unsigned char *bin) {
 namespace {
 struct binary_sha1 {
   unsigned char bytes[20] = {0};
+  static binary_sha1 make_from_binary(const unsigned char *sha1) {
+    binary_sha1 bin;
+    bin.from_binary(sha1);
+    return bin;
+  }
   void from_binary(const unsigned char *sha1) { std::memcpy(bytes, sha1, 20); }
   int from_textual(const char *sha1) { return sha1tobin(bytes, sha1); }
   unsigned get_bits(int start, int count) const;

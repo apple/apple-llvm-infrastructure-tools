@@ -214,8 +214,29 @@ struct index_query {
   static index_query from_binary(const unsigned char *key);
   static index_query from_textual(const char *key);
 
+  int lookup(stream_gimmick &index);
+  int lookup_impl(stream_gimmick &index);
   int num_bits_so_far() const;
   int advance();
+};
+struct commit_query : index_query {
+  bool found_commit = false;
+  binary_sha1 found_sha1;
+  int commit_pair_offset = 0;
+
+  commit_query(index_query &&q) : index_query(std::move(q)) {}
+  explicit commit_query(const textual_sha1 &sha1) : index_query(sha1) {}
+  explicit commit_query(const binary_sha1 &sha1) : index_query(sha1) {}
+  static commit_query from_binary(const unsigned char *key) {
+    return index_query::from_binary(key);
+  }
+  static commit_query from_textual(const char *key) {
+    return index_query::from_textual(key);
+  }
+
+  int lookup_commit_impl(split2monodb &db);
+  int lookup_commit(split2monodb &db, textual_sha1 &mono);
+  int insert_commit(split2monodb &db, const binary_sha1 &mono);
 };
 } // end namespace
 
@@ -565,68 +586,57 @@ int split2monodb::opendb(const char *dbdir) {
   return 0;
 }
 
-static int lookup_index_entry(split2monodb &db, index_query &q) {
-  q.out.found = false;
-  unsigned i = q.in.sha1.get_bits(q.in.start_bit, q.in.num_bits);
-  q.out.entry_offset = q.in.entries_offset + i * index_entry_size;
-  q.out.bits.initialize(q.in.bitmap_offset, i);
+int index_query::lookup_impl(stream_gimmick &index) {
+  out.found = false;
+  unsigned i = in.sha1.get_bits(in.start_bit, in.num_bits);
+  out.entry_offset = in.entries_offset + i * index_entry_size;
+  out.bits.initialize(in.bitmap_offset, i);
 
   // Not found.  Be resilient to an unwritten bitmap.
-  if (db.index.seek_and_read(q.out.bits.byte_offset, &q.out.bits.byte, 1) !=
-          1 ||
-      !q.out.bits.get_bit())
+  if (index.seek_and_read(out.bits.byte_offset, &out.bits.byte, 1) != 1 ||
+      !out.bits.get_bit())
     return 0;
 
-  q.out.found = true;
-  if (db.index.seek_and_read(q.out.entry_offset, q.out.entry.bytes,
-                             index_entry_size) != index_entry_size)
+  out.found = true;
+  if (index.seek_and_read(out.entry_offset, out.entry.bytes,
+                          index_entry_size) != index_entry_size)
     return 1;
   return 0;
 }
 
-static int lookup_index_entry_from_root(split2monodb &db, index_query &q) {
-  if (lookup_index_entry(db, q))
+int index_query::lookup(stream_gimmick &index) {
+  if (lookup_impl(index))
     return 1;
-  if (!q.out.found)
+  if (!out.found)
     return 0;
-  while (!q.out.entry.is_commit()) {
-    q.advance();
-    if (lookup_index_entry(db, q))
+  while (!out.entry.is_commit()) {
+    advance();
+    if (lookup_impl(index))
       return 1;
-    if (!q.out.found)
+    if (!out.found)
       return 0;
   }
   return 0;
 }
 
-static int lookup_commit_bin_impl(split2monodb &db, index_query &q,
-                                  bool &found_commit, binary_sha1 &found_sha1,
-                                  int *commit_pair_offset) {
-  if (lookup_index_entry_from_root(db, q))
+int commit_query::lookup_commit_impl(split2monodb &db) {
+  if (lookup(db.index))
     return 1;
-  if (!q.out.found)
+  if (!out.found)
     return 0;
 
   // Look it up in the commits list.
-  *commit_pair_offset = 0;
-  int i = q.out.entry.num();
-  *commit_pair_offset = commit_pairs_offset + commit_pair_size * i;
-  if (db.commits.seek_and_read(*commit_pair_offset, found_sha1.bytes, 20) != 20)
+  int i = out.entry.num();
+  commit_pair_offset = commit_pairs_offset + commit_pair_size * i;
+  if (db.commits.seek_and_read(commit_pair_offset, found_sha1.bytes, 20) != 20)
     return 1;
-  if (q.in.sha1 == found_sha1)
+  if (in.sha1 == found_sha1)
     found_commit = true;
   return 0;
 }
 
-static int lookup_commit(split2monodb &db, const textual_sha1 &split,
-                         textual_sha1 &mono) {
-  index_query q(split);
-
-  bool found_commit = false;
-  int commit_pair_offset = 0;
-  binary_sha1 found_binsplit;
-  if (lookup_commit_bin_impl(db, q, found_commit, found_binsplit,
-                             &commit_pair_offset))
+int commit_query::lookup_commit(split2monodb &db, textual_sha1 &mono) {
+  if (lookup_commit_impl(db))
     return error("problem looking up split commit");
   if (!found_commit)
     return 1;
@@ -656,19 +666,16 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
     return 1;
 
   textual_sha1 mono;
-  if (lookup_commit(db, split, mono))
+  if (commit_query(split).lookup_commit(db, mono))
     return 1;
   // TODO: add a test for the exit status.
   return printf("%s\n", mono.bytes) != 41;
 }
 
-static int insert_one_bin_impl(split2monodb &db,
-                               // FIXME: q should be const, but for bitmap_byte.
-                               index_query &q, const binary_sha1 &binmono,
-                               const binary_sha1 &found_binsplit,
-                               int commit_pair_offset) {
+static int insert_commit_impl(split2monodb &db, const commit_query &q,
+                              const binary_sha1 &binmono) {
   const auto &binsplit = q.in.sha1;
-  bool need_new_subtrie = commit_pair_offset ? true : false;
+  bool need_new_subtrie = q.commit_pair_offset ? true : false;
 
   // add the commit to *commits*
   if (db.commits.seek_end())
@@ -690,16 +697,16 @@ static int insert_one_bin_impl(split2monodb &db,
       return error("could not write index entry");
 
     // update the bitmap
-    q.out.bits.set_bit();
-    if (db.index.seek(q.out.bits.byte_offset) ||
-        db.index.write(&q.out.bits.byte, 1) != 1)
+    bitmap_ref bits = q.out.bits;
+    bits.set_bit();
+    if (db.index.seek(bits.byte_offset) || db.index.write(&bits.byte, 1) != 1)
       return error("could not update index bitmap");
     return 0;
   }
 
   // add subtrie(s) with full contents so far
   // TODO: add test that covers this.
-  int first_mismatched_bit = binsplit.get_mismatched_bit(found_binsplit);
+  int first_mismatched_bit = binsplit.get_mismatched_bit(q.found_sha1);
   assert(first_mismatched_bit < 160);
   int num_bits_so_far = q.num_bits_so_far();
   assert(first_mismatched_bit >= num_bits_so_far - num_subtrie_bits);
@@ -736,17 +743,17 @@ static int insert_one_bin_impl(split2monodb &db,
 
   // Add some variables that need to last past the while loop.
   int commit_num =
-      (commit_pair_offset - commit_pairs_offset) / commit_pair_size;
+      (q.commit_pair_offset - commit_pairs_offset) / commit_pair_size;
   int subtrie_offset, bitmap_offset;
   int n, n_entry_offset;
   int f, f_entry_offset;
-  assert((commit_pair_offset - commit_pairs_offset) % commit_pair_size == 0);
+  assert((q.commit_pair_offset - commit_pairs_offset) % commit_pair_size == 0);
   while (true) {
     // Calculate the entries for the next subtrie.
     subtrie_offset = subtrie_indexes_offset + top->num * subtrie_index_size;
     bitmap_offset = subtrie_offset + subtrie_index_bitmap_offset;
     n = binsplit.get_bits(num_bits_so_far, num_subtrie_bits);
-    f = found_binsplit.get_bits(num_bits_so_far, num_subtrie_bits);
+    f = q.found_sha1.get_bits(num_bits_so_far, num_subtrie_bits);
     n_entry_offset =
         subtrie_offset + subtrie_index_entries_offset + n * index_entry_size;
     f_entry_offset =
@@ -808,40 +815,15 @@ static int insert_one_bin_impl(split2monodb &db,
   return 0;
 }
 
-static int insert_one(split2monodb &db, const unsigned char *binsplit,
-                      const unsigned char *binmono) {
-  binary_sha1 found_split, mono;
-  auto q = index_query::from_binary(binsplit);
-  mono.from_binary(binmono);
-  int commit_pair_offset = 0;
-  bool found_commit = false;
-  if (lookup_commit_bin_impl(db, q, found_commit, found_split,
-                             &commit_pair_offset))
+int commit_query::insert_commit(split2monodb &db, const binary_sha1 &mono) {
+  if (lookup_commit_impl(db))
     return error("index issue");
-  assert(q.out.entry_offset);
+  assert(out.entry_offset);
 
   if (found_commit)
     return error("split is already mapped");
 
-  return insert_one_bin_impl(db, q, mono, found_split, commit_pair_offset);
-}
-
-static int insert_one(split2monodb &db, const textual_sha1 &split,
-                      const textual_sha1 &mono) {
-  index_query q(split);
-  binary_sha1 found_binsplit;
-  int commit_pair_offset = 0;
-  bool found_commit = false;
-  if (lookup_commit_bin_impl(db, q, found_commit, found_binsplit,
-                             &commit_pair_offset))
-    return error("index issue");
-  assert(q.out.entry_offset);
-
-  if (found_commit)
-    return error("split is already mapped");
-
-  return insert_one_bin_impl(db, q, binary_sha1(mono), found_binsplit,
-                             commit_pair_offset);
+  return insert_commit_impl(db, *this, mono);
 }
 
 static int main_insert_one(const char *cmd, const char *dbdir,
@@ -856,7 +838,7 @@ static int main_insert_one(const char *cmd, const char *dbdir,
   if (db.opendb(dbdir))
     return 1;
 
-  return insert_one(db, split, mono);
+  return commit_query(split).insert_commit(db, binary_sha1(mono));
 }
 
 static int main_insert_stdin(const char *cmd, const char *dbdir) {
@@ -873,7 +855,7 @@ static int main_insert_stdin(const char *cmd, const char *dbdir) {
       return error("invalid sha1 for <split>");
     if (mono.from_input(rawmono))
       return error("invliad sha1 for <mono>");
-    if (insert_one(db, split, mono))
+    if (commit_query(split).insert_commit(db, binary_sha1(mono)))
       return 1;
   }
   if (scanned != EOF)
@@ -965,7 +947,8 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
     for (const unsigned char *b = bytes.data(),
                              *be = bytes.data() + bytes.size();
          b != be; b += commit_pair_size)
-      if (insert_one(main, b, b + commit_pair_size / 2))
+      if (commit_query::from_binary(b).insert_commit(
+              main, binary_sha1::make_from_binary(b + commit_pair_size / 2)))
         return error("error inserting new commit from upstream");
   }
 
