@@ -8,7 +8,8 @@
 //   <upstream>...
 //
 //   <header>::   'name:' SP <name> LF
-//   <upstream>:: 'upstream:' SP <name> SP <num-commits> SP <num-upstreams> LF
+//   <upstream>:: 'upstream:' SP <name> SP <num-upstreams>
+//                            SP <commits-size> SP <svnbase-size> LF
 //
 // - blob: commits
 //   0x0000-0x0027: magic
@@ -83,11 +84,18 @@ static int usage(const char *msg, const char *cmd) {
 namespace {
 struct svnbaserev {
   unsigned char bytes[4] = {0};
+
+  static svnbaserev make_from_binary(const unsigned char *bytes);
   int get_rev() const;
   void set_rev(int rev);
 };
 } // end namespace
 
+svnbaserev svnbaserev::make_from_binary(const unsigned char *bytes) {
+  svnbaserev sbr;
+  std::memcpy(sbr.bytes, bytes, 4);
+  return sbr;
+}
 int svnbaserev::get_rev() const {
   unsigned data = 0;
   data |= unsigned(bytes[0]) << 24;
@@ -175,8 +183,9 @@ static constexpr const long subtrie_index_size =
 namespace {
 struct upstream_entry {
   std::string name;
-  long num_commits = -1;
   long num_upstreams = -1;
+  long commits_size = -1;
+  long svnbase_size = -1;
 };
 class file_stream {
   FILE *stream = nullptr;
@@ -238,9 +247,13 @@ struct split2monodb {
 
   int opendb(const char *dbdir);
   int parse_upstreams();
-  long num_commits() const {
+  long commits_size() const {
     return (commits.data.get_num_bytes() - commits_table::table_offset) /
            commits_table::size;
+  }
+  long svnbase_size() const {
+    return (svnbase.data.get_num_bytes() - svnbase_table::table_offset) /
+           svnbase_table::size;
   }
 
   int close_files();
@@ -597,9 +610,11 @@ int split2monodb::parse_upstreams() {
         parse_space(/*needs_any=*/true, /*newlines=*/false) ||
         parse_name(ue.name) ||
         parse_space(/*needs_any=*/true, /*newlines=*/false) ||
-        parse_number(ue.num_commits) ||
-        parse_space(/*needs_any=*/true, /*newlines=*/false) ||
         parse_number(ue.num_upstreams) ||
+        parse_space(/*needs_any=*/true, /*newlines=*/false) ||
+        parse_number(ue.commits_size) ||
+        parse_space(/*needs_any=*/true, /*newlines=*/false) ||
+        parse_number(ue.svnbase_size) ||
         parse_space(/*needs_any=*/true, /*newlines=*/true))
       return 1;
     if (ue.name == name)
@@ -1008,6 +1023,36 @@ static int main_create(const char *cmd, int argc, const char *argv[]) {
   return 0;
 }
 
+template <class T>
+static int merge_tables(split2monodb::table_streams &main, size_t recorded_size,
+                        split2monodb::table_streams &upstream,
+                        size_t actual_size) {
+  typedef T table_type;
+  typedef typename table_type::value_type value_type;
+
+  // Read all missing commits and merge them.
+  long first_offset =
+      table_type::table_offset + table_type::size * recorded_size;
+  long num_bytes = table_type::size * (actual_size - recorded_size);
+  if (!num_bytes)
+    return 0;
+
+  // FIXME: This copy is unfortunate.  We should be reading directly from the
+  // mmapped upstream db.
+  std::vector<unsigned char> bytes;
+  bytes.resize(num_bytes, 0);
+  if (upstream.data.seek_and_read(first_offset, bytes.data(), num_bytes) !=
+      num_bytes)
+    return error("could not read new data from upstream");
+
+  for (const unsigned char *b = bytes.data(), *be = bytes.data() + bytes.size();
+       b != be; b += table_type::size)
+    if (data_query<T>::from_binary(b).insert_data(
+            main, value_type::make_from_binary(b + 20)))
+      return error("error inserting new data from upstream");
+  return 0;
+}
+
 static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   if (argc != 2)
     return usage("upstream: wrong number of positional arguments", cmd);
@@ -1026,19 +1071,23 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   if (existing_entry == main.upstreams.end()) {
     upstream_entry ue;
     ue.name = upstream.name;
-    ue.num_commits = ue.num_upstreams = 0;
+    ue.commits_size = ue.num_upstreams = 0;
     existing_entry = main.upstreams.emplace(upstream.name, std::move(ue)).first;
   }
-
-  if (existing_entry->second.num_commits > upstream.num_commits())
-    return error("upstream is missing commits we already merged");
 
   if (existing_entry->second.num_upstreams > upstream.upstreams.size())
     return error("upstream is missing upstreams we already merged");
 
+  if (existing_entry->second.commits_size > upstream.commits_size())
+    return error("upstream is missing commits we already merged");
+
+  if (existing_entry->second.svnbase_size > upstream.svnbase_size())
+    return error("upstream is missing svnbase revs we already merged");
+
   // Nothing to do if nothing has changed (or the upstream is empty).
-  if (existing_entry->second.num_commits == upstream.num_commits() &&
-      existing_entry->second.num_upstreams == upstream.upstreams.size())
+  if (existing_entry->second.num_upstreams == upstream.upstreams.size() &&
+      existing_entry->second.commits_size == upstream.commits_size() &&
+      existing_entry->second.svnbase_size == upstream.svnbase_size())
     return 0;
 
   // Merge the upstream's upstreams (just in memory, for now).
@@ -1049,8 +1098,9 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
 
     // Check that we're only moving forward.
     if (!existing_ue.name.empty())
-      if (existing_ue.num_commits > ue.second.num_commits ||
-          existing_ue.num_upstreams > ue.second.num_upstreams)
+      if (existing_ue.num_upstreams > ue.second.num_upstreams ||
+          existing_ue.commits_size > ue.second.commits_size ||
+          existing_ue.svnbase_size > ue.second.svnbase_size)
         return error("upstream's upstream is out-of-date");
 
     // Update.
@@ -1058,34 +1108,20 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   }
 
   // Read all missing commits and merge them.
-  long first_offset = commits_table::table_offset +
-                      commits_table::size * existing_entry->second.num_commits;
-  long num_bytes = commits_table::size * (upstream.num_commits() -
-                                          existing_entry->second.num_commits);
-  if (num_bytes) {
-    // FIXME: This copy is dumb.  We should be using mmap for the upstream
-    // commits, not FILE streams.
-    std::vector<unsigned char> bytes;
-    bytes.resize(num_bytes, 0);
-    if (upstream.commits.data.seek_and_read(first_offset, bytes.data(),
-                                            num_bytes) != num_bytes)
-      return error("could not read new commits from upstream");
-
-    for (const unsigned char *b = bytes.data(),
-                             *be = bytes.data() + bytes.size();
-         b != be; b += commits_table::size)
-      if (commits_query::from_binary(b).insert_data(
-              main.commits,
-              binary_sha1::make_from_binary(b + commits_table::size / 2)))
-        return error("error inserting new commit from upstream");
-  }
+  if (merge_tables<commits_table>(main.commits,
+                                  existing_entry->second.commits_size,
+                                  upstream.commits, upstream.commits_size()) ||
+      merge_tables<svnbase_table>(main.svnbase,
+                                  existing_entry->second.svnbase_size,
+                                  upstream.svnbase, upstream.svnbase_size()))
+    return 1;
 
   // Close the streams.
   if (main.close_files())
     return error("error closing commits or index after writing");
 
   // Merge upstreams.
-  existing_entry->second.num_commits = upstream.num_commits();
+  existing_entry->second.commits_size = upstream.commits_size();
   existing_entry->second.num_upstreams = upstream.upstreams.size();
   int upstreamsfd = openat(main.dbfd, "upstreams", O_WRONLY | O_TRUNC);
   if (upstreamsfd == -1)
@@ -1096,8 +1132,9 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   if (fprintf(ufile, "name: %s\n", main.name.c_str()) < 0)
     return error("could not write repo name");
   for (auto &ue : main.upstreams)
-    if (fprintf(ufile, "upstream: %s %ld %ld\n", ue.second.name.c_str(),
-                ue.second.num_commits, ue.second.num_upstreams) < 0)
+    if (fprintf(ufile, "upstream: %s %ld %ld %ld\n", ue.second.name.c_str(),
+                ue.second.num_upstreams, ue.second.commits_size,
+                ue.second.svnbase_size) < 0)
       return error("could not write upstream");
   if (fclose(ufile))
     return error("problem closing new upstream");
