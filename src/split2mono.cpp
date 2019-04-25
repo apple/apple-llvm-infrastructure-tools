@@ -176,6 +176,17 @@ struct index_entry {
   bool is_commit() const;
   int num() const;
 };
+struct bitmap_ref {
+  int byte_offset = 0;
+  int bit_offset = 0;
+  unsigned char byte = 0;
+
+  void initialize(int bitmap_offset, int i);
+  void initialize_and_set(int bitmap_offset, int i);
+  static bool get_bit(unsigned char byte, int bit_offset);
+  bool get_bit() const { return get_bit(byte, bit_offset); }
+  void set_bit();
+};
 struct index_query {
   struct in_data {
     binary_sha1 sha1;
@@ -188,10 +199,7 @@ struct index_query {
     explicit in_data(const textual_sha1 &sha1) : sha1(sha1) {}
   };
   struct out_data {
-    int bitmap_byte_offset = 0;
-    int bitmap_bit_offset = 0;
-    unsigned char bitmap_byte = 0;
-
+    bitmap_ref bits;
     index_entry entry;
     int entry_offset = 0;
 
@@ -345,16 +353,25 @@ int index_query::advance() {
   return 0;
 }
 
-static int get_bitmap_bit(unsigned byte, int bit_offset) {
+void bitmap_ref::initialize(int bitmap_offset, int i) {
+  byte_offset = bitmap_offset + i / 8;
+  bit_offset = i % 8;
+  byte = 0;
+}
+void bitmap_ref::initialize_and_set(int bitmap_offset, int i) {
+  initialize(bitmap_offset, i);
+  set_bit();
+}
+bool bitmap_ref::get_bit(unsigned char byte, int bit_offset) {
   assert(bit_offset >= 0);
   assert(bit_offset <= 7);
   return byte & (0x100 >> (bit_offset + 1)) ? 1 : 0;
 }
 
-static void set_bitmap_bit(unsigned char *byte, int bit_offset) {
+void bitmap_ref::set_bit() {
   assert(bit_offset >= 0);
   assert(bit_offset <= 7);
-  *byte |= 0x100 >> (bit_offset + 1);
+  byte |= 0x100 >> (bit_offset + 1);
 }
 
 int split2monodb::parse_upstreams() {
@@ -552,14 +569,12 @@ static int lookup_index_entry(split2monodb &db, index_query &q) {
   q.out.found = false;
   unsigned i = q.in.sha1.get_bits(q.in.start_bit, q.in.num_bits);
   q.out.entry_offset = q.in.entries_offset + i * index_entry_size;
-  q.out.bitmap_byte_offset = q.in.bitmap_offset + i / 8;
-  q.out.bitmap_bit_offset = i % 8;
-  q.out.bitmap_byte = 0;
+  q.out.bits.initialize(q.in.bitmap_offset, i);
 
   // Not found.  Be resilient to an unwritten bitmap.
-  if (db.index.seek_and_read(q.out.bitmap_byte_offset, &q.out.bitmap_byte, 1) !=
+  if (db.index.seek_and_read(q.out.bits.byte_offset, &q.out.bits.byte, 1) !=
           1 ||
-      !get_bitmap_bit(q.out.bitmap_byte, q.out.bitmap_bit_offset))
+      !q.out.bits.get_bit())
     return 0;
 
   q.out.found = true;
@@ -675,9 +690,9 @@ static int insert_one_bin_impl(split2monodb &db,
       return error("could not write index entry");
 
     // update the bitmap
-    set_bitmap_bit(&q.out.bitmap_byte, q.out.bitmap_bit_offset);
-    if (db.index.seek(q.out.bitmap_byte_offset) ||
-        db.index.write(&q.out.bitmap_byte, 1) != 1)
+    q.out.bits.set_bit();
+    if (db.index.seek(q.out.bits.byte_offset) ||
+        db.index.write(&q.out.bits.byte, 1) != 1)
       return error("could not update index bitmap");
     return 0;
   }
@@ -691,13 +706,12 @@ static int insert_one_bin_impl(split2monodb &db,
 
   // Make new subtries.
   struct trie_update_stack {
-    int skip_bitmap_update;
-    int bitmap_byte_offset;
-    unsigned char bitmap_byte;
+    bool skip_bitmap_update = false;
+    bitmap_ref bits;
 
-    int entry_offset;
-    int is_commit;
-    int num;
+    int entry_offset = 0;
+    bool is_commit = false;
+    int num = 0;
   };
 
   if (db.index.seek_end())
@@ -710,15 +724,14 @@ static int insert_one_bin_impl(split2monodb &db,
 
   // Update index in reverse, so that if this gets aborted early (or killed)
   // the output file has no semantic changes.
-  trie_update_stack stack[160 / num_subtrie_bits + 2] = {0};
+  trie_update_stack stack[160 / num_subtrie_bits + 2];
   trie_update_stack *top = stack;
 
   // Start with updating the existing trie that is pointing at the conflicting
   // commit.  Note that the bitmap is already set, we just need to make it
   // point at the right place.
-  top->skip_bitmap_update = 1;
+  top->skip_bitmap_update = true;
   top->entry_offset = q.out.entry_offset;
-  top->is_commit = 0;
   top->num = next_subtrie++;
 
   // Add some variables that need to last past the while loop.
@@ -746,37 +759,31 @@ static int insert_one_bin_impl(split2monodb &db,
     num_bits_so_far += num_subtrie_bits;
 
     ++top;
-    top->is_commit = 0;
     top->num = next_subtrie++;
     top->entry_offset = n_entry_offset;
-    top->skip_bitmap_update = 0;
-    top->bitmap_byte_offset = bitmap_offset + n / 8;
-    set_bitmap_bit(&top->bitmap_byte, n % 8);
-    assert(top->bitmap_byte);
+    top->bits.initialize_and_set(bitmap_offset, n);
+    assert(top->bits.byte);
   }
 
   // found a difference.  add commit entries to last subtrie.
   int fbyte_offset = bitmap_offset + f / 8;
   int nbyte_offset = bitmap_offset + n / 8;
   ++top;
-  top->is_commit = 1;
+  top->is_commit = true;
   top->num = commit_num;
   top->entry_offset = f_entry_offset;
-  top->skip_bitmap_update = 0;
-  top->bitmap_byte_offset = fbyte_offset;
-  set_bitmap_bit(&top->bitmap_byte, f % 8);
-  assert(top->bitmap_byte);
+  top->bits.initialize_and_set(bitmap_offset, f);
+  assert(top->bits.byte);
 
   ++top;
-  top->is_commit = 1;
+  top->is_commit = true;
   top->num = new_commit_num;
   top->entry_offset = n_entry_offset;
-  top->skip_bitmap_update = nbyte_offset == fbyte_offset;
-  top->bitmap_byte_offset = nbyte_offset;
-  set_bitmap_bit(&top->bitmap_byte, n % 8);
-  assert(top->bitmap_byte);
+  top->bits.initialize_and_set(bitmap_offset, n);
+  top->skip_bitmap_update = top[-1].bits.byte_offset == top->bits.byte_offset;
+  assert(top->bits.byte);
   if (top->skip_bitmap_update)
-    top[-1].bitmap_byte |= top->bitmap_byte;
+    top[-1].bits.byte |= top->bits.byte;
 
   // Unwind the stack.  Be careful not to decrement top past the beginning.
   ++top;
@@ -793,8 +800,8 @@ static int insert_one_bin_impl(split2monodb &db,
       continue;
 
     // Update the bitmap to point at the index entry.
-    if (db.index.seek(top->bitmap_byte_offset) ||
-        db.index.write(&top->bitmap_byte, 1) != 1)
+    if (db.index.seek(top->bits.byte_offset) ||
+        db.index.write(&top->bits.byte, 1) != 1)
       return error("could not write to index bitmap");
   }
 
@@ -1012,7 +1019,7 @@ static int dump_index(split2monodb &db, int num) {
     if (!bitmap[i])
       continue;
     for (int bit = 0; bit != 8; ++bit) {
-      if (!get_bitmap_bit(bitmap[i], bit))
+      if (!bitmap_ref::get_bit(bitmap[i], bit))
         continue;
 
       any = 1;
