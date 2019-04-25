@@ -83,8 +83,29 @@ static int usage(const char *msg, const char *cmd) {
 namespace {
 struct svnbaserev {
   unsigned char bytes[4] = {0};
+  int get_rev() const;
+  void set_rev(int rev);
 };
+} // end namespace
 
+int svnbaserev::get_rev() const {
+  unsigned data = 0;
+  data |= unsigned(bytes[0]) << 24;
+  data |= unsigned(bytes[1]) << 16;
+  data |= unsigned(bytes[2]) << 8;
+  data |= unsigned(bytes[3]);
+  return static_cast<int>(data);
+}
+void svnbaserev::set_rev(int rev) {
+  assert(rev >= 0);
+  unsigned data = static_cast<unsigned>(rev);
+  bytes[0] = 0xff & (data >> 24);
+  bytes[1] = 0xff & (data >> 16);
+  bytes[2] = 0xff & (data >> 8);
+  bytes[3] = 0xff & (data);
+}
+
+namespace {
 // Some constants.
 static constexpr const long magic_size = 8;
 static constexpr const long num_root_bits = 14;
@@ -100,11 +121,26 @@ template <class T> struct data_entry_impl {
 struct commits_table : data_entry_impl<commits_table> {
   static constexpr const long table_offset = magic_size;
   typedef binary_sha1 value_type;
+  static constexpr const char *const table_name = "commits";
+  static constexpr const char *const key_name = "split";
+  static constexpr const char *const value_name = "mono";
+
+  static std::string to_dump_string(const binary_sha1 &bin) {
+    textual_sha1 text(bin);
+    return text.bytes;
+  }
 };
 
 struct svnbase_table : data_entry_impl<svnbase_table> {
   static constexpr const long table_offset = magic_size;
   typedef svnbaserev value_type;
+  static constexpr const char *const table_name = "svnbase";
+  static constexpr const char *const key_name = "sha1";
+  static constexpr const char *const value_name = "rev";
+
+  static std::string to_dump_string(const svnbaserev &bin) {
+    return std::to_string(bin.get_rev());
+  }
 };
 
 struct index_entry {
@@ -1068,7 +1104,7 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   return 0;
 }
 
-static int dump_index(split2monodb &db, int num) {
+static int dump_index(file_stream &index, const char *name, int num) {
   int num_bits = num == -1 ? num_root_bits : num_subtrie_bits;
   int bitmap_size_in_bits = 1u << num_bits;
   int bitmap_offset = num == -1
@@ -1082,14 +1118,13 @@ static int dump_index(split2monodb &db, int num) {
 
   // Visit bitmap, and print out entries.
   unsigned char bitmap[(1u << num_root_bits) / 8];
-  if (db.commits.index.seek_and_read(bitmap_offset, bitmap,
-                                     bitmap_size_in_bits / 8) !=
+  if (index.seek_and_read(bitmap_offset, bitmap, bitmap_size_in_bits / 8) !=
       bitmap_size_in_bits / 8)
     return 1;
   if (num == -1)
-    printf("index num=root num-bits=%02d\n", num_bits);
+    printf("%s index num=root num-bits=%02d\n", name, num_bits);
   else
-    printf("index num=%04d num-bits=%02d\n", num, num_bits);
+    printf("%s index num=%04d num-bits=%02d\n", name, num, num_bits);
   int any = 0;
   for (int i = 0, ie = bitmap_size_in_bits / 8; i != ie; ++i) {
     if (!bitmap[i])
@@ -1102,8 +1137,8 @@ static int dump_index(split2monodb &db, int num) {
       int entry_i = i * 8 + bit;
       int offset = entries_offset + index_entry::size * entry_i;
       index_entry entry;
-      if (db.commits.index.seek_and_read(
-              offset, entry.bytes, index_entry::size) != index_entry::size)
+      if (index.seek_and_read(offset, entry.bytes, index_entry::size) !=
+          index_entry::size)
         return 1;
 
       char bits[num_root_bits + 1] = {0};
@@ -1112,13 +1147,44 @@ static int dump_index(split2monodb &db, int num) {
 
       int entry_num = entry.num();
       if (entry.is_data())
-        printf("  entry: bits=%s commit=%08d\n", bits, entry_num);
+        printf("  entry: bits=%s table=%08d\n", bits, entry_num);
       else
-        printf("  entry: bits=%s  index=%04d\n", bits, entry_num);
+        printf("  entry: bits=%s index=%04d\n", bits, entry_num);
     }
   }
   if (!any)
     error("no bits set in index...");
+  return 0;
+}
+
+template <class T> static int dump_table(split2monodb::table_streams &ts) {
+  typedef T table_type;
+  typedef typename table_type::value_type value_type;
+
+  // Print the table.
+  if (ts.data.seek(table_type::table_offset))
+    return error("could not read any commit pairs");
+  printf("%s table\n", table_type::table_name);
+  int i = 0;
+  binary_sha1 key;
+  value_type value;
+  while (ts.data.seek_and_read(table_type::table_offset + i * table_type::size,
+                               key.bytes, 20) == 20 &&
+         ts.data.seek_and_read(
+             table_type::table_offset + i * table_type::size + 20, value.bytes,
+             table_type::value_size) == table_type::value_size) {
+    textual_sha1 dump_key(key);
+    std::string dump_value = table_type::to_dump_string(value);
+    printf("  %08d: %s=%s %s=%s\n", i++, table_type::key_name, dump_key.bytes,
+           table_type::value_name, dump_value.c_str());
+  }
+  if (!i)
+    printf("  <empty>\n");
+
+  // Print the indexes, starting with the root (-1).
+  i = -1;
+  while (!dump_index(ts.index, table_type::table_name, i))
+    ++i;
   return 0;
 }
 
@@ -1130,27 +1196,10 @@ static int main_dump(const char *cmd, int argc, const char *argv[]) {
   if (db.opendb(argv[0]))
     return usage("could not open <dbdir>", cmd);
 
-  unsigned char binsplit[21] = {0};
-  unsigned char binmono[21] = {0};
-  char split[41] = {0};
-  char mono[41] = {0};
-  if (db.commits.data.seek(commits_table::table_offset))
-    return error("could not read any commit pairs");
-  int i = 0;
-  while (db.commits.data.seek_and_read(commits_table::table_offset +
-                                           i * commits_table::size,
-                                       binsplit, 20) == 20 &&
-         db.commits.data.seek_and_read(commits_table::table_offset +
-                                           i * commits_table::size + 20,
-                                       binmono, 20) == 20) {
-    bintosha1(split, binsplit);
-    bintosha1(mono, binmono);
-    printf("commit num=%08d split=%s mono=%s\n", i++, split, mono);
-  }
-  i = -1;
-  while (!dump_index(db, i))
-    ++i;
-  return 0;
+  bool has_error = false;
+  has_error |= dump_table<commits_table>(db.commits);
+  has_error |= dump_table<svnbase_table>(db.svnbase);
+  return has_error ? 1 : 0;
 }
 
 int main(int argc, const char *argv[]) {
