@@ -64,7 +64,7 @@ static int error(const std::string &msg) {
   return 1;
 }
 
-static int usage(const char *msg, const char *cmd) {
+static int usage(const std::string &msg, const char *cmd) {
   error(msg);
   if (const char *slash = strrchr(cmd, '/'))
     cmd = slash + 1;
@@ -75,7 +75,7 @@ static int usage(const char *msg, const char *cmd) {
           "       %s upstream           <dbdir> <upstream-dbdir>\n"
           "       %s insert             <dbdir> [<split> <mono>]\n"
           "       %s insert-svnbase     <dbdir> <sha1> <rev>\n"
-          "       %s interleave-commits <dbdir> <head>\n"
+          "       %s interleave-commits <dbdir> [<head> [<active-dir>...]]\n"
           "       %s dump               <dbdir>\n"
           "\n"
           "   <dbdir>/upstreams: merged upstreams (text)\n"
@@ -1415,6 +1415,7 @@ struct index_range {
 struct commit_source {
   index_range commits;
   std::string dir;
+  bool is_active = false;
 };
 
 struct translation_queue {
@@ -1699,11 +1700,32 @@ static int lookup_svnbaserev(const binary_sha1 &sha1, svnbaserev &rev) {
 
 static int main_interleave_commits(const char *cmd, int argc,
                                    const char *argv[]) {
-  if (argc != 2)
-    return usage("translate-commits: wrong positional arguments", cmd);
+  if (argc < 1)
+    return usage("translate-commits: missing <dbdir>", cmd);
   split2monodb db;
   if (db.opendb(argv[0]))
     return usage("could not open <dbdir>", cmd);
+
+  bump_allocator alloc;
+  sha1_pool pool(alloc);
+  --argc, ++argv;
+  sha1_ref head;
+  if (argc >= 1) {
+    textual_sha1 text_head;
+    if (text_head.from_input(*argv))
+      return usage("invalid sha1 for <head>", cmd);
+    head = pool.lookup(text_head);
+
+    --argc, ++argv;
+  }
+  // Check for duplicate active directories.
+  // FIXME: also check argv for valid directory names?
+  for (int i = 0; i < argc; ++i)
+    for (int j = 0; j < i; ++j)
+      if (!strcmp(argv[i], argv[j]))
+        return usage(std::string("duplicate <active-dir> '") + argv[i] + "'",
+                     cmd);
+  std::vector<bool> parsed_source(argc, false);
 
   // We will interleave first parent commits, sorting by commit timestamp,
   // putting the earliest at the back of the vector and top of the stack.  Use
@@ -1716,8 +1738,6 @@ static int main_interleave_commits(const char *cmd, int argc,
       return false;
     return lhs.ct > rhs.ct;
   };
-  bump_allocator alloc;
-  sha1_pool pool(alloc);
   translation_queue q(pool);
   {
     int status = 0;
@@ -1733,9 +1753,34 @@ static int main_interleave_commits(const char *cmd, int argc,
     }
     if (status != EOF)
       return 1;
+
+    // Mark the active directories we have found and check for duplicates.
+    // This is quadratic, but constants should be small.
+    // FIXME: also check argv for valid directory names?
+    for (int i = 0; i < argc; ++i)
+      if (!q.sources.back().dir.compare(argv[i])) {
+        if (parsed_source[i])
+          return error("duplicated source '" + q.sources.back().dir + "'");
+        q.sources.back().is_active = true;
+        parsed_source[i] = true;
+        break;
+      }
+    if (!q.sources.back().is_active)
+      for (int i = 0, ie = q.sources.size() - 1; i != ie; ++i)
+        if (!q.sources[i].is_active)
+          if (q.sources[i].dir == q.sources.back().dir)
+            return error("duplicate source '" + q.sources.back().dir + "'");
   }
   if (q.sources.empty())
     return 0;
+
+  for (int i = 0; i < argc; ++i)
+    if (!parsed_source[i]) {
+      // Add an empty source for this active directory.
+      q.sources.emplace_back();
+      q.sources.back().dir = argv[i];
+      q.sources.back().is_active = true;
+    }
 
   // Interleave first parents.
   std::stable_sort(q.fparents.begin(), q.fparents.end(),
