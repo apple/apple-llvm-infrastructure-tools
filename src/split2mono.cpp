@@ -69,18 +69,19 @@ static int usage(const char *msg, const char *cmd) {
   if (const char *slash = strrchr(cmd, '/'))
     cmd = slash + 1;
   fprintf(stderr,
-          "usage: %s create         <dbdir>\n"
-          "       %s lookup         <dbdir> <split>\n"
-          "       %s lookup-svnbase <dbdir> <sha1>\n"
-          "       %s upstream       <dbdir> <upstream-dbdir>\n"
-          "       %s insert         <dbdir> [<split> <mono>]\n"
-          "       %s insert-svnbase <dbdir> <sha1> <rev>\n"
-          "       %s dump           <dbdir>\n"
+          "usage: %s create             <dbdir>\n"
+          "       %s lookup             <dbdir> <split>\n"
+          "       %s lookup-svnbase     <dbdir> <sha1>\n"
+          "       %s upstream           <dbdir> <upstream-dbdir>\n"
+          "       %s insert             <dbdir> [<split> <mono>]\n"
+          "       %s insert-svnbase     <dbdir> <sha1> <rev>\n"
+          "       %s interleave-commits <dbdir> <head>\n"
+          "       %s dump               <dbdir>\n"
           "\n"
           "   <dbdir>/upstreams: merged upstreams (text)\n"
           "   <dbdir>/commits: translated commits (bin)\n"
           "   <dbdir>/index: translated commits (bin)\n",
-          cmd, cmd, cmd, cmd, cmd, cmd, cmd);
+          cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd);
   return 1;
 }
 
@@ -1395,35 +1396,35 @@ static int call_git(const char *argv[], T reader, U writer) {
 }
 
 namespace {
-struct fparent_commit {
+struct fparent_type {
   sha1_ref commit;
   long long ct = 0;
+  int index = -1;
 };
-struct generic_commit {
+struct commit_type {
   sha1_ref commit;
   sha1_ref tree;
-
-  union {
-    sha1_ref small[2];
-    std::unique_ptr<sha1_ref[]> large;
-  } parents_storage;
-  int num_parents = 0;
   sha1_ref *parents = nullptr;
+  int num_parents = 0;
 };
 
-struct fparent_commit_range {
-  fparent_commit *first;
-  fparent_commit *last;
-};
-struct generic_commit_range {
-  generic_commit *first;
-  generic_commit *last;
+struct index_range {
+  int first = -1;
+  unsigned count = 0;
 };
 struct commit_source {
-  fparent_commit_range fps;
-  generic_commit_range all;
-
+  index_range commits;
   std::string dir;
+};
+
+struct translation_queue {
+  sha1_pool &pool;
+  std::vector<commit_source> sources;
+  std::vector<fparent_type> fparents;
+  std::vector<commit_type> commits;
+
+  explicit translation_queue(sha1_pool &pool) : pool(pool) {}
+  int parse_source(FILE *file);
 };
 
 struct git_tree {
@@ -1588,19 +1589,142 @@ int tree_cache::mktree(git_tree &tree) {
   return call_git(argv, reader, writer);
 }
 
+static int getline(FILE *file, std::string &line) {
+  size_t length = 0;
+  char *rawline = fgetln(file, &length);
+  if (!rawline)
+    return 1;
+  if (!length || line[length - 1] != '\n')
+    return error("missing newline");
+  line.assign(rawline, rawline + length - 1);
+  return 0;
+}
+
+int translation_queue::parse_source(FILE *file) {
+  std::string line;
+  if (getline(file, line))
+    return EOF;
+  size_t space = line.find(' ');
+  if (!space || space == std::string::npos || line.compare(0, space, "start") ||
+      line.find(' ', space + 1) != std::string::npos)
+    return error("invalid 'start' directive");
+
+  sources.emplace_back();
+  commit_source &source = sources.back();
+  source.dir = line.substr(space + 1);
+
+  auto parse_sha1 = [this, &line](sha1_ref sha1, size_t start, size_t end) {
+    if (end != std::string::npos)
+      line[end] = '\0';
+    textual_sha1 text;
+    if (text.from_input(line.data() + start))
+      return error("invalid first parent");
+    sha1 = pool.lookup(text);
+    return 0;
+  };
+
+  auto parse_ct = [&line](long long &ct, size_t start) {
+    char *end_ct = nullptr;
+    ct = strtol(line.data() + start, &end_ct, 10);
+    if (*end_ct)
+      return error("invalid timestamp");
+    return 0;
+  };
+
+  size_t num_fparents_before = fparents.size();
+  int source_index = sources.size() - 1;
+  while (!getline(file, line)) {
+    if (!line.compare("all"))
+      break;
+
+    fparents.emplace_back();
+    fparents.back().index = source_index;
+    size_t space = line.find(' ');
+    if (parse_sha1(fparents.back().commit, 0, space) ||
+        parse_ct(fparents.back().ct, space + 1))
+      return 1;
+  }
+
+  source.commits.first = commits.size();
+  std::vector<sha1_ref> parents;
+  while (!getline(file, line)) {
+    if (!line.compare("done"))
+      break;
+
+    commits.emplace_back();
+    size_t first_space = line.find(' ');
+    size_t space = line.find(' ', first_space + 1);
+    if (parse_sha1(commits.back().commit, 0, first_space) ||
+        parse_sha1(commits.back().tree, first_space + 1, space))
+      return 1;
+
+    while (space != std::string::npos) {
+      size_t next_space = line.find(' ', space + 1);
+      parents.emplace_back();
+      if (parse_sha1(parents.back(), space + 1, next_space))
+        return error("failed to parse parent");
+      space = next_space;
+    }
+    commits.back().num_parents = parents.size();
+    commits.back().parents = new (pool.alloc) sha1_ref[parents.size()];
+    std::move(parents.begin(), parents.end(), commits.back().parents);
+    parents.clear();
+  }
+  source.commits.count = commits.size() - source.commits.first;
+  if (source.commits.count < fparents.size() - num_fparents_before)
+    return error("first parents missing from commits");
+  return 0;
+}
+
 static int lookup_svnbaserev(const binary_sha1 &sha1, svnbaserev &rev) {
   return error(std::string(__func__) + " not implemented");
 }
 
-static int main_translate_commits(const char *cmd, int argc,
-                                  const char *argv[]) {
-  if (argc != 1)
-    return usage("translate-commits: extra positional arguments", cmd);
+static int main_interleave_commits(const char *cmd, int argc,
+                                   const char *argv[]) {
+  if (argc != 2)
+    return usage("translate-commits: wrong positional arguments", cmd);
   split2monodb db;
   if (db.opendb(argv[0]))
     return usage("could not open <dbdir>", cmd);
 
-  return error(std::string(__func__) + " not implemented");
+  bump_allocator alloc;
+  sha1_pool pool(alloc);
+  translation_queue q(pool);
+  {
+    int status = 0;
+    while (!status)
+      status = q.parse_source(stdin);
+    if (status != EOF)
+      return 1;
+  }
+  if (q.sources.empty())
+    return 0;
+
+  std::stable_sort(q.fparents.begin(), q.fparents.end(),
+                   [](const fparent_type &lhs, const fparent_type &rhs) {
+                     return lhs.ct > rhs.ct;
+                   });
+  while (!q.fparents.empty()) {
+    auto fparent = q.fparents.back();
+    q.fparents.pop_back();
+    auto &source = q.sources[fparent.index];
+
+    assert(source.commits.count);
+    auto first = q.commits.begin() + source.commits.first,
+         last = first + source.commits.count;
+    while ((--last)->commit != fparent.commit) {
+      if (first == last)
+        return error("first parent missing from all");
+
+      assert(false && "need to handle non-first parent commit");
+    }
+    source.commits.count = last - first;
+    assert(false && "need to use 'last' to handle first parent commit");
+  }
+
+  assert(false && "not finished");
+  return 0;
 }
 
 int main(int argc, const char *argv[]) {
@@ -1620,7 +1744,7 @@ int main(int argc, const char *argv[]) {
   SUB_MAIN(dump);
   SUB_MAIN_SVNBASE(lookup);
   SUB_MAIN_SVNBASE(insert);
-  SUB_MAIN_IMPL("translate-commits", translate_commits);
+  SUB_MAIN_IMPL("interleave-commits", interleave_commits);
 #undef SUB_MAIN_IMPL
 #undef SUB_MAIN
 #undef SUB_MAIN_SVNBASE

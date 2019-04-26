@@ -18,6 +18,7 @@ struct bump_allocator {
   char *last_byte = nullptr;
   static constexpr const size_t slab_size = 4096 << 3;
 
+  bump_allocator() = default;
   bump_allocator(const bump_allocator &) = delete;
 
   ~bump_allocator();

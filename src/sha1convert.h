@@ -200,6 +200,7 @@ struct sha1_pool {
   bump_allocator &alloc;
   sha1_trie root;
 
+  explicit sha1_pool(bump_allocator &alloc) : alloc(alloc) {}
   sha1_ref lookup(const textual_sha1 &sha1);
   sha1_ref lookup(const binary_sha1 &sha1);
 };
