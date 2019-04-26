@@ -1398,7 +1398,7 @@ static int call_git(const char *argv[], T reader, U writer) {
 namespace {
 struct fparent_type {
   sha1_ref commit;
-  long long ct = 0;
+  long long ct = -1;
   int index = -1;
 };
 struct commit_type {
@@ -1457,21 +1457,18 @@ struct tree_cache {
 } // end namespace
 
 void tree_cache::note(const sha1_ref &commit, const sha1_ref &tree) {
-  assert(commit.sha1);
-  assert(tree.sha1);
-  auto &entry = commits[commit.sha1->get_bits(0, num_cache_bits)];
+  assert(tree);
+  auto &entry = commits[commit->get_bits(0, num_cache_bits)];
   entry.commit = commit;
   entry.tree = tree;
 }
 
 void tree_cache::note(const git_tree &tree) {
-  assert(tree.sha1.sha1);
-  trees[tree.sha1.sha1->get_bits(0, num_cache_bits)] = tree;
+  trees[tree.sha1->get_bits(0, num_cache_bits)] = tree;
 }
 
 int tree_cache::get_tree(const sha1_ref &commit, sha1_ref &tree) {
-  assert(commit.sha1);
-  auto &entry = commits[commit.sha1->get_bits(0, num_cache_bits)];
+  auto &entry = commits[commit->get_bits(0, num_cache_bits)];
   if (entry.commit == commit) {
     tree = entry.tree;
     return 0;
@@ -1492,16 +1489,15 @@ int tree_cache::get_tree(const sha1_ref &commit, sha1_ref &tree) {
     return 0;
   };
 
-  assert(tree.sha1);
-  std::string ref = textual_sha1(*tree.sha1).bytes;
+  assert(tree);
+  std::string ref = textual_sha1(*tree).bytes;
   ref += "^{tree}";
   const char *argv[] = {"git", "rev-parse", "--verify", ref.c_str(), nullptr};
   return call_git(argv, reader);
 }
 
 int tree_cache::ls_tree(git_tree &tree) {
-  assert(tree.sha1.sha1);
-  auto &entry = trees[tree.sha1.sha1->get_bits(0, num_cache_bits)];
+  auto &entry = trees[tree.sha1->get_bits(0, num_cache_bits)];
   if (entry.sha1 == tree.sha1) {
     tree = entry;
     return 0;
@@ -1540,7 +1536,7 @@ int tree_cache::ls_tree(git_tree &tree) {
     return 0;
   };
 
-  std::string ref = textual_sha1(*tree.sha1.sha1).bytes;
+  std::string ref = textual_sha1(*tree.sha1).bytes;
   const char *args[] = {"git", "ls-tree", ref.c_str(), nullptr};
   return error("ls_tree: not implemented");
   if (call_git(args, reader))
@@ -1554,7 +1550,7 @@ int tree_cache::ls_tree(git_tree &tree) {
 }
 
 int tree_cache::mktree(git_tree &tree) {
-  assert(!tree.sha1.sha1);
+  assert(!tree.sha1);
   bool once = false;
   auto reader = [&](std::string line) {
     if (once)
@@ -1573,11 +1569,11 @@ int tree_cache::mktree(git_tree &tree) {
   auto writer = [&](FILE *file, bool &stop) {
     assert(!stop);
     for (auto i = 0; i != tree.num_items; ++i) {
-      assert(tree.items[i].sha1.sha1);
+      assert(tree.items[i].sha1);
       if (!fprintf(file, "%s %s %s\t%s\n",
                    tree.items[i].is_exec ? "100755" : "100644",
                    tree.items[i].is_tree ? "tree" : "blob",
-                   textual_sha1(*tree.items[i].sha1.sha1).bytes,
+                   textual_sha1(*tree.items[i].sha1).bytes,
                    tree.items[i].name.c_str()))
         return 1;
     }
@@ -1643,6 +1639,27 @@ int translation_queue::parse_source(FILE *file) {
     if (parse_sha1(fparents.back().commit, 0, space) ||
         parse_ct(fparents.back().ct, space + 1))
       return 1;
+
+    if (fparents.size() == 1)
+      continue;
+
+    long long last_ct = fparents.rbegin()[1].ct;
+    if (fparents.back().ct <= last_ct)
+      continue;
+
+    // Fudge commit timestamp for future sorting purposes, ensuring that
+    // fparents is monotonically non-increasing by commit timestamp within each
+    // source.  We should never get here since (a) these are seconds since
+    // epoch in UTC and (b) they get updated on rebase.  However, in theory a
+    // committer could have significant clock skew.
+    fprintf(stderr,
+            "warning: apparent clock skew in %s\n"
+            "   note: ancestor %s has earlier commit timestamp\n"
+            "   note: using timestamp %lld instead of %lld for sorting\n",
+            textual_sha1(*fparents.back().commit).bytes,
+            textual_sha1(*fparents.rbegin()[1].commit).bytes, last_ct,
+            fparents.back().ct);
+    fparents.back().ct = last_ct;
   }
 
   source.commits.first = commits.size();
@@ -1688,23 +1705,55 @@ static int main_interleave_commits(const char *cmd, int argc,
   if (db.opendb(argv[0]))
     return usage("could not open <dbdir>", cmd);
 
+  // We will interleave first parent commits, sorting by commit timestamp,
+  // putting the earliest at the back of the vector and top of the stack.  Use
+  // stable sort to prevent reordering within a source.
+  auto by_non_increasing_commit_timestamp = [](const fparent_type &lhs,
+                                               const fparent_type &rhs) {
+    // Within a source, rely entirely on initial topological
+    // sort.
+    if (lhs.index == rhs.index)
+      return false;
+    return lhs.ct > rhs.ct;
+  };
   bump_allocator alloc;
   sha1_pool pool(alloc);
   translation_queue q(pool);
   {
     int status = 0;
-    while (!status)
+    while (!status) {
+      size_t orig_num_fparents = q.fparents.size();
       status = q.parse_source(stdin);
+
+      // We can assert here since parse_source is supposed to fudge any
+      // inconsistencies.
+      assert(std::is_sorted(q.fparents.begin() + orig_num_fparents,
+                            q.fparents.end(),
+                            by_non_increasing_commit_timestamp));
+    }
     if (status != EOF)
       return 1;
   }
   if (q.sources.empty())
     return 0;
 
+  // Interleave first parents.
   std::stable_sort(q.fparents.begin(), q.fparents.end(),
-                   [](const fparent_type &lhs, const fparent_type &rhs) {
-                     return lhs.ct > rhs.ct;
-                   });
+                   by_non_increasing_commit_timestamp);
+
+  auto print_commit = [](sha1_ref tree, sha1_ref base_commit,
+                         std::vector<sha1_ref> parents) {
+    assert(tree);
+    assert(base_commit);
+    printf("%s %s", textual_sha1(*tree).bytes,
+           textual_sha1(*base_commit).bytes);
+    for (sha1_ref p : parents)
+      printf(" %s", textual_sha1(*p).bytes);
+    printf("\n");
+  };
+
+  // Construct trees and print them out.
+  std::vector<sha1_ref> parents;
   while (!q.fparents.empty()) {
     auto fparent = q.fparents.back();
     q.fparents.pop_back();
@@ -1717,10 +1766,14 @@ static int main_interleave_commits(const char *cmd, int argc,
       if (first == last)
         return error("first parent missing from all");
 
+      sha1_ref base_commit, tree;
       assert(false && "need to handle non-first parent commit");
+      print_commit(base_commit, tree, parents);
     }
     source.commits.count = last - first;
+    sha1_ref base_commit, tree;
     assert(false && "need to use 'last' to handle first parent commit");
+    print_commit(base_commit, tree, parents);
   }
 
   assert(false && "not finished");

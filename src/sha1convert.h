@@ -193,6 +193,15 @@ struct sha1_ref {
   sha1_ref() = default;
   explicit sha1_ref(const binary_sha1 *sha1) : sha1(sha1) {}
 
+  explicit operator bool() const { return sha1; }
+  const binary_sha1 &operator*() const {
+    assert(sha1);
+    return *sha1;
+  }
+  const binary_sha1 *operator->() const {
+    assert(sha1);
+    return sha1;
+  }
   bool operator==(const sha1_ref &rhs) const { return sha1 == rhs.sha1; }
   bool operator!=(const sha1_ref &rhs) const { return sha1 != rhs.sha1; }
 };
