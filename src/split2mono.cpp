@@ -52,6 +52,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <map>
+#include <spawn.h>
 #include <string>
 #include <vector>
 
@@ -1293,6 +1294,304 @@ static int main_dump(const char *cmd, int argc, const char *argv[]) {
   return has_error ? 1 : 0;
 }
 
+template <class T>
+static int forward_to_reader(void *context, std::string line) {
+  return (*reinterpret_cast<T *>(context))(std::move(line));
+}
+
+template <class T>
+static int forward_to_writer(void *context, FILE *file, bool &stop) {
+  return (*reinterpret_cast<T *>(context))(file, stop);
+}
+
+extern char **environ;
+
+typedef int (*git_reader)(void *, std::string);
+typedef int (*git_writer)(void *, FILE *, bool &);
+static int call_git(char *argv[], git_reader reader, void *rcontext,
+                    git_writer writer, void *wcontext) {
+  if (strcmp(argv[0], "git"))
+    return error("wrong git executable");
+
+  struct cleanup {
+    posix_spawn_file_actions_t *file_actions = nullptr;
+    ~cleanup() {
+      if (file_actions)
+        posix_spawn_file_actions_destroy(file_actions);
+    }
+    int set(posix_spawn_file_actions_t &file_actions) {
+      this->file_actions = &file_actions;
+      return 0;
+    }
+  } cleanup;
+
+  int fromgit[2];
+  int togit[2];
+  pid_t pid = -1;
+  posix_spawn_file_actions_t file_actions;
+
+  if (pipe(fromgit) || posix_spawn_file_actions_init(&file_actions) ||
+      cleanup.set(file_actions) ||
+      posix_spawn_file_actions_addclose(&file_actions, fromgit[0]) ||
+      posix_spawn_file_actions_adddup2(&file_actions, fromgit[1], 1) ||
+      (writer ? (pipe(togit) ||
+                 posix_spawn_file_actions_addclose(&file_actions, togit[1]) ||
+                 posix_spawn_file_actions_adddup2(&file_actions, togit[0], 0))
+              : posix_spawn_file_actions_addclose(&file_actions, 0)) ||
+      posix_spawn(&pid, argv[0], &file_actions, nullptr, argv, environ) ||
+      close(fromgit[1]) || (writer && close(togit[0])))
+    return error("failed to spawn git");
+
+  if (writer) {
+    FILE *file = fdopen(fromgit[1], "1");
+    if (!file)
+      return error("failed to open stream to git");
+    bool stop = false;
+    while (!stop)
+      if (writer(wcontext, file, stop)) {
+        fclose(file);
+        return 1;
+      }
+    if (fclose(file))
+      return error("problem closing pipe writing to git");
+  }
+
+  FILE *file = fdopen(fromgit[0], "r");
+  if (!file)
+    return error("failed to open stream from git");
+
+  size_t length = 0;
+  while (char *line = fgetln(file, &length)) {
+    if (!length || line[length - 1] != '\n') {
+      fclose(file);
+      return error("expected newline");
+    }
+    if (reader(rcontext, std::string(line, line + length - 1))) {
+      fclose(file);
+      return 1;
+    }
+  }
+  if (!feof(file)) {
+    fclose(file);
+    return error("failed to read from git");
+  }
+
+  int status = 0;
+  if (fclose(file) || wait(&status) != pid || !WIFEXITED(status) ||
+      WEXITSTATUS(status))
+    return error("git failed");
+
+  return 0;
+}
+template <class T> static int call_git(const char *argv[], T reader) {
+  return call_git(const_cast<char **>(argv), forward_to_reader<T>,
+                  reinterpret_cast<void *>(&reader), nullptr, nullptr);
+}
+template <class T, class U>
+static int call_git(const char *argv[], T reader, U writer) {
+  return call_git(const_cast<char **>(argv), forward_to_reader<T>,
+                  reinterpret_cast<void *>(&reader), forward_to_writer<U>,
+                  reinterpret_cast<void *>(&writer));
+}
+
+namespace {
+struct fparent_commit {
+  sha1_ref commit;
+  long long ct = 0;
+};
+struct generic_commit {
+  sha1_ref commit;
+  sha1_ref tree;
+
+  union {
+    sha1_ref small[2];
+    std::unique_ptr<sha1_ref[]> large;
+  } parents_storage;
+  int num_parents = 0;
+  sha1_ref *parents = nullptr;
+};
+
+struct fparent_commit_range {
+  fparent_commit *first;
+  fparent_commit *last;
+};
+struct generic_commit_range {
+  generic_commit *first;
+  generic_commit *last;
+};
+struct commit_source {
+  fparent_commit_range fps;
+  generic_commit_range all;
+
+  std::string dir;
+};
+
+struct git_tree {
+  struct item_type {
+    sha1_ref sha1;
+    std::string name;
+    bool is_tree = false;
+    bool is_exec = false;
+  };
+  sha1_ref sha1;
+  item_type *items = nullptr;
+  int num_items = 0;
+};
+struct tree_cache {
+  void note(const sha1_ref &commit, const sha1_ref &tree);
+  void note(const git_tree &tree);
+  int get_tree(const sha1_ref &commit, sha1_ref &tree);
+  int ls_tree(git_tree &tree);
+  int mktree(git_tree &sha1);
+
+  struct git_commit {
+    sha1_ref commit;
+    sha1_ref tree;
+  };
+  static constexpr const int num_cache_bits = 16;
+  git_tree trees[1u << num_cache_bits];
+  git_commit commits[1u << num_cache_bits];
+  sha1_pool &pool;
+};
+} // end namespace
+
+void tree_cache::note(const sha1_ref &commit, const sha1_ref &tree) {
+  assert(commit.sha1);
+  assert(tree.sha1);
+  auto &entry = commits[commit.sha1->get_bits(0, num_cache_bits)];
+  entry.commit = commit;
+  entry.tree = tree;
+}
+
+void tree_cache::note(const git_tree &tree) {
+  assert(tree.sha1.sha1);
+  trees[tree.sha1.sha1->get_bits(0, num_cache_bits)] = tree;
+}
+
+int tree_cache::get_tree(const sha1_ref &commit, sha1_ref &tree) {
+  assert(commit.sha1);
+  auto &entry = commits[commit.sha1->get_bits(0, num_cache_bits)];
+  if (entry.commit == commit) {
+    tree = entry.tree;
+    return 0;
+  }
+
+  bool once = false;
+  auto reader = [&](std::string line) {
+    if (once)
+      return 1;
+    once = true;
+
+    textual_sha1 text;
+    if (text.from_input(line.c_str()))
+      return 1;
+
+    tree = pool.lookup(text);
+    note(commit, tree);
+    return 0;
+  };
+
+  assert(tree.sha1);
+  std::string ref = textual_sha1(*tree.sha1).bytes;
+  ref += "^{tree}";
+  const char *argv[] = {"git", "rev-parse", "--verify", ref.c_str(), nullptr};
+  return call_git(argv, reader);
+}
+
+int tree_cache::ls_tree(git_tree &tree) {
+  assert(tree.sha1.sha1);
+  auto &entry = trees[tree.sha1.sha1->get_bits(0, num_cache_bits)];
+  if (entry.sha1 == tree.sha1) {
+    tree = entry;
+    return 0;
+  }
+
+  constexpr const int max_items = 64;
+  git_tree::item_type items[max_items];
+  git_tree::item_type *last = items;
+  auto reader = [&](std::string line) {
+    if (last - items == max_items)
+      return 1;
+
+    size_t space1 = line.find(' ');
+    size_t space2 = line.find(' ', space1 + 1);
+    size_t tab = line.find('\t', space2 + 1);
+    if (!line.compare(0, space1, "100755"))
+      last->is_exec = true;
+    else if (line.compare(0, space1, "100644"))
+      return 1;
+
+    if (!line.compare(space1 + 1, space2 - space1 - 1, "tree"))
+      last->is_tree = true;
+    else if (line.compare(space1 + 1, space2 - space1 - 1, "blob"))
+      return 1;
+
+    last->name = line.substr(tab + 1);
+    if (last->name.empty())
+      return 1;
+
+    textual_sha1 text;
+    line[tab] = '\0';
+    if (text.from_input(&line[space2 + 1]))
+      return 1;
+    last->sha1 = pool.lookup(text);
+    ++last;
+    return 0;
+  };
+
+  std::string ref = textual_sha1(*tree.sha1.sha1).bytes;
+  const char *args[] = {"git", "ls-tree", ref.c_str(), nullptr};
+  return error("ls_tree: not implemented");
+  if (call_git(args, reader))
+    return 1;
+
+  tree.num_items = last - items;
+  tree.items = new (pool.alloc) git_tree::item_type[tree.num_items];
+  std::move(items, last, tree.items);
+  note(tree);
+  return 0;
+}
+
+int tree_cache::mktree(git_tree &tree) {
+  assert(!tree.sha1.sha1);
+  bool once = false;
+  auto reader = [&](std::string line) {
+    if (once)
+      return 1;
+    once = true;
+
+    textual_sha1 text;
+    if (text.from_input(line.c_str()))
+      return 1;
+
+    tree.sha1 = pool.lookup(text);
+    note(tree);
+    return 0;
+  };
+
+  auto writer = [&](FILE *file, bool &stop) {
+    assert(!stop);
+    for (auto i = 0; i != tree.num_items; ++i) {
+      assert(tree.items[i].sha1.sha1);
+      if (!fprintf(file, "%s %s %s\t%s\n",
+                   tree.items[i].is_exec ? "100755" : "100644",
+                   tree.items[i].is_tree ? "tree" : "blob",
+                   textual_sha1(*tree.items[i].sha1.sha1).bytes,
+                   tree.items[i].name.c_str()))
+        return 1;
+    }
+    stop = true;
+    return 0;
+  };
+
+  const char *argv[] = {"git", "mktree", nullptr};
+  return call_git(argv, reader, writer);
+}
+
+static int lookup_svnbaserev(const binary_sha1 &sha1, svnbaserev &rev) {
+  return error(std::string(__func__) + " not implemented");
+}
+
 static int main_translate_commits(const char *cmd, int argc,
                                   const char *argv[]) {
   if (argc != 1)
@@ -1301,7 +1600,7 @@ static int main_translate_commits(const char *cmd, int argc,
   if (db.opendb(argv[0]))
     return usage("could not open <dbdir>", cmd);
 
-  return error("not implemented");
+  return error(std::string(__func__) + " not implemented");
 }
 
 int main(int argc, const char *argv[]) {
