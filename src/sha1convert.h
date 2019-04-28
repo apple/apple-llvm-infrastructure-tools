@@ -162,7 +162,7 @@ int textual_sha1::from_input(const char *sha1, const char **end) {
   }
   if (ch - sha1 != 40)
     return 1;
-  strncpy(bytes, sha1, 41);
+  memcpy(bytes, sha1, 40);
   if (end)
     *end = ch;
   return 0;
