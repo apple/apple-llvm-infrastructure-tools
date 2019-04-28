@@ -197,7 +197,7 @@ struct sha1_trie {
     }
   };
 
-  static constexpr const long num_root_bits = 7;
+  static constexpr const long num_root_bits = 12;
   std::bitset<1 << num_root_bits> mask;
   entry_type entries[1 << num_root_bits];
 };
