@@ -133,7 +133,7 @@ int translation_queue::parse_source(FILE *file) {
     if (current != end)
       return error("junk in first-parent line");
 
-    if (fparents.size() == 1)
+    if (fparents.size() == 1 + num_fparents_before)
       continue;
 
     long long last_ct = fparents.rbegin()[1].ct;
