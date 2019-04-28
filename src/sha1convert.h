@@ -152,7 +152,13 @@ int textual_sha1::from_input(const char *sha1, const char **end) {
       continue;
     if (*ch >= 'a' && *ch <= 'z')
       continue;
-    return 1;
+
+    // Hit an invalid character.  That's okay if the caller is parsing a longer
+    // string.
+    if (end)
+      break;
+    else
+      return 1;
   }
   if (ch - sha1 != 40)
     return 1;

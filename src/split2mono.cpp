@@ -2637,4 +2637,5 @@ int main(int argc, const char *argv[]) {
 #undef SUB_MAIN_IMPL
 #undef SUB_MAIN
 #undef SUB_MAIN_SVNBASE
+  return usage("unknown command '" + std::string(argv[1]) + "'", argv[0]);
 }

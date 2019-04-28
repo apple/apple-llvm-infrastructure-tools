@@ -2,21 +2,17 @@
 
 . "$(dirname "$0")"/helpers/init.sh
 helper mt_split2mono
-helper mt_split2mono_interleave_commits
+helper mt_llvm_svn2git
 
 usage() {
     printf "%s\n"                                                            \
         "usage: $(print_cmdname) <branch> "                                  \
         "           [--repeat <upstream>]..."                                \
-        "           [--skip <skip>]..."                                      \
         "           <ref>:<dir>..."                                          \
         "   <branch>      the branch to interleave"                          \
         "   <upstream>    monorepo upstream to interleave with <ref>:<dir>"  \
         "   <ref>...      the refs for split branches to combine"            \
         "   <dir>...      the dirs for each split branch; '-' for root"      \
-        ""                                                                   \
-        "   optimization:"                                                   \
-        "   <skip>...     split <ref>s in the upstreams"                     \
         ""                                                                   \
         "   updates these:"                                                  \
         "   refs/heads/mt/<branch>/<dir>/mt-split -> <split-commit>"
@@ -35,7 +31,6 @@ translate_branch() {
     local branch
     local pos=0
     local repeat=
-    local -a skips
     local -a refdirs
     local value=
     while [ $# -gt 0 ]; do
@@ -47,11 +42,6 @@ translate_branch() {
             --repeat|--repeat=*)
                 parse_cmdline_option --repeat repeat
                 shift $?
-                ;;
-            --skip|--skip=*)
-                parse_cmdline_option --skip value
-                shift $?
-                skips=( "${skips[@]}" "$value" )
                 ;;
             -*)
                 usage_error "unknown option '$1'"
@@ -71,21 +61,70 @@ translate_branch() {
     branch="${branch#refs/heads/}"
 
     [ ${#refdirs[@]} -gt 0 ] || usage_error "missing <ref>:<dir>"
-    mt_split2mono_check_refdirs "${refdirs[@]}"
-    mt_split2mono_check_skips "${skips[@]}"
-
     [ -z "$repeat" ] || error "--repeat not implemented"
 
     local current
-    current=$(run git --hide-errors rev-parse --verify \
+    current=$(run --hide-errors git rev-parse --verify \
         refs/heads/$branch^{commit}) ||
         current=0000000000000000000000000000000000000000
 
 
-    mt_split2mono_list_new_split_commits "$branch" "${refdirs[@]}" |
-    mt_split2mono_interleave_commits "$branch" "$repeat" "${refdirs[*]}" |
+    list_new_split_commits "$branch" "${refdirs[@]}" |
+    interleave_commits "$branch" "$repeat" "${refdirs[*]}" |
     update_refs "$branch" "$current" "${refdirs[*]}" ||
         error "failure interleaving commits"
+}
+
+list_new_split_commits() {
+    local branch="$1"
+    shift
+    local rd r d head tail format
+    for rd in "$@"; do
+        r="${rd%:*}"
+        d="${rd##*:}"
+
+        local tailref="refs/heads/mt/${branch#refs/heads/}/$d/mt-split"
+        local headref="refs/remotes/${r#refs/remotes/}"
+        tail="$(run --hide-errors git rev-parse --verify $tailref^{commit})"
+        head="$(run --hide-errors git rev-parse --verify $headref^{commit})" ||
+            error "invalid ref '$headref' from '$rd'"
+        [ "$tail" = "$head" ] && continue
+
+        local nots="$(run git show-ref $d/mt-split | grep refs/heads/mt |
+            awk '{print $2}')"
+        run printf "start %s\n" "$d"
+        run git log $headref --format="%H %ct" --first-parent --not $nots
+        run printf "all\n"
+        run git log $headref --format="%H %T %P" --not $nots
+        run printf "done\n"
+    done
+}
+
+interleave_commits() {
+    local branch="$1"
+    local repeat="$2"
+    local refdirs="$3"
+
+    ref=refs/heads/${branch#refs/heads/}
+    local head
+    head=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
+        head=0000000000000000000000000000000000000000
+
+    local d rd ref sha1
+    local -a sha1dirs
+    for rd in $refdirs; do
+        d="${rd##*:}"
+        ref=refs/heads/mt/${branch#refs/heads/}/$d/mt-split
+        sha1=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
+            sha1=0000000000000000000000000000000000000000
+        sha1dirs=( "${sha1dirs[@]}" "$sha1:$d" )
+    done
+
+    local svn2git split2mono
+    split2mono="$(build_executable split2mono)" ||
+        error "could not build split2mono"
+    run "$split2mono" interleave-commits \
+        "$MT_DB_SPLIT2MONO_DB" "$MT_DB_SVN2GIT_DB" "$head" "${sha1dirs[@]}"
 }
 
 update_refs() {
@@ -106,7 +145,7 @@ update_refs() {
     for rd in $refdirs; do
         r=${rd%:*}
         d=${rd#*:}
-        ref=refs/heads/$branch/${r#refs/heads/}/mt-split
+        ref=refs/heads/mt/$branch/${r#refs/remotes/}/mt-split
         sha1=
         for sd in $sha1dirs; do
             [ "$d" = "${sd#*:}" ] || continue

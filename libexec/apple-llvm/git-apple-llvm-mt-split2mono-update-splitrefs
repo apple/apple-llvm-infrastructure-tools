@@ -16,7 +16,7 @@ usage() {
 [ "$#" -ge 2 ] || usage_error "missing <ref>:<dir> (minimum 1)"
 
 main() {
-    local branch="$1"
+    local branch="${1#refs/heads/}"
     shift
     mt_split2mono_init || exit 1
     local refdir
