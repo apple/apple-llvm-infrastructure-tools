@@ -2079,8 +2079,10 @@ static int getline(FILE *file, std::string &line) {
   char *rawline = fgetln(file, &length);
   if (!rawline)
     return 1;
-  if (!length || line[length - 1] != '\n')
-    return error("missing newline");
+  if (!length)
+    return error("unexpected empty line without a newline");
+  if (rawline[length - 1] != '\n')
+    return error("missing newline at end of file");
   line.assign(rawline, rawline + length - 1);
   return 0;
 }

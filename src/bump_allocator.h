@@ -47,7 +47,7 @@ uintptr_t bump_allocator::align(const void *x, size_t alignment) {
 
 void *bump_allocator::allocate(size_t size, size_t alignment) {
   // this is not general purpose; lots of corner cases are NOT handled.
-  assert(alignment <= 8);
+  assert(alignment <= 16);
   assert(size <= slab_size / 2);
 
   size_t adjust = align(next_byte, alignment) - (uintptr_t)next_byte;
