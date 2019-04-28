@@ -2,6 +2,7 @@
 #pragma once
 
 #include "bump_allocator.h"
+#include <bitset>
 #include <cassert>
 #include <cstring>
 #include <string>
@@ -196,12 +197,14 @@ struct sha1_trie {
     }
   };
 
-  uint64_t mask[2] = {0};
-  entry_type entries[128];
+  static constexpr const long num_root_bits = 7;
+  std::bitset<1 << num_root_bits> mask;
+  entry_type entries[1 << num_root_bits];
 };
 struct sha1_trie::subtrie_type {
-  uint64_t mask = 0;
-  entry_type entries[64];
+  static constexpr const long num_bits = 6;
+  std::bitset<1 << num_bits> mask;
+  entry_type entries[1 << num_bits];
 };
 
 struct sha1_ref {
@@ -242,34 +245,31 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
   typedef sha1_trie::entry_type entry_type;
   entry_type *entry = nullptr;
   {
-    unsigned root_bits = sha1.get_bits(0, 7);
-    unsigned mask_index = root_bits >> 6;
-    uint64_t mask_bit = 1ull << (root_bits & 0x3f);
-    if (!(root.mask[mask_index] & mask_bit)) {
+    unsigned bits = sha1.get_bits(0, sha1_trie::num_root_bits);
+    if (!root.mask.test(bits)) {
       binary_sha1 *ret = new (alloc) binary_sha1(sha1);
-      root.mask[mask_index] |= mask_bit;
-      root.entries[root_bits] = entry_type::make_sha1(*ret);
+      root.mask.set(bits);
+      root.entries[bits] = entry_type::make_sha1(*ret);
       return sha1_ref(ret);
     }
-    entry = &root.entries[root_bits];
+    entry = &root.entries[bits];
   }
 
   // Check the root trie.
   typedef sha1_trie::subtrie_type subtrie_type;
-  int start_bit = 7;
+  int start_bit = sha1_trie::num_root_bits;
   while (entry->is_subtrie()) {
     subtrie_type *subtrie = entry->as_subtrie();
-    unsigned bits = sha1.get_bits(start_bit, 6);
-    uint64_t mask_bit = 1ull << bits;
-    if (!(subtrie->mask & mask_bit)) {
+    unsigned bits = sha1.get_bits(start_bit, sha1_trie::subtrie_type::num_bits);
+    if (!subtrie->mask.test(bits)) {
       // Add an entry to the root in the empty slot.
       binary_sha1 *ret = new (alloc) binary_sha1(sha1);
-      subtrie->mask |= mask_bit;
+      subtrie->mask.set(bits);
       subtrie->entries[bits] = entry_type::make_sha1(*ret);
       return sha1_ref(ret);
     }
     entry = &subtrie->entries[bits];
-    start_bit += 6;
+    start_bit += sha1_trie::subtrie_type::num_bits;
   }
 
   // Extract the existing sha1, and return it if it's the same.
@@ -280,16 +280,16 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
     return sha1_ref(&existing);
 
   assert(first_mismatched_bit >= start_bit);
-  while (first_mismatched_bit >= start_bit + 6) {
+  while (first_mismatched_bit >= start_bit + sha1_trie::subtrie_type::num_bits) {
     // Add new subtrie.
     auto *subtrie = new (alloc) subtrie_type;
     *entry = entry_type::make_subtrie(*subtrie);
 
     // Prepare for the next subtrie.
-    unsigned bits = sha1.get_bits(start_bit, 6);
-    subtrie->mask |= 1ull << bits;
+    unsigned bits = sha1.get_bits(start_bit, sha1_trie::subtrie_type::num_bits);
+    subtrie->mask.set(bits);
     entry = &subtrie->entries[bits];
-    start_bit += 6;
+    start_bit += sha1_trie::subtrie_type::num_bits;
   }
 
   // Add final subtrie.
@@ -297,14 +297,16 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
   *entry = entry_type::make_subtrie(*subtrie);
 
   // Fill it in.
-  int num_bits = start_bit + 6 > 160 ? 160 - start_bit : 6;
+  int num_bits = start_bit + sha1_trie::subtrie_type::num_bits > 160
+                     ? 160 - start_bit
+                     : sha1_trie::subtrie_type::num_bits;
   unsigned nbits = sha1.get_bits(start_bit, num_bits);
   unsigned ebits = existing.get_bits(start_bit, num_bits);
   assert(nbits != ebits);
 
   binary_sha1 *ret = new (alloc.allocate<binary_sha1>()) binary_sha1(sha1);
-  subtrie->mask |= 1ull << nbits;
-  subtrie->mask |= 1ull << ebits;
+  subtrie->mask.set(nbits);
+  subtrie->mask.set(ebits);
   subtrie->entries[nbits] = entry_type::make_sha1(*ret);
   subtrie->entries[ebits] = entry_type::make_sha1(existing);
   return sha1_ref(ret);
