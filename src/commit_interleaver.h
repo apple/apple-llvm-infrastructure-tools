@@ -86,11 +86,13 @@ int translation_queue::parse_source(FILE *file) {
   source.is_root = !strcmp("-", dirs.list[d].name);
   dirs.list[d].source_index = sources.size() - 1;
 
-  auto parse_sha1 = [this](const char *&current, sha1_ref sha1) {
+  auto parse_sha1 = [this](const char *&current, sha1_ref &sha1) {
     textual_sha1 text;
     if (text.from_input(current, &current))
-      return error("invalid first parent");
+      return error("invalid sha1");
     sha1 = pool.lookup(text);
+    if (!sha1)
+      return error("unexpected all-0 sha1 " + text.to_string());
     return 0;
   };
 
