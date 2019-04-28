@@ -1581,14 +1581,14 @@ int dir_list::add_dir(const char *name, bool &is_new, int &d) {
   if (!name || !*name)
     return 1;
   dir_type dir(name);
-  while (int ch = *name) {
-    if (ch >= 'a' && ch <= 'z')
+  for (const char *ch = name; *ch; ++ch) {
+    if (*ch >= 'a' && *ch <= 'z')
       continue;
-    if (ch >= 'Z' && ch <= 'Z')
+    if (*ch >= 'Z' && *ch <= 'Z')
       continue;
-    if (ch >= '0' && ch <= '9')
+    if (*ch >= '0' && *ch <= '9')
       continue;
-    switch (ch) {
+    switch (*ch) {
     default:
       return 1;
     case '_':
@@ -1611,7 +1611,7 @@ int dir_list::lookup_dir(const char *name, bool &found) {
   return bisect_first_match(list.begin(), list.end(),
                             [&name, &found](const dir_type &dir) {
                               int diff = strcmp(name, dir.name);
-                              found |= diff;
+                              found |= !diff;
                               return diff <= 0;
                             }) -
          list.begin();
