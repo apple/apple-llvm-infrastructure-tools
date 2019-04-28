@@ -30,7 +30,11 @@ mt_setup() {
 
     # Verbose output.
     local gitout=/dev/null
-    [ "${VERBOSE:-0}" = 0 ] || gitout=/dev/stdout
+    local hide=--hide-errors
+    if [ ! "${VERBOSE:-0}" = 0 ]; then
+        gitout=/dev/stdout
+        hide=
+    fi
 
     log "Setting up and syncing $GIT_DIR"
     log "  (based on $MT_CONFIG)"
@@ -51,13 +55,13 @@ mt_setup() {
             log "  - $name"
             clone=clones/$name.git
             if [ -d "$clone" ]; then
-                run --hide-errors git --git-dir $clone remote update >$gitout ||
+                run $hide git --git-dir $clone remote update >$gitout ||
                     error "failed to update remote '$name'"
             else
                 {
-                    run --hide-errors mkdir -p $(dirname $clone) >$gitout &&
-                    run --hide-errors git clone --mirror $url $clone >$gitout &&
-                    run --hide-errors git remote add $name $PWD/$clone >$gitout
+                    run $hide mkdir -p $(dirname $clone) >$gitout &&
+                    run $hide git clone --mirror $url $clone >$gitout &&
+                    run $hide git remote add $name $PWD/$clone >$gitout
                 } ||
                     error "failed to mirror remote '$name'"
             fi &
@@ -70,7 +74,7 @@ mt_setup() {
     print_repos |
     while read name url; do
         log "  - $name"
-        run --hide-errors git fetch --no-tags $name >$gitout ||
+        run $hide git fetch --no-tags $name >$gitout ||
         error "failed to sync '$GIT_DIR'"
     done
 }
