@@ -4,24 +4,20 @@
 
 #include <cstdlib>
 #include <memory>
+#include <vector>
 
 namespace {
 struct bump_allocator {
-  struct slab_type {
-    slab_type *next = nullptr;
-    void *mem = nullptr;
+  struct deleter {
+    void operator()(void *mem) const { free(mem); }
   };
-
-  int num_slabs = 0;
-  slab_type *current_slab = nullptr;
+  std::vector<std::unique_ptr<void, deleter>> slabs;
   char *next_byte = nullptr;
   char *last_byte = nullptr;
   static constexpr const size_t slab_size = 4096 << 3;
 
   bump_allocator() = default;
   bump_allocator(const bump_allocator &) = delete;
-
-  ~bump_allocator();
 
   template <typename T> void *allocate(size_t num = 1) {
     return allocate(num * sizeof(T), alignof(T));
@@ -32,14 +28,6 @@ struct bump_allocator {
   static uintptr_t align(const void *x, size_t alignment);
 };
 } // end namespace
-
-bump_allocator::~bump_allocator() {
-  for (slab_type *slab = current_slab; slab;) {
-    slab_type *next = slab->next;
-    free(slab);
-    slab = next;
-  }
-}
 
 uintptr_t bump_allocator::align(const void *x, size_t alignment) {
   return ((uintptr_t)x + alignment - 1) & ~(uintptr_t)(alignment - 1);
@@ -63,15 +51,11 @@ void *bump_allocator::allocate(size_t size, size_t alignment) {
 
 void bump_allocator::add_slab() {
   size_t new_slab_size = slab_size;
-  if (unsigned scale = num_slabs++ / 128)
+  if (unsigned scale = slabs.size() / 128)
     new_slab_size *= 1 << (scale > 27 ? 27 : scale);
-  void *mem = malloc(new_slab_size);
-  auto *new_slab = new (mem) slab_type();
-  new_slab->mem = mem;
-  new_slab->next = current_slab;
-  current_slab = new_slab;
-  next_byte = (char *)mem + sizeof(slab_type);
-  last_byte = (char *)mem + new_slab_size;
+  slabs.emplace_back(malloc(new_slab_size));
+  next_byte = (char *)slabs.back().get();
+  last_byte = next_byte + new_slab_size;
 }
 
 void *operator new(size_t size, bump_allocator &alloc) {
