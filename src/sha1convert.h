@@ -4,6 +4,7 @@
 #include "bump_allocator.h"
 #include <cassert>
 #include <cstring>
+#include <string>
 
 static unsigned char convert(int ch) {
   switch (ch) {
@@ -70,11 +71,12 @@ struct binary_sha1 {
   friend bool operator==(const binary_sha1 &lhs, const binary_sha1 &rhs) {
     return !memcmp(lhs.bytes, rhs.bytes, 20);
   }
+  std::string to_string() const;
 };
 struct textual_sha1 {
   char bytes[41] = {0};
   int from_binary(const unsigned char *sha1) { return bintosha1(bytes, sha1); }
-  int from_input(const char *sha1);
+  int from_input(const char *sha1, const char **end = nullptr);
   textual_sha1() = default;
   explicit textual_sha1(const binary_sha1 &bin) { from_binary(bin.bytes); }
   explicit operator binary_sha1() const {
@@ -82,8 +84,14 @@ struct textual_sha1 {
     bin.from_textual(bytes);
     return bin;
   }
+  std::string to_string() const;
 };
 } // end namespace
+
+std::string textual_sha1::to_string() const { return bytes; }
+std::string binary_sha1::to_string() const {
+  return textual_sha1(*this).to_string();
+}
 
 unsigned binary_sha1::get_bits(int start, int count) const {
   assert(count > 0);
@@ -136,7 +144,7 @@ int binary_sha1::get_mismatched_bit(const binary_sha1 &x) const {
   return i;
 }
 
-int textual_sha1::from_input(const char *sha1) {
+int textual_sha1::from_input(const char *sha1, const char **end) {
   const char *ch = sha1;
   for (; *ch; ++ch) {
     // Allow "[0-9a-z]".
@@ -149,6 +157,8 @@ int textual_sha1::from_input(const char *sha1) {
   if (ch - sha1 != 40)
     return 1;
   strncpy(bytes, sha1, 41);
+  if (end)
+    *end = ch;
   return 0;
 }
 
@@ -216,7 +226,11 @@ struct sha1_pool {
 } // end namespace
 
 sha1_ref sha1_pool::lookup(const textual_sha1 &sha1) {
-  return lookup(binary_sha1(sha1));
+  // Return default-constructed for all 0s.
+  binary_sha1 bin;
+  if (bin.from_textual(sha1.bytes))
+    return sha1_ref();
+  return lookup(bin);
 }
 sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
   typedef sha1_trie::entry_type entry_type;
@@ -236,7 +250,7 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
 
   typedef sha1_trie::subtrie_type subtrie_type;
   subtrie_type *subtrie = nullptr;
-  unsigned start_bit = 7;
+  int start_bit = 7;
   while (entry->is_subtrie()) {
     subtrie = entry->as_subtrie();
     unsigned bits = sha1.get_bits(start_bit, 6);

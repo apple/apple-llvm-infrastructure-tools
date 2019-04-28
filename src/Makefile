@@ -16,4 +16,4 @@ clean:
 	rm -f $(programs)
 
 $(programs): $D/%: %.cpp $(headers) Makefile
-	clang -O2 -std=c++17 -lc++ -o "$@" $<
+	clang -O2 -std=c++17 -lc++ -Wall -Wextra -o "$@" $<

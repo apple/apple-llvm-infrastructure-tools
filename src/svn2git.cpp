@@ -251,7 +251,6 @@ static int main_insert(const char *cmd, int argc, const char *argv[]) {
     return usage("insert: missing <db>", cmd);
   if (argc > 3)
     return usage("insert: too many positional args", cmd);
-  const char *db = argv[0];
   if (argc == 3)
     return insert_one(cmd, argv[0], argv[1], argv[2]);
   return insert_bulk(cmd, argv[0], argc == 1 ? nullptr : argv[1]);

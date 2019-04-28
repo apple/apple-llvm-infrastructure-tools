@@ -99,6 +99,9 @@ void *operator new(size_t size, bump_allocator &alloc) {
   return alloc.allocate(size, align);
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
 void *operator new[](size_t size, bump_allocator &alloc) {
   return operator new(size, alloc);
 }
+#pragma clang diagnostic pop

@@ -76,9 +76,52 @@ translate_branch() {
 
     [ -z "$repeat" ] || error "--repeat not implemented"
 
+    local current
+    current=$(run git --hide-errors rev-parse --verify \
+        refs/heads/$branch^{commit}) ||
+        current=0000000000000000000000000000000000000000
+
+
     mt_split2mono_list_new_split_commits "$branch" "${refdirs[@]}" |
-    mt_split2mono_interleave_commits "$branch" "$repeat" "${refdirs[*]}" ||
+    mt_split2mono_interleave_commits "$branch" "$repeat" "${refdirs[*]}" |
+    update_refs "$branch" "$current" "${refdirs[*]}" ||
         error "failure interleaving commits"
+}
+
+update_refs() {
+    local branch="${1#refs/heads/}"
+    local current="$2"
+    local refdirs="$3"
+    local head sha1dirs
+    read head sha1dirs
+
+    # Detect failure.  No reason to report a new error.
+    [ -n "$head" ] || return 1
+
+    local ref=refs/heads/$branch
+    log "Updating $branch to $head"
+    run git update-ref $ref $head $current ||
+        error "failed to update $branch"
+    local sd sha1 rd r d
+    for rd in $refdirs; do
+        r=${rd%:*}
+        d=${rd#*:}
+        ref=refs/heads/$branch/${r#refs/heads/}/mt-split
+        sha1=
+        for sd in $sha1dirs; do
+            [ "$d" = "${sd#*:}" ] || continue
+            sha1=${sd%:*}
+            break
+        done
+        [ -n "$sha1" ] || error "missing output sha1 for $rd"
+        if [ $sha1 = 0000000000000000000000000000000000000000 ]; then
+            sha1=$(run git --hide-errors rev-parse --verify $ref^{commit})
+            [ -z "$sha1" ] || error "$ref had a value, but now does not"
+            continue
+        fi
+        run git update-ref $ref $sha1 ||
+            error "failed to update $ref"
+    done
 }
 
 main "$@"
