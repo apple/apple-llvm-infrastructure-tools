@@ -1449,6 +1449,7 @@ struct dir_list {
 };
 
 struct translation_queue {
+  bump_allocator parent_alloc;
   sha1_pool &pool;
   dir_list &dirs;
   std::vector<commit_source> sources;
@@ -1523,6 +1524,8 @@ struct git_cache {
 
   std::vector<const char *> names;
 
+  bump_allocator name_alloc;
+  bump_allocator tree_item_alloc;
   split2monodb &db;
   mmapped_file &svn2git;
   sha1_pool &pool;
@@ -1530,7 +1533,6 @@ struct git_cache {
 };
 
 struct commit_interleaver {
-  bump_allocator alloc;
   sha1_pool sha1s;
   git_cache cache;
 
@@ -1540,7 +1542,7 @@ struct commit_interleaver {
   translation_queue q;
 
   commit_interleaver(split2monodb &db, mmapped_file &svn2git)
-      : sha1s(alloc), cache(db, svn2git, sha1s, dirs), q(sha1s, dirs) {
+      : cache(db, svn2git, sha1s, dirs), q(sha1s, dirs) {
     dirs.list.reserve(64);
   }
 
@@ -1840,7 +1842,7 @@ const char *git_cache::make_name(const char *name, size_t len) {
   assert(!found || n != names.end());
   if (found)
     return *n;
-  char *allocated = new (pool.alloc) char[len + 1];
+  char *allocated = new (name_alloc) char[len + 1];
   strncpy(allocated, name, len);
   allocated[len] = 0;
   return *names.insert(n, allocated);
@@ -1850,7 +1852,7 @@ git_tree::item_type *git_cache::make_items(git_tree::item_type *first,
                                            git_tree::item_type *last) {
   if (first == last)
     return nullptr;
-  auto *items = new (pool.alloc) git_tree::item_type[last - first];
+  auto *items = new (tree_item_alloc) git_tree::item_type[last - first];
   std::move(first, last, items);
   return items;
 }
@@ -2197,7 +2199,7 @@ int translation_queue::parse_source(FILE *file) {
     }
     commits.back().num_parents = parents.size();
     if (!parents.empty()) {
-      commits.back().parents = new (pool.alloc) sha1_ref[parents.size()];
+      commits.back().parents = new (parent_alloc) sha1_ref[parents.size()];
       std::copy(parents.begin(), parents.end(), commits.back().parents);
     }
     parents.clear();

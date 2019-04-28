@@ -225,10 +225,10 @@ struct sha1_ref {
   bool operator!=(const sha1_ref &rhs) const { return sha1 != rhs.sha1; }
 };
 struct sha1_pool {
-  bump_allocator &alloc;
+  bump_allocator subtrie_alloc;
+  bump_allocator sha1_alloc;
   sha1_trie root;
 
-  explicit sha1_pool(bump_allocator &alloc) : alloc(alloc) {}
   sha1_ref lookup(const textual_sha1 &sha1);
   sha1_ref lookup(const binary_sha1 &sha1);
 };
@@ -247,7 +247,7 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
   {
     unsigned bits = sha1.get_bits(0, sha1_trie::num_root_bits);
     if (!root.mask.test(bits)) {
-      binary_sha1 *ret = new (alloc) binary_sha1(sha1);
+      binary_sha1 *ret = new (sha1_alloc) binary_sha1(sha1);
       root.mask.set(bits);
       root.entries[bits] = entry_type::make_sha1(*ret);
       return sha1_ref(ret);
@@ -263,7 +263,7 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
     unsigned bits = sha1.get_bits(start_bit, sha1_trie::subtrie_type::num_bits);
     if (!subtrie->mask.test(bits)) {
       // Add an entry to the root in the empty slot.
-      binary_sha1 *ret = new (alloc) binary_sha1(sha1);
+      binary_sha1 *ret = new (sha1_alloc) binary_sha1(sha1);
       subtrie->mask.set(bits);
       subtrie->entries[bits] = entry_type::make_sha1(*ret);
       return sha1_ref(ret);
@@ -282,7 +282,7 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
   assert(first_mismatched_bit >= start_bit);
   while (first_mismatched_bit >= start_bit + sha1_trie::subtrie_type::num_bits) {
     // Add new subtrie.
-    auto *subtrie = new (alloc) subtrie_type;
+    auto *subtrie = new (subtrie_alloc) subtrie_type;
     *entry = entry_type::make_subtrie(*subtrie);
 
     // Prepare for the next subtrie.
@@ -293,7 +293,7 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
   }
 
   // Add final subtrie.
-  auto *subtrie = new (alloc) subtrie_type;
+  auto *subtrie = new (subtrie_alloc) subtrie_type;
   *entry = entry_type::make_subtrie(*subtrie);
 
   // Fill it in.
@@ -304,7 +304,7 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
   unsigned ebits = existing.get_bits(start_bit, num_bits);
   assert(nbits != ebits);
 
-  binary_sha1 *ret = new (alloc.allocate<binary_sha1>()) binary_sha1(sha1);
+  binary_sha1 *ret = new (sha1_alloc) binary_sha1(sha1);
   subtrie->mask.set(nbits);
   subtrie->mask.set(ebits);
   subtrie->entries[nbits] = entry_type::make_sha1(*ret);
