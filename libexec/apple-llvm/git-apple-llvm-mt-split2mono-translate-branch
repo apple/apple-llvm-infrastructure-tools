@@ -90,8 +90,9 @@ list_new_split_commits() {
             error "invalid ref '$headref' from '$rd'"
         [ "$tail" = "$head" ] && continue
 
-        local nots="$(run git show-ref $d/mt-split | grep refs/heads/mt |
-            awk '{print $2}')"
+        # TODO: add a testcase for d of '-', which requires '--' here.
+        local nots="$(run git show-ref -- $d/mt-split |
+            grep refs/heads/mt/ | awk '{print $2}')"
         run printf "start %s\n" "$d"
         run git log $headref --format="%H %ct" --first-parent --not $nots
         run printf "all\n"
