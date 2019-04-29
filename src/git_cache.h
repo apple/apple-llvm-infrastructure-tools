@@ -753,12 +753,15 @@ int git_cache::parse_commit_metadata(sha1_ref commit,
   return 0;
 }
 
-static bool should_separate_trailers(const std::string &message) {
-  if (message.size() < 2)
-    return false;
-  assert(message.end()[-1] == '\n');
+static int num_newlines_before_trailers(const std::string &message) {
+  if (message.empty())
+    return 0;
+  if (message.end()[-1] != '\n')
+    return 2;
+  if (message.size() == 1)
+    return 1;
   if (message.end()[-2] == '\n')
-    return false;
+    return 0;
   size_t start = message.rfind('\n', message.size() - 2);
   start = start == std::string::npos ? 0 : start + 1;
   const char *ch = message.c_str() + start;
@@ -772,15 +775,15 @@ static bool should_separate_trailers(const std::string &message) {
     if (*ch == '_' || *ch == '-' || *ch == '+')
       continue;
     if (*ch == ':')
-      return *++ch != ' ';
-    return true;
+      return *++ch != ' ' ? 1 : 0;
+    return 1;
   }
-  return true;
+  return 1;
 }
 
 static void append_trailers(const char *dir, sha1_ref base_commit,
                             std::string &message) {
-  if (should_separate_trailers(message))
+  for (int i = 0, ie = num_newlines_before_trailers(message); i != ie; ++i)
     message += '\n';
   textual_sha1 sha1(*base_commit);
   message += "apple-llvm-split-commit: ";
