@@ -157,7 +157,7 @@ update_refs() {
         done
         [ -n "$sha1" ] || error "missing output sha1 for $rd"
         if [ $sha1 = 0000000000000000000000000000000000000000 ]; then
-            sha1=$(run git --hide-errors rev-parse --verify $ref^{commit})
+            sha1=$(run --hide-errors git rev-parse --verify $ref^{commit})
             [ -z "$sha1" ] || error "$ref had a value, but now does not"
             continue
         fi
