@@ -533,7 +533,6 @@ int git_cache::get_rev(sha1_ref commit, int &rev) {
   }
 
   // FIXME: consider warning here.
-  error("something");
   rev = 0;
   note_rev(commit, rev);
   return 0;
