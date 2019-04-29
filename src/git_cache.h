@@ -84,7 +84,7 @@ struct git_tree {
   };
 
   git_tree() = default;
-  git_tree(const binary_sha1 &sha1) : sha1(&sha1){};
+  explicit git_tree(const binary_sha1 &sha1) : sha1(&sha1){};
   explicit operator const binary_sha1 &() const { return *sha1; }
 
   sha1_ref sha1;
@@ -126,24 +126,26 @@ struct git_cache {
     sha1_ref key;
     sha1_ref value;
 
-    sha1_pair(const binary_sha1 &sha1) : key(&sha1){};
+    explicit sha1_pair(const binary_sha1 &sha1) : key(&sha1) {}
     explicit operator const binary_sha1 &() const { return *key; }
   };
   struct git_svn_base_rev {
     sha1_ref commit;
     int rev = -1;
+
+    explicit git_svn_base_rev(const binary_sha1 &sha1) : commit(&sha1) {}
+    explicit operator const binary_sha1 &() const { return *commit; }
   };
 
   git_cache(split2monodb &db, mmapped_file &svn2git, sha1_pool &pool,
             dir_list &dirs)
-      : revs(new git_svn_base_rev[1u << num_cache_bits]), db(db),
-        svn2git(svn2git), pool(pool), dirs(dirs) {}
+      : db(db), svn2git(svn2git), pool(pool), dirs(dirs) {}
 
   static constexpr const int num_cache_bits = 20;
 
   sha1_trie<git_tree> trees;
   sha1_trie<sha1_pair> commit_trees;
-  std::unique_ptr<git_svn_base_rev[]> revs;
+  sha1_trie<git_svn_base_rev> revs;
   sha1_trie<sha1_pair> monos;
 
   std::vector<const char *> names;
@@ -244,9 +246,10 @@ void git_cache::note_commit_tree(sha1_ref commit, sha1_ref tree) {
 }
 
 void git_cache::note_rev(sha1_ref commit, int rev) {
-  auto &entry = revs[commit->get_bits(0, num_cache_bits)];
-  entry.commit = commit;
-  entry.rev = rev;
+  bool was_inserted = false;
+  git_svn_base_rev *inserted = revs.insert(*commit, was_inserted);
+  assert(inserted);
+  inserted->rev = rev;
 }
 
 void git_cache::note_mono(sha1_ref split, sha1_ref mono) {
@@ -273,10 +276,10 @@ int git_cache::lookup_commit_tree(sha1_ref commit, sha1_ref &tree) const {
 }
 
 int git_cache::lookup_rev(sha1_ref commit, int &rev) const {
-  auto &entry = revs[commit->get_bits(0, num_cache_bits)];
-  if (entry.commit != commit)
+  git_svn_base_rev *existing = revs.lookup(*commit);
+  if (!existing)
     return 1;
-  rev = entry.rev;
+  rev = existing->rev;
   return 0;
 }
 
