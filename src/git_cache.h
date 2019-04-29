@@ -61,10 +61,23 @@ struct dir_list {
 
 struct git_tree {
   struct item_type {
+    enum type_enum {
+      unknown,
+      tree,
+      regular,
+      exec,
+      symlink,
+      submodule,
+    };
+
     sha1_ref sha1;
     const char *name = nullptr;
-    bool is_tree = false;
-    bool is_exec = false;
+    type_enum type = unknown;
+
+    constexpr static const char *get_mode(type_enum type);
+    constexpr static const char *get_type(type_enum type);
+    const char *get_mode() const { return get_mode(type); }
+    const char *get_type() const { return get_type(type); }
   };
   sha1_ref sha1;
   item_type *items = nullptr;
@@ -130,6 +143,41 @@ struct git_cache {
   dir_list &dirs;
 };
 } // end namespace
+
+constexpr const char *git_tree::item_type::get_mode(type_enum type) {
+  switch (type) {
+  default:
+    return nullptr;
+  case tree:
+    return "040000";
+  case regular:
+    return "100644";
+  case exec:
+    return "100755";
+  case symlink:
+    return "120000";
+  case submodule:
+    return "160000";
+  }
+}
+
+constexpr const char *git_tree::item_type::get_type(type_enum type) {
+  switch (type) {
+  default:
+    return nullptr;
+  case tree:
+    return "tree";
+  case regular:
+    return "blob";
+  case exec:
+    return "blob";
+  case symlink:
+    return "blob";
+  case submodule:
+    return "commit";
+  }
+  return nullptr;
+}
 
 int dir_list::add_dir(const char *name, bool &is_new, int &d) {
   if (!name || !*name)
@@ -276,7 +324,7 @@ int git_cache::get_commit_tree(sha1_ref commit, sha1_ref &tree) {
 
     tree = pool.lookup(text);
     note_commit_tree(commit, tree);
-    return 0;
+    return EOF;
   };
 
   assert(commit);
@@ -413,37 +461,94 @@ int git_cache::ls_tree(git_tree &tree) {
   if (!lookup_tree(tree))
     return 0;
 
+  auto parse_token = [](const char *&current, int token) {
+    if (*current != token)
+      return 1;
+    ++current;
+    return 0;
+  };
+  auto parse_mode = [](const char *&current, auto &type) {
+    assert(type == git_tree::item_type::unknown);
+#define PARSE_MODE_FOR_TYPE(VALUE)                                             \
+  PARSE_MODE_FOR_TYPE_IMPL(                                                    \
+      git_tree::item_type::get_mode(git_tree::item_type::VALUE), VALUE)
+#define PARSE_MODE_FOR_TYPE_IMPL(PATTERN, VALUE)                               \
+  do {                                                                         \
+    if (!strncmp(current, PATTERN, strlen(PATTERN))) {                         \
+      type = git_tree::item_type::VALUE;                                       \
+      current += strlen(PATTERN);                                              \
+      return 0;                                                                \
+    }                                                                          \
+  } while (false)
+
+    PARSE_MODE_FOR_TYPE(tree);
+    PARSE_MODE_FOR_TYPE(regular);
+    PARSE_MODE_FOR_TYPE(exec);
+    PARSE_MODE_FOR_TYPE(symlink);
+    PARSE_MODE_FOR_TYPE(submodule);
+#undef PARSE_MODE_FOR_TYPE
+#undef PARSE_MODE_FOR_TYPE_IMPL
+    return 1;
+  };
+  auto parse_type = [](const char *&current, auto type) {
+    assert(type != git_tree::item_type::unknown);
+#define PARSE_TYPE_AND_CHECK(VALUE)                                            \
+  PARSE_TYPE_AND_CHECK_IMPL(                                                   \
+      git_tree::item_type::get_type(git_tree::item_type::VALUE), VALUE)
+#define PARSE_TYPE_AND_CHECK_IMPL(PATTERN, VALUE)                              \
+  do                                                                           \
+    if (!strncmp(current, PATTERN, strlen(PATTERN)))                           \
+      if (type == git_tree::item_type::VALUE) {                                \
+        current += strlen(PATTERN);                                            \
+        return 0;                                                              \
+      }                                                                        \
+  while (false)
+    PARSE_TYPE_AND_CHECK(tree);
+    PARSE_TYPE_AND_CHECK(regular);
+    PARSE_TYPE_AND_CHECK(exec);
+    PARSE_TYPE_AND_CHECK(symlink);
+    PARSE_TYPE_AND_CHECK(submodule);
+#undef PARSE_TYPE_AND_CHECK
+#undef PARSE_TYPE_AND_CHECK_IMPL
+    return 1;
+  };
+  auto parse_sha1 = [this](const char *&current, sha1_ref &sha1) {
+    textual_sha1 text;
+    const char *end = nullptr;
+    if (text.from_input(current, &end))
+      return 1;
+
+    // Don't allow "0000000000000000000000000000000000000000".
+    sha1 = pool.lookup(text);
+    if (!sha1)
+      return 1;
+
+    current = end;
+    return 0;
+  };
+  auto parse_name = [this](const char *&current, const char *&name) {
+    if (!*current)
+      return 1;
+    name = make_name(current, strlen(current));
+    return 0;
+  };
+
   constexpr const int max_items = dir_mask::max_size;
   git_tree::item_type items[max_items];
   git_tree::item_type *last = items;
   auto reader = [&](std::string line) {
     if (last - items == max_items)
-      return 1;
+      return error(
+          "ls-tree: too many items (max: " + std::to_string(max_items) + ")");
 
-    size_t space1 = line.find(' ');
-    size_t space2 = line.find(' ', space1 + 1);
-    size_t tab = line.find('\t', space2 + 1);
-    if (!line.compare(0, space1, "100755"))
-      last->is_exec = true;
-    else if (line.compare(0, space1, "100644"))
-      return 1;
-
-    if (!line.compare(space1 + 1, space2 - space1 - 1, "tree"))
-      last->is_tree = true;
-    else if (line.compare(space1 + 1, space2 - space1 - 1, "blob"))
-      return 1;
-
-    last->name = make_name(line.c_str() + tab + 1, line.size() - tab - 1);
-    if (!*last->name)
-      return 1;
-
-    textual_sha1 text;
-    line[tab] = '\0';
-    if (text.from_input(&line[space2 + 1]))
-      return 1;
-    last->sha1 = pool.lookup(text);
+    const char *current = line.c_str();
+    if (parse_mode(current, last->type) || parse_token(current, ' ') ||
+        parse_type(current, last->type) || parse_token(current, ' ') ||
+        parse_sha1(current, last->sha1) || parse_token(current, '\t') ||
+        parse_name(current, last->name))
+      return error("ls-tree: could not parse entry");
     ++last;
-    return 0;
+    return EOF;
   };
 
   std::string ref = tree.sha1->to_string();
@@ -471,16 +576,15 @@ int git_cache::mktree(git_tree &tree) {
 
     tree.sha1 = pool.lookup(text);
     note_tree(tree);
-    return 0;
+    return EOF;
   };
 
   auto writer = [&](FILE *file, bool &stop) {
     assert(!stop);
     for (auto i = 0; i != tree.num_items; ++i) {
       assert(tree.items[i].sha1);
-      if (!fprintf(file, "%s %s %s\t%s\n",
-                   tree.items[i].is_exec ? "100755" : "100644",
-                   tree.items[i].is_tree ? "tree" : "blob",
+      if (!fprintf(file, "%s %s %s\t%s\n", tree.items[i].get_mode(),
+                   tree.items[i].get_type(),
                    textual_sha1(*tree.items[i].sha1).bytes, tree.items[i].name))
         return 1;
     }

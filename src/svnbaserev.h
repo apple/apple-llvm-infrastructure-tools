@@ -36,4 +36,3 @@ void svnbaserev::set_rev(int rev) {
   bytes[2] = 0xff & (data >> 8);
   bytes[3] = 0xff & (data);
 }
-

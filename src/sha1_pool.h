@@ -116,7 +116,8 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
     return sha1_ref(&existing);
 
   assert(first_mismatched_bit >= start_bit);
-  while (first_mismatched_bit >= start_bit + sha1_trie::subtrie_type::num_bits) {
+  while (first_mismatched_bit >=
+         start_bit + sha1_trie::subtrie_type::num_bits) {
     // Add new subtrie.
     auto *subtrie = new (subtrie_alloc) subtrie_type;
     *entry = entry_type::make_subtrie(*subtrie);

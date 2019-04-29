@@ -1,10 +1,10 @@
 // split2monodb.h
 #pragma once
 
-#include "index_query.h"
 #include "data_query.h"
 #include "error.h"
 #include "file_stream.h"
+#include "index_query.h"
 #include <cstdio>
 #include <map>
 
@@ -204,8 +204,7 @@ int split2monodb::opendb(const char *dbdir) {
 
 template <class T>
 static int merge_tables(table_streams &main, size_t recorded_size,
-                        table_streams &upstream,
-                        size_t actual_size) {
+                        table_streams &upstream, size_t actual_size) {
   typedef T table_type;
   typedef typename table_type::value_type value_type;
 

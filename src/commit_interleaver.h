@@ -9,14 +9,15 @@
 namespace {
 struct translation_queue {
   bump_allocator parent_alloc;
+  git_cache &cache;
   sha1_pool &pool;
   dir_list &dirs;
   std::vector<commit_source> sources;
   std::vector<fparent_type> fparents;
   std::vector<commit_type> commits;
 
-  explicit translation_queue(sha1_pool &pool, dir_list &dirs)
-      : pool(pool), dirs(dirs) {}
+  explicit translation_queue(git_cache &cache, dir_list &dirs)
+      : cache(cache), pool(cache.pool), dirs(dirs) {}
   int parse_source(FILE *file);
 };
 
@@ -30,7 +31,7 @@ struct commit_interleaver {
   translation_queue q;
 
   commit_interleaver(split2monodb &db, mmapped_file &svn2git)
-      : cache(db, svn2git, sha1s, dirs), q(sha1s, dirs) {
+      : cache(db, svn2git, sha1s, dirs), q(cache, dirs) {
     dirs.list.reserve(64);
   }
 
@@ -171,6 +172,9 @@ int translation_queue::parse_source(FILE *file) {
         parse_sha1(current, commits.back().tree))
       return 1;
 
+    // Warm the cache.
+    cache.note_commit_tree(commits.back().commit, commits.back().tree);
+
     while (!try_parse_space(current)) {
       parents.emplace_back();
       if (parse_sha1(current, parents.back()))
@@ -259,7 +263,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
     if (cache.ls_tree(tree))
       return 1;
     for (int i = 0; i < tree.num_items; ++i) {
-      if (tree.items[i].is_tree)
+      if (tree.items[i].type == git_tree::item_type::tree)
         return error("root dir '-' has a sub-tree in " +
                      base_commit->to_string());
       items.push_back(tree.items[i]);
@@ -268,8 +272,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
     items.emplace_back();
     items.back().sha1 = base_tree;
     items.back().name = dirs.list[base_d].name;
-    items.back().is_tree = true;
-    items.back().is_exec = true;
+    items.back().type = git_tree::item_type::tree;
   }
   dcontext.added.set(base_d);
 
@@ -284,7 +287,9 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 
     for (int i = 0; i < tree.num_items; ++i) {
       auto &item = tree.items[i];
-      const bool is_blob = !item.is_tree;
+      // Pretend "commit" items (for submodules) are also blobs, since they
+      // aren't interestingly different and we should treat them similarly.
+      const bool is_blob = item.type != git_tree::item_type::tree;
       if (ignore_blobs && is_blob)
         continue;
 
@@ -429,7 +434,7 @@ int commit_interleaver::interleave() {
     num_commits_processed += count;
     long num_first_parents_processed = num_first_parents - q.fparents.size();
     bool is_finished = count == 0;
-    bool is_periodic = !(num_first_parents_processed % 500);
+    bool is_periodic = !(num_first_parents_processed % 50);
     if (is_finished == is_periodic)
       return 0;
     return fprintf(stderr,
@@ -448,6 +453,7 @@ int commit_interleaver::interleave() {
     assert(source.commits.count);
     auto first = q.commits.begin() + source.commits.first,
          last = first + source.commits.count;
+    auto original_last = last;
     while ((--last)->commit != fparent.commit) {
       if (first == last)
         return error("first parent missing from all");
@@ -457,7 +463,7 @@ int commit_interleaver::interleave() {
     dir.head = last->commit;
     source.commits.count = last - first;
     if (translate_commit(source, *last, new_parents, items, buffers, &head) ||
-        report_progress(last - first))
+        report_progress(original_last - last))
       return 1;
   }
   if (report_progress())

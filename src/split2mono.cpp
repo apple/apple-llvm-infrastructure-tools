@@ -45,11 +45,11 @@
 //   subtrie index: 0xc8
 //   0x00-0x07: bitmap (0x40 bits)
 //   0x08-0xc7: index entries
-#include "git_cache.h"
-#include "commit_interleaver.h"
 #include "call_git.h"
+#include "commit_interleaver.h"
 #include "error.h"
 #include "file_stream.h"
+#include "git_cache.h"
 #include "mmapped_file.h"
 #include "sha1_pool.h"
 #include "sha1convert.h"

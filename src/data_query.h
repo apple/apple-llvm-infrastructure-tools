@@ -14,7 +14,7 @@ struct table_streams {
   explicit table_streams(std::string &&name) : name(std::move(name)) {}
 
   int init(int dbfd, bool is_read_only, const unsigned char *magic,
-            int record_offset, int record_size);
+           int record_offset, int record_size);
   int close_files();
 
   ~table_streams() { close_files(); }
@@ -91,9 +91,8 @@ typedef data_query<svnbase_table> svnbase_query;
 
 int table_streams::close_files() { return data.close() | index.close(); }
 
-int table_streams::init(int dbfd, bool is_read_only,
-                                      const unsigned char *magic,
-                                      int record_offset, int record_size) {
+int table_streams::init(int dbfd, bool is_read_only, const unsigned char *magic,
+                        int record_offset, int record_size) {
   int flags = is_read_only ? O_RDONLY : (O_RDWR | O_CREAT);
   std::string index_name = name + ".magic";
   int datafd = openat(dbfd, name.c_str(), flags);
