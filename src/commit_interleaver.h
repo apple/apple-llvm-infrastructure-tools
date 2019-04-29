@@ -87,6 +87,19 @@ int translation_queue::parse_source(FILE *file) {
   source.is_root = !strcmp("-", dirs.list[d].name);
   dirs.list[d].source_index = sources.size() - 1;
 
+  auto parse_boundary = [](const char *&current, bool &is_boundary) {
+    switch (*current) {
+    default:
+      return 1;
+    case '-':
+      is_boundary = true;
+    case '>':
+      break;
+    }
+    ++current;
+    return 0;
+  };
+
   auto parse_sha1 = [this](const char *&current, sha1_ref &sha1) {
     textual_sha1 text;
     if (text.from_input(current, &current))
@@ -164,17 +177,23 @@ int translation_queue::parse_source(FILE *file) {
     if (!line.compare("done"))
       break;
 
-    // line ::= commit SP tree ( SP parent )*
-    commits.emplace_back();
+    // line ::= ( GT | MINUS ) commit SP tree ( SP parent )*
     const char *current = line.c_str();
     const char *end = current + line.size();
-    if (parse_sha1(current, commits.back().commit) || parse_space(current) ||
-        parse_sha1(current, commits.back().tree))
+    bool is_boundary = false;
+    sha1_ref commit, tree;
+    if (parse_boundary(current, is_boundary) || parse_sha1(current, commit) ||
+        parse_space(current) || parse_sha1(current, tree))
       return 1;
 
     // Warm the cache.
-    cache.note_commit_tree(commits.back().commit, commits.back().tree);
+    cache.note_commit_tree(commit, tree);
+    if (is_boundary)
+      continue;
 
+    commits.emplace_back();
+    commits.back().commit = commit;
+    commits.back().tree = tree;
     while (!try_parse_space(current)) {
       parents.emplace_back();
       if (parse_sha1(current, parents.back()))

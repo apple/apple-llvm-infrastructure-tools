@@ -84,9 +84,6 @@ struct git_tree {
   int num_items = 0;
 };
 struct git_cache {
-  git_cache(split2monodb &db, mmapped_file &svn2git, sha1_pool &pool,
-            dir_list &dirs)
-      : db(db), svn2git(svn2git), pool(pool), dirs(dirs) {}
   void note_commit_tree(sha1_ref commit, sha1_ref tree);
   void note_mono(sha1_ref split, sha1_ref mono);
   void note_rev(sha1_ref commit, int rev);
@@ -126,12 +123,20 @@ struct git_cache {
     int rev = -1;
   };
 
-  static constexpr const int num_cache_bits = 16;
+  git_cache(split2monodb &db, mmapped_file &svn2git, sha1_pool &pool,
+            dir_list &dirs)
+      : trees(new git_tree[1u << num_cache_bits]),
+        commit_trees(new sha1_pair[1u << num_cache_bits]),
+        revs(new git_svn_base_rev[1u << num_cache_bits]),
+        monos(new sha1_pair[1u << num_cache_bits]), db(db), svn2git(svn2git),
+        pool(pool), dirs(dirs) {}
 
-  git_tree trees[1u << num_cache_bits];
-  sha1_pair commit_trees[1u << num_cache_bits];
-  git_svn_base_rev revs[1u << num_cache_bits];
-  sha1_pair monos[1u << num_cache_bits];
+  static constexpr const int num_cache_bits = 20;
+
+  std::unique_ptr<git_tree[]> trees;
+  std::unique_ptr<sha1_pair[]> commit_trees;
+  std::unique_ptr<git_svn_base_rev[]> revs;
+  std::unique_ptr<sha1_pair[]> monos;
 
   std::vector<const char *> names;
 
@@ -305,6 +310,7 @@ int git_cache::get_mono(sha1_ref split, sha1_ref &mono) {
   if (!mono)
     return 1;
   note_mono(split, mono);
+  note_rev(mono, rev);
   return 0;
 }
 

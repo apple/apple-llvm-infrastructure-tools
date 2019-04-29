@@ -157,11 +157,13 @@ static int call_git_impl(char *argv[], char *envp[], git_reader reader,
   if (waited4pid != pid)
     return error("call-git: wrong pid for git");
   if (WIFSIGNALED(status))
-    return error("call-git: git was signalled with " + std::to_string(WTERMSIG(status)));
+    return error("call-git: git was signalled with " +
+                 std::to_string(WTERMSIG(status)));
   if (!WIFEXITED(status))
     return error("call-git: git stopped, but we're done");
   if (int exit_status = WEXITSTATUS(status))
-    return error("call-git: git exited with status " + std::to_string(exit_status));
+    return error("call-git: git exited with status " +
+                 std::to_string(exit_status));
 
   return failed ? 1 : 0;
 }
