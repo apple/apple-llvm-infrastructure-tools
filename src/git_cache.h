@@ -51,7 +51,10 @@ struct dir_list {
   dir_mask active_dirs;
 
   int add_dir(const char *name, bool &is_new, int &d);
-  int lookup_dir(const char *name, bool &found);
+  int lookup_dir(const char *name, const char *end, bool &found);
+  int lookup_dir(const char *name, bool &found) {
+    return lookup_dir(name, name + strlen(name), found);
+  }
   void set_head(int d, sha1_ref head) {
     list[d].head = head;
     if (head)
@@ -193,14 +196,15 @@ int dir_list::add_dir(const char *name, bool &is_new, int &d) {
   if (!name || !*name)
     return 1;
   dir_type dir(name);
-  for (const char *ch = name; *ch; ++ch) {
-    if (*ch >= 'a' && *ch <= 'z')
+  const char *end = name;
+  for (; *end; ++end) {
+    if (*end >= 'a' && *end <= 'z')
       continue;
-    if (*ch >= 'Z' && *ch <= 'Z')
+    if (*end >= 'Z' && *end <= 'Z')
       continue;
-    if (*ch >= '0' && *ch <= '9')
+    if (*end >= '0' && *end <= '9')
       continue;
-    switch (*ch) {
+    switch (*end) {
     default:
       return 1;
     case '_':
@@ -218,11 +222,13 @@ int dir_list::add_dir(const char *name, bool &is_new, int &d) {
     list.insert(list.begin() + d, dir);
   return 0;
 }
-int dir_list::lookup_dir(const char *name, bool &found) {
+int dir_list::lookup_dir(const char *name, const char *end, bool &found) {
   found = false;
   return bisect_first_match(list.begin(), list.end(),
-                            [&name, &found](const dir_type &dir) {
-                              int diff = strcmp(name, dir.name);
+                            [end, name, &found](const dir_type &dir) {
+                              int diff = strncmp(name, dir.name, end - name);
+                              if (!diff)
+                                diff = name[end - name] < 0;
                               found |= !diff;
                               return diff <= 0;
                             }) -

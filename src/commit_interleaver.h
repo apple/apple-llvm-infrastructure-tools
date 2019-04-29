@@ -18,7 +18,7 @@ struct translation_queue {
 
   explicit translation_queue(git_cache &cache, dir_list &dirs)
       : cache(cache), pool(cache.pool), dirs(dirs) {}
-  int parse_source(FILE *file);
+  int parse_source(const char *&current);
 };
 
 struct commit_interleaver {
@@ -54,34 +54,64 @@ struct commit_interleaver {
 };
 } // end namespace
 
-static int getline(FILE *file, std::string &line) {
-  size_t length = 0;
-  char *rawline = fgetln(file, &length);
-  if (!rawline)
-    return 1;
-  if (!length)
-    return error("unexpected empty line without a newline");
-  if (rawline[length - 1] != '\n')
-    return error("missing newline at end of file");
-  line.assign(rawline, rawline + length - 1);
-  return 0;
-}
+int translation_queue::parse_source(const char *&current) {
+  auto parse_string = [](const char *&current, const char *s) {
+    for (; *current && *s; ++current, ++s)
+      if (*current != *s)
+        return 1;
+    return *s ? 1 : 0;
+  };
 
-int translation_queue::parse_source(FILE *file) {
-  std::string line;
-  if (getline(file, line))
-    return EOF;
+  auto try_parse_string = [&parse_string](const char *&current, const char *s) {
+    const char *temp = current;
+    if (parse_string(temp, s))
+      return 1;
+    current = temp;
+    return 0;
+  };
+
+  auto try_parse_space = [](const char *&current) {
+    if (*current != ' ')
+      return 1;
+    ++current;
+    return 0;
+  };
+
+  auto parse_space = [try_parse_space](const char *&current) {
+    if (try_parse_space(current))
+      return error("expected space");
+    return 0;
+  };
+
+  auto parse_dir = [&](const char *&current, int &d) {
+    for (const char *end = current; *end; ++end)
+      if (*end == '\n') {
+        bool found = false;
+        d = dirs.lookup_dir(current, end, found);
+        if (!found)
+          return error("undeclared directory '" + std::string(current, end) +
+                       "' in start directive");
+        current = end;
+        return 0;
+      }
+    return error("missing newline");
+  };
+
+  if (try_parse_string(current, "start"))
+    return *current ? error("invalid start directive") : EOF;
+
+  auto parse_newline = [](const char *&current) {
+    if (*current != '\n')
+      return error("expected newline");
+    ++current;
+    return 0;
+  };
+
+  int d = -1;
   sources.emplace_back();
   commit_source &source = sources.back();
-  size_t space = line.find(' ');
-  if (!space || space == std::string::npos || line.compare(0, space, "start"))
-    return error("invalid start directive");
-
-  bool found = false;
-  int d = dirs.lookup_dir(line.c_str() + space + 1, found);
-  if (!found)
-    return error("undeclared directory '" + line.substr(space + 1) +
-                 "' in start directive");
+  if (parse_space(current) || parse_dir(current, d) || parse_newline(current))
+    return 1;
 
   source.dir_index = d;
   source.is_root = !strcmp("-", dirs.list[d].name);
@@ -119,35 +149,24 @@ int translation_queue::parse_source(FILE *file) {
     return 0;
   };
 
-  auto try_parse_space = [](const char *&current) {
-    if (*current != ' ')
-      return 1;
-    ++current;
-    return 0;
-  };
-
-  auto parse_space = [try_parse_space](const char *&current) {
-    if (try_parse_space(current))
-      return error("expected space");
-    return 0;
+  auto skip_to_newline = [](const char *&current) {
+    for (; *current; ++current)
+      if (*current == '\n')
+        return 0;
+    return 1;
   };
 
   size_t num_fparents_before = fparents.size();
   int source_index = sources.size() - 1;
-  while (!getline(file, line)) {
-    if (!line.compare("all"))
+  while (true) {
+    if (!try_parse_string(current, "all\n"))
       break;
 
     fparents.emplace_back();
     fparents.back().index = source_index;
-    const char *current = line.c_str();
-    const char *end = current + line.size();
     if (parse_sha1(current, fparents.back().commit) || parse_space(current) ||
-        parse_ct(current, fparents.back().ct))
+        parse_ct(current, fparents.back().ct) || parse_newline(current))
       return 1;
-
-    if (current != end)
-      return error("junk in first-parent line");
 
     if (fparents.size() == 1 + num_fparents_before)
       continue;
@@ -173,13 +192,11 @@ int translation_queue::parse_source(FILE *file) {
 
   source.commits.first = commits.size();
   std::vector<sha1_ref> parents;
-  while (!getline(file, line)) {
-    if (!line.compare("done"))
+  while (true) {
+    if (!try_parse_string(current, "done\n"))
       break;
 
     // line ::= ( GT | MINUS ) commit SP tree ( SP parent )*
-    const char *current = line.c_str();
-    const char *end = current + line.size();
     bool is_boundary = false;
     sha1_ref commit, tree;
     if (parse_boundary(current, is_boundary) || parse_sha1(current, commit) ||
@@ -188,8 +205,11 @@ int translation_queue::parse_source(FILE *file) {
 
     // Warm the cache.
     cache.note_commit_tree(commit, tree);
-    if (is_boundary)
+    if (is_boundary) {
+      if (skip_to_newline(current) || parse_newline(current))
+        return 1;
       continue;
+    }
 
     commits.emplace_back();
     commits.back().commit = commit;
@@ -199,15 +219,15 @@ int translation_queue::parse_source(FILE *file) {
       if (parse_sha1(current, parents.back()))
         return error("failed to parse parent");
     }
+    if (parse_newline(current))
+      return 1;
+
     commits.back().num_parents = parents.size();
     if (!parents.empty()) {
       commits.back().parents = new (parent_alloc) sha1_ref[parents.size()];
       std::copy(parents.begin(), parents.end(), commits.back().parents);
     }
     parents.clear();
-
-    if (current != end)
-      return error("junk in commit line");
   }
   source.commits.count = commits.size() - source.commits.first;
   if (source.commits.count < fparents.size() - num_fparents_before)
@@ -526,6 +546,21 @@ int commit_interleaver::translate_commit(
   return 0;
 }
 
+static int read_stdin(std::vector<char> &bytes) {
+  assert(bytes.empty());
+  const ssize_t chunk_size = 1 << 14;
+  ssize_t num_bytes_read;
+  do {
+    ssize_t num_bytes = bytes.size();
+    bytes.resize(bytes.size() + chunk_size);
+    num_bytes_read = read(0, bytes.data() + num_bytes, chunk_size);
+    if (num_bytes_read == -1)
+      return 1;
+    bytes.resize(num_bytes + num_bytes_read);
+  } while (num_bytes_read);
+  return 0;
+}
+
 int commit_interleaver::read_queue_from_stdin() {
   // We will interleave first parent commits, sorting by commit timestamp,
   // putting the earliest at the back of the vector and top of the stack.  Use
@@ -538,11 +573,17 @@ int commit_interleaver::read_queue_from_stdin() {
       return false;
     return lhs.ct > rhs.ct;
   };
+
+  std::vector<char> bytes;
+  if (read_stdin(bytes))
+    return 1;
+  bytes.push_back(0);
+  const char *current = bytes.data();
   {
     int status = 0;
     while (!status) {
       size_t orig_num_fparents = q.fparents.size();
-      status = q.parse_source(stdin);
+      status = q.parse_source(current);
 
       // We can assert here since parse_source is supposed to fudge any
       // inconsistencies so that sorting later is legal.
