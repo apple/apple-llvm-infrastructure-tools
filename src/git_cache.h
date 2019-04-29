@@ -414,7 +414,7 @@ int git_cache::get_metadata(sha1_ref commit, const char *&metadata) {
     return error(std::string("failed to read commit metadata for ") +
                  sha1.bytes);
 
-  char *storage;
+  char *&storage = const_cast<char *&>(metadata);
   if (message.size() >= 4096) {
     big_metadata.emplace_back(new char[message.size() + 1]);
     storage = big_metadata.back().get();
