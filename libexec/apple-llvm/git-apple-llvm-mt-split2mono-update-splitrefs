@@ -21,6 +21,7 @@ main() {
     mt_split2mono_init || exit 1
     local refdir
     local forks=
+    log "Updating splitrefs for $branch"
     for refdir in "$@"; do
         update_splitref "$branch" "$refdir" &
         forks="$forks${forks:+ }$!"
@@ -46,7 +47,7 @@ update_splitref() {
     local last_mapped="$(run git rev-list -1 $mapped)"
     [ -n "$last_mapped" ] || return 0
     [ "$already_mapped" = "$last_mapped" ] && return 0
-    log "Updating $mtref to $last_mapped"
+    log " - ${mtref#refs/heads/} => $last_mapped"
     run git update-ref $mtref $last_mapped ||
         error "failed to update $mtref"
 }

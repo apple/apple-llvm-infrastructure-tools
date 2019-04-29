@@ -83,7 +83,7 @@ list_new_split_commits() {
         r="${rd%:*}"
         d="${rd##*:}"
 
-        local tailref="refs/heads/mt/${branch#refs/heads/}/$d/mt-split"
+        local tailref="refs/heads/mt/$branch/$d/mt-split"
         local headref="refs/remotes/${r#refs/remotes/}"
         tail="$(run --hide-errors git rev-parse --verify $tailref^{commit})"
         head="$(run --hide-errors git rev-parse --verify $headref^{commit})" ||
@@ -141,14 +141,14 @@ update_refs() {
     [ -n "$head" ] || return 1
 
     local ref=refs/heads/$branch
-    log "Updating $branch to $head"
+    log "Updating $branch => $head"
     run git update-ref $ref $head $current ||
         error "failed to update $branch"
     local sd sha1 rd r d
     for rd in $refdirs; do
         r=${rd%:*}
         d=${rd#*:}
-        ref=refs/heads/mt/$branch/${r#refs/remotes/}/mt-split
+        ref=refs/heads/mt/$branch/$d/mt-split
         sha1=
         for sd in $sha1dirs; do
             [ "$d" = "${sd#*:}" ] || continue
@@ -161,6 +161,7 @@ update_refs() {
             [ -z "$sha1" ] || error "$ref had a value, but now does not"
             continue
         fi
+        log " - ${ref#refs/heads/} => $sha1"
         run git update-ref $ref $sha1 ||
             error "failed to update $ref"
     done
