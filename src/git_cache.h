@@ -96,12 +96,16 @@ struct git_cache {
   void note_mono(sha1_ref split, sha1_ref mono);
   void note_rev(sha1_ref commit, int rev);
   void note_tree(const git_tree &tree);
+  void note_metadata(sha1_ref commit, const char *metadata);
   int lookup_commit_tree(sha1_ref commit, sha1_ref &tree) const;
   int lookup_mono(sha1_ref split, sha1_ref &mono) const;
   int lookup_rev(sha1_ref commit, int &rev) const;
   int lookup_tree(git_tree &tree) const;
+  int lookup_metadata(sha1_ref commit, const char *&metadata) const;
   int get_commit_tree(sha1_ref commit, sha1_ref &tree);
+  int get_metadata(sha1_ref commit, const char *&metadata);
   int get_rev(sha1_ref commit, int &rev);
+  int set_rev(sha1_ref commit, int rev);
   int get_mono(sha1_ref split, sha1_ref &mono);
   int set_mono(sha1_ref split, sha1_ref mono);
   int ls_tree(git_tree &tree);
@@ -121,6 +125,8 @@ struct git_cache {
   int commit_tree(sha1_ref base_commit, const char *dir, sha1_ref tree,
                   const std::vector<sha1_ref> &parents, sha1_ref &commit,
                   commit_tree_buffers &buffers);
+  int parse_commit_metadata(sha1_ref commit,
+                            git_cache::commit_tree_buffers &buffers);
 
   struct sha1_pair {
     sha1_ref key;
@@ -143,12 +149,22 @@ struct git_cache {
 
   static constexpr const int num_cache_bits = 20;
 
+  struct sha1_metadata {
+    sha1_ref commit;
+    const char *metadata;
+
+    explicit sha1_metadata(const binary_sha1 &sha1) : commit(&sha1) {}
+    explicit operator const binary_sha1 &() const { return *commit; }
+  };
+
   sha1_trie<git_tree> trees;
   sha1_trie<sha1_pair> commit_trees;
   sha1_trie<git_svn_base_rev> revs;
   sha1_trie<sha1_pair> monos;
+  sha1_trie<sha1_metadata> metadata;
 
   std::vector<const char *> names;
+  std::vector<std::unique_ptr<char[]>> big_metadata;
 
   bump_allocator name_alloc;
   bump_allocator tree_item_alloc;
@@ -267,6 +283,13 @@ void git_cache::note_tree(const git_tree &tree) {
   *inserted = tree;
 }
 
+void git_cache::note_metadata(sha1_ref commit, const char *metadata) {
+  bool was_inserted = false;
+  sha1_metadata *inserted = this->metadata.insert(*commit, was_inserted);
+  assert(inserted);
+  inserted->metadata = metadata;
+}
+
 int git_cache::lookup_commit_tree(sha1_ref commit, sha1_ref &tree) const {
   sha1_pair *existing = commit_trees.lookup(*commit);
   if (!existing)
@@ -296,6 +319,14 @@ int git_cache::lookup_tree(git_tree &tree) const {
   if (!existing)
     return 1;
   tree = *existing;
+  return 0;
+}
+
+int git_cache::lookup_metadata(sha1_ref commit, const char *&metadata) const {
+  sha1_metadata *existing = this->metadata.lookup(*commit);
+  if (!existing)
+    return 1;
+  metadata = existing->metadata;
   return 0;
 }
 
@@ -359,6 +390,52 @@ int git_cache::get_commit_tree(sha1_ref commit, sha1_ref &tree) {
   return call_git(argv, nullptr, reader);
 }
 
+int git_cache::get_metadata(sha1_ref commit, const char *&metadata) {
+  if (!lookup_metadata(commit, metadata))
+    return 0;
+
+  std::string message;
+  message.reserve(4096);
+
+  textual_sha1 sha1(*commit);
+  const char *args[] = {"git",
+                        "log",
+                        "--date=raw",
+                        "-1",
+                        "--format=format:%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B",
+                        sha1.bytes,
+                        nullptr};
+  auto reader = [&message](std::string line) {
+    message += line;
+    message += '\n';
+    return 0;
+  };
+  if (call_git(args, nullptr, reader))
+    return error(std::string("failed to read commit metadata for ") +
+                 sha1.bytes);
+
+  char *storage;
+  if (message.size() >= 4096) {
+    big_metadata.emplace_back(new char[message.size() + 1]);
+    storage = big_metadata.back().get();
+  } else {
+    storage = new (
+        name_alloc.allocate(message.size() + 1, 1)) char[message.size() + 1];
+  }
+  memcpy(storage, message.c_str(), message.size() + 1);
+  note_metadata(commit, storage);
+  return 0;
+}
+
+int git_cache::set_rev(sha1_ref commit, int rev) {
+  svnbaserev dbrev;
+  dbrev.set_rev(rev);
+  if (svnbase_query(*commit).insert_data(db.svnbase, dbrev))
+    return 1;
+  note_rev(commit, rev);
+  return 0;
+}
+
 int git_cache::get_rev(sha1_ref commit, int &rev) {
   if (!lookup_rev(commit, rev))
     return 0;
@@ -373,75 +450,91 @@ int git_cache::get_rev(sha1_ref commit, int &rev) {
     }
   }
 
-  const char *llvm_rev_trailer = "llvm-rev: ";
-  const int llvm_rev_trailer_len = strlen(llvm_rev_trailer);
-  const char *git_svn_id_trailer =
-      "git-svn-id: https://llvm.org/svn/llvm-project/";
-  const int git_svn_id_trailer_len = strlen(git_svn_id_trailer);
+  const char *metadata;
+  if (get_metadata(commit, metadata))
+    return 1;
 
-  bool found = false;
-  long parsed_rev = -1;
-  std::string timestamp;
-  int count = 0;
-  auto reader = [&](std::string line) {
-    switch (count++) {
-    default:
-      break;
-    case 0:
-      timestamp = std::move(line);
-      return 0;
-    case 1:
-      if (line == timestamp)
-        return 0;
-      // Author and commit timestamps don't match.  Looks like a cherry-pick.
-      return EOF;
-    }
-    if (found)
+  auto try_parse_string = [](const char *&current, const char *s) {
+    const char *x = current;
+    for (; *x && *s; ++x, ++s)
+      if (*x != *s)
+        return 1;
+    if (*s)
       return 1;
-
-    // Check for "llvm-rev: <rev>".
-    if (!line.compare(0, llvm_rev_trailer_len, llvm_rev_trailer)) {
-      char *end_rev = nullptr;
-      parsed_rev = strtol(line.data() + llvm_rev_trailer_len, &end_rev, 10);
-      if (*end_rev)
+    current = x;
+    return 0;
+  };
+  auto parse_ch = [](const char *&current, int ch) {
+    if (*current != ch)
+      return 1;
+    ++current;
+    return 0;
+  };
+  auto skip_until = [](const char *&current, int ch) {
+    for (; *current; ++current)
+      if (*current == ch)
         return 0;
-      found = true;
-      return EOF;
-    }
-
-    // Check for "git-svn-id: <url>@<rev> <junk>".
-    if (line.compare(0, git_svn_id_trailer_len, git_svn_id_trailer))
-      return 0;
-    size_t at = line.find('@', git_svn_id_trailer_len);
-    if (at == std::string::npos)
-      return 0;
-
-    char *end_rev = nullptr;
-    parsed_rev = strtol(line.data() + at + 1, &end_rev, 10);
-    if (*end_rev != ' ')
-      return 0;
-    found = true;
-    return EOF;
+    return 1;
+  };
+  auto parse_num = [](const char *&current, int &num) {
+    char *end = nullptr;
+    long parsed_num = strtol(current, &end, 10);
+    if (current == end || parsed_num > INT_MAX || parsed_num < INT_MIN)
+      return 1;
+    current = end;
+    num = parsed_num;
+    return 0;
   };
 
-  textual_sha1 sha1(*commit);
-  const char *argv[] = {"git", "log",      "--format=format:%at%n%ct%n%B",
-                        "-1",  sha1.bytes, nullptr};
-  if (call_git(argv, nullptr, reader))
-    return error("failed to look up svnbaserev in git for " +
-                 commit->to_string());
+  // Deal with the prefix: an, cn, ad, cd, ae, ce.
+  const char *ad, *ad_end, *cd, *cd_end;
+  auto parse_line = [skip_until, parse_ch](const char *&metadata,
+                                           const char *&first,
+                                           const char *&last) {
+    first = metadata;
+    if (skip_until(metadata, '\n'))
+      return 1;
+    last = metadata;
+    return parse_ch(metadata, '\n');
+  };
+  if (skip_until(metadata, '\n') || parse_ch(metadata, '\n') ||
+      skip_until(metadata, '\n') || parse_ch(metadata, '\n') ||
+      parse_line(metadata, ad, ad_end) || parse_line(metadata, cd, cd_end) ||
+      ad_end - ad != cd_end - cd || strncmp(ad, cd, cd_end - cd) ||
+      skip_until(metadata, '\n') || parse_ch(metadata, '\n') ||
+      skip_until(metadata, '\n') || parse_ch(metadata, '\n'))
+    metadata = "";
 
-  if (!found) {
-    // FIXME: consider warning here.
-    rev = 0;
+  while (*metadata) {
+    if (!try_parse_string(metadata, "llvm-rev: ")) {
+      int parsed_rev;
+      if (parse_num(metadata, parsed_rev) || parse_ch(metadata, '\n'))
+        break;
+      rev = parsed_rev;
+      note_rev(commit, rev);
+      return 0;
+    }
+
+    if (try_parse_string(metadata,
+                         "git-svn-id: https://llvm.org/svn/llvm-project/")) {
+      skip_until(metadata, '\n');
+      parse_ch(metadata, '\n');
+      continue;
+    }
+
+    int parsed_rev;
+    if (skip_until(metadata, '@') || parse_ch(metadata, '@') ||
+        parse_num(metadata, parsed_rev) || parse_ch(metadata, ' '))
+      break;
+
+    rev = parsed_rev;
     note_rev(commit, rev);
     return 0;
   }
 
-  if (parsed_rev > INT_MAX)
-    return error("missing llvm-svn-base-rev for " + commit->to_string() +
-                 " is too big");
-  rev = parsed_rev;
+  // FIXME: consider warning here.
+  error("something");
+  rev = 0;
   note_rev(commit, rev);
   return 0;
 }
@@ -621,8 +714,8 @@ int git_cache::mktree(git_tree &tree) {
   return call_git(argv, nullptr, reader, writer);
 }
 
-static int get_commit_metadata(sha1_ref commit,
-                               git_cache::commit_tree_buffers &buffers) {
+int git_cache::parse_commit_metadata(sha1_ref commit,
+                                     git_cache::commit_tree_buffers &buffers) {
   auto &message = buffers.message;
   const char *prefixes[] = {
       "GIT_AUTHOR_NAME=",    "GIT_COMMITTER_NAME=", "GIT_AUTHOR_DATE=",
@@ -632,31 +725,31 @@ static int get_commit_metadata(sha1_ref commit,
   for (int i = 0; i < 6; ++i)
     *vars[i] = prefixes[i];
 
-  message.clear();
-  textual_sha1 sha1(*commit);
-  const char *args[] = {"git",
-                        "log",
-                        "--date=raw",
-                        "-1",
-                        "--format=format:%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B",
-                        sha1.bytes,
-                        nullptr};
-  size_t count = 0;
-  auto reader = [&message, &count, &vars](std::string line) {
-    if (count++ < 6) {
-      vars[count - 1]->append(line);
-      return 0;
-    }
+  const char *metadata;
+  if (get_metadata(commit, metadata))
+    return 1;
 
-    message.append(line);
-    message += '\n';
+  auto skip_until = [](const char *&current, int ch) {
+    for (; *current; ++current)
+      if (*current == ch)
+        return 0;
+    return 1;
+  };
+  auto parse_suffix = [&skip_until](const char *&current, std::string &s) {
+    const char *start = current;
+    if (skip_until(current, '\n'))
+      return 1;
+    s.append(start, current);
+    ++current;
     return 0;
   };
-  if (call_git(args, nullptr, reader))
-    return error(std::string("failed to read commit message for ") +
-                 sha1.bytes);
-  if (count < 6)
-    return error(std::string("missing commit metadata for ") + sha1.bytes);
+  if (parse_suffix(metadata, buffers.an) ||
+      parse_suffix(metadata, buffers.cn) ||
+      parse_suffix(metadata, buffers.ad) ||
+      parse_suffix(metadata, buffers.cd) ||
+      parse_suffix(metadata, buffers.ae) || parse_suffix(metadata, buffers.ce))
+    return error("failed to parse commit metadata");
+  message = metadata;
   return 0;
 }
 
@@ -703,7 +796,7 @@ static void append_trailers(const char *dir, sha1_ref base_commit,
 int git_cache::commit_tree(sha1_ref base_commit, const char *dir, sha1_ref tree,
                            const std::vector<sha1_ref> &parents,
                            sha1_ref &commit, commit_tree_buffers &buffers) {
-  if (get_commit_metadata(base_commit, buffers))
+  if (parse_commit_metadata(base_commit, buffers))
     return error("failed to get metadata for " + base_commit->to_string());
   append_trailers(dir, base_commit, buffers.message);
 

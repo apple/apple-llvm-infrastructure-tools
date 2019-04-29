@@ -18,7 +18,7 @@ struct translation_queue {
 
   explicit translation_queue(git_cache &cache, dir_list &dirs)
       : cache(cache), pool(cache.pool), dirs(dirs) {}
-  int parse_source(const char *&current);
+  int parse_source(const char *&current, const char *end);
 };
 
 struct commit_interleaver {
@@ -30,6 +30,8 @@ struct commit_interleaver {
   bool has_root = false;
   translation_queue q;
 
+  std::vector<char> stdin_bytes;
+
   commit_interleaver(split2monodb &db, mmapped_file &svn2git)
       : cache(db, svn2git, sha1s, dirs), q(cache, dirs) {
     dirs.list.reserve(64);
@@ -40,21 +42,24 @@ struct commit_interleaver {
 
   int construct_tree(bool is_head, commit_source &source, sha1_ref base_commit,
                      const std::vector<sha1_ref> &parents,
+                     const std::vector<int> &parent_revs,
                      std::vector<git_tree::item_type> &items,
                      sha1_ref &tree_sha1);
   int translate_parents(const commit_type &base,
                         std::vector<sha1_ref> &new_parents,
-                        sha1_ref first_parent = sha1_ref());
+                        std::vector<int> &parent_revs,
+                        sha1_ref first_parent, int &max_rev);
   int interleave();
   int translate_commit(commit_source &source, const commit_type &base,
                        std::vector<sha1_ref> &new_parents,
+                       std::vector<int> &parent_revs,
                        std::vector<git_tree::item_type> &items,
                        git_cache::commit_tree_buffers &buffers,
                        sha1_ref *head = nullptr);
 };
 } // end namespace
 
-int translation_queue::parse_source(const char *&current) {
+int translation_queue::parse_source(const char *&current, const char *end) {
   auto parse_string = [](const char *&current, const char *s) {
     for (; *current && *s; ++current, ++s)
       if (*current != *s)
@@ -107,6 +112,15 @@ int translation_queue::parse_source(const char *&current) {
     return 0;
   };
 
+  auto parse_through_null = [end](const char *&current) {
+    while (*current)
+      ++current;
+    if (current == end)
+      return 1;
+    ++current;
+    return 0;
+  };
+
   int d = -1;
   sources.emplace_back();
   commit_source &source = sources.back();
@@ -147,13 +161,6 @@ int translation_queue::parse_source(const char *&current) {
       return error("invalid timestamp");
     current = end;
     return 0;
-  };
-
-  auto skip_to_newline = [](const char *&current) {
-    for (; *current; ++current)
-      if (*current == '\n')
-        return 0;
-    return 1;
   };
 
   size_t num_fparents_before = fparents.size();
@@ -206,7 +213,13 @@ int translation_queue::parse_source(const char *&current) {
     // Warm the cache.
     cache.note_commit_tree(commit, tree);
     if (is_boundary) {
-      if (skip_to_newline(current) || parse_newline(current))
+      if (parse_through_null(current))
+        return error("missing null charactor before boundary metadata");
+      const char *metadata = current;
+      if (parse_through_null(current))
+        return error("missing null charactor after boundary metadata");
+      cache.note_metadata(commit, metadata);
+      if (parse_newline(current))
         return 1;
       continue;
     }
@@ -219,6 +232,14 @@ int translation_queue::parse_source(const char *&current) {
       if (parse_sha1(current, parents.back()))
         return error("failed to parse parent");
     }
+
+    if (parse_through_null(current))
+      return error("missing null charactor before metadata");
+    const char *metadata = current;
+    if (parse_through_null(current))
+      return error("missing null charactor after metadata");
+    cache.note_metadata(commit, metadata);
+
     if (parse_newline(current))
       return 1;
 
@@ -237,14 +258,25 @@ int translation_queue::parse_source(const char *&current) {
 
 int commit_interleaver::translate_parents(const commit_type &base,
                                           std::vector<sha1_ref> &new_parents,
-                                          sha1_ref first_parent) {
+                                          std::vector<int> &parent_revs,
+                                          sha1_ref first_parent, int &max_rev) {
+  max_rev = 0;
   for (int i = 0; i < base.num_parents; ++i) {
+    int srev = 0;
     new_parents.emplace_back();
-    if (i == 0 && first_parent)
+    if (i == 0 && first_parent) {
       new_parents.back() = first_parent;
-    else if (cache.get_mono(base.parents[i], new_parents.back()))
-      return error("parent " + base.parents[i]->to_string() + " of " +
-                   base.commit->to_string() + " not translated");
+      cache.get_rev(first_parent, srev);
+    } else {
+      if (cache.get_mono(base.parents[i], new_parents.back()))
+        return error("parent " + base.parents[i]->to_string() + " of " +
+                     base.commit->to_string() + " not translated");
+      cache.get_rev(new_parents.back(), srev);
+    }
+    parent_revs.push_back(srev);
+    int rev = srev < 0 ? -srev : srev;
+    if (rev > max_rev)
+      max_rev = rev;
   }
   return 0;
 }
@@ -252,6 +284,7 @@ int commit_interleaver::translate_parents(const commit_type &base,
 int commit_interleaver::construct_tree(bool is_head, commit_source &source,
                                        sha1_ref base_commit,
                                        const std::vector<sha1_ref> &parents,
+                                       const std::vector<int> &revs,
                                        std::vector<git_tree::item_type> &items,
                                        sha1_ref &tree_sha1) {
   struct tracking_context {
@@ -269,8 +302,6 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 
   // Index by parent.
   constexpr static const size_t max_parents = 128;
-  int revs[max_parents] = {0};
-  std::bitset<max_parents> has_rev;
   if (parents.size() > max_parents)
     return error(std::to_string(parents.size()) +
                  " is too many parents (max: " + std::to_string(max_parents) +
@@ -390,12 +421,6 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       int old_p = is_tracked_tree
                       ? dcontext.parents[d]
                       : is_tracked_blob ? blob_parent : untracked_path_parent;
-      for (int parent : {p, old_p})
-        if (!has_rev.test(parent)) {
-          if (cache.get_rev(parents[parent], revs[parent]))
-            return 1;
-          has_rev.set(parent);
-        }
 
       // Revs are stored signed, where negative indicates the parent itself is
       // not a commit from upstream LLVM (positive indicates that it is).
@@ -464,6 +489,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 int commit_interleaver::interleave() {
   // Construct trees and commit them.
   std::vector<sha1_ref> new_parents;
+  std::vector<int> parent_revs;
   std::vector<git_tree::item_type> items;
   git_cache::commit_tree_buffers buffers;
 
@@ -496,12 +522,12 @@ int commit_interleaver::interleave() {
     while ((--last)->commit != fparent.commit) {
       if (first == last)
         return error("first parent missing from all");
-      if (translate_commit(source, *last, new_parents, items, buffers))
+      if (translate_commit(source, *last, new_parents, parent_revs, items, buffers))
         return 1;
     }
     dir.head = last->commit;
     source.commits.count = last - first;
-    if (translate_commit(source, *last, new_parents, items, buffers, &head) ||
+    if (translate_commit(source, *last, new_parents, parent_revs, items, buffers, &head) ||
         report_progress(original_last - last))
       return 1;
   }
@@ -526,19 +552,23 @@ int commit_interleaver::interleave() {
 
 int commit_interleaver::translate_commit(
     commit_source &source, const commit_type &base,
-    std::vector<sha1_ref> &new_parents, std::vector<git_tree::item_type> &items,
+    std::vector<sha1_ref> &new_parents,
+    std::vector<int> &parent_revs, std::vector<git_tree::item_type> &items,
     git_cache::commit_tree_buffers &buffers, sha1_ref *head) {
   new_parents.clear();
+  parent_revs.clear();
   items.clear();
   const char *dir = q.dirs.list[source.dir_index].name;
   sha1_ref new_tree, new_commit, first_parent_override;
   if (head)
     first_parent_override = *head;
-  if (translate_parents(base, new_parents, first_parent_override) ||
-      construct_tree(/*is_head=*/head, source, base.commit, new_parents, items,
+  int rev = 0;
+  if (translate_parents(base, new_parents, parent_revs, first_parent_override, rev) ||
+      construct_tree(/*is_head=*/head, source, base.commit, new_parents, parent_revs,items,
                      new_tree) ||
       cache.commit_tree(base.commit, dir, new_tree, new_parents, new_commit,
                         buffers) ||
+      cache.set_rev(new_commit, rev) ||
       cache.set_mono(base.commit, new_commit))
     return 1;
   if (head)
@@ -574,16 +604,16 @@ int commit_interleaver::read_queue_from_stdin() {
     return lhs.ct > rhs.ct;
   };
 
-  std::vector<char> bytes;
-  if (read_stdin(bytes))
+  if (read_stdin(stdin_bytes))
     return 1;
-  bytes.push_back(0);
-  const char *current = bytes.data();
+  stdin_bytes.push_back(0);
+  const char *current = stdin_bytes.data();
+  const char *end = stdin_bytes.data() + stdin_bytes.size() - 1;
   {
     int status = 0;
     while (!status) {
       size_t orig_num_fparents = q.fparents.size();
-      status = q.parse_source(current);
+      status = q.parse_source(current, end);
 
       // We can assert here since parse_source is supposed to fudge any
       // inconsistencies so that sorting later is legal.
