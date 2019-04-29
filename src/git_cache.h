@@ -79,6 +79,11 @@ struct git_tree {
     const char *get_mode() const { return get_mode(type); }
     const char *get_type() const { return get_type(type); }
   };
+
+  git_tree() = default;
+  git_tree(const binary_sha1 &sha1) : sha1(&sha1){};
+  explicit operator const binary_sha1 &() const { return *sha1; }
+
   sha1_ref sha1;
   item_type *items = nullptr;
   int num_items = 0;
@@ -117,6 +122,9 @@ struct git_cache {
   struct sha1_pair {
     sha1_ref key;
     sha1_ref value;
+
+    sha1_pair(const binary_sha1 &sha1) : key(&sha1){};
+    explicit operator const binary_sha1 &() const { return *key; }
   };
   struct git_svn_base_rev {
     sha1_ref commit;
@@ -125,18 +133,15 @@ struct git_cache {
 
   git_cache(split2monodb &db, mmapped_file &svn2git, sha1_pool &pool,
             dir_list &dirs)
-      : trees(new git_tree[1u << num_cache_bits]),
-        commit_trees(new sha1_pair[1u << num_cache_bits]),
-        revs(new git_svn_base_rev[1u << num_cache_bits]),
-        monos(new sha1_pair[1u << num_cache_bits]), db(db), svn2git(svn2git),
-        pool(pool), dirs(dirs) {}
+      : revs(new git_svn_base_rev[1u << num_cache_bits]), db(db),
+        svn2git(svn2git), pool(pool), dirs(dirs) {}
 
   static constexpr const int num_cache_bits = 20;
 
-  std::unique_ptr<git_tree[]> trees;
-  std::unique_ptr<sha1_pair[]> commit_trees;
+  sha1_trie<git_tree> trees;
+  sha1_trie<sha1_pair> commit_trees;
   std::unique_ptr<git_svn_base_rev[]> revs;
-  std::unique_ptr<sha1_pair[]> monos;
+  sha1_trie<sha1_pair> monos;
 
   std::vector<const char *> names;
 
@@ -226,9 +231,10 @@ int dir_list::lookup_dir(const char *name, bool &found) {
 
 void git_cache::note_commit_tree(sha1_ref commit, sha1_ref tree) {
   assert(tree);
-  auto &entry = commit_trees[commit->get_bits(0, num_cache_bits)];
-  entry.key = commit;
-  entry.value = tree;
+  bool was_inserted = false;
+  sha1_pair *inserted = commit_trees.insert(*commit, was_inserted);
+  assert(inserted);
+  inserted->value = tree;
 }
 
 void git_cache::note_rev(sha1_ref commit, int rev) {
@@ -239,20 +245,24 @@ void git_cache::note_rev(sha1_ref commit, int rev) {
 
 void git_cache::note_mono(sha1_ref split, sha1_ref mono) {
   assert(mono);
-  auto &entry = monos[split->get_bits(0, num_cache_bits)];
-  entry.key = split;
-  entry.value = mono;
+  bool was_inserted = false;
+  sha1_pair *inserted = monos.insert(*split, was_inserted);
+  assert(inserted);
+  inserted->value = mono;
 }
 
 void git_cache::note_tree(const git_tree &tree) {
-  trees[tree.sha1->get_bits(0, num_cache_bits)] = tree;
+  bool was_inserted = false;
+  git_tree *inserted = trees.insert(*tree.sha1, was_inserted);
+  assert(inserted);
+  *inserted = tree;
 }
 
 int git_cache::lookup_commit_tree(sha1_ref commit, sha1_ref &tree) const {
-  auto &entry = commit_trees[commit->get_bits(0, num_cache_bits)];
-  if (entry.key != commit)
+  sha1_pair *existing = commit_trees.lookup(*commit);
+  if (!existing)
     return 1;
-  tree = entry.value;
+  tree = existing->value;
   return 0;
 }
 
@@ -265,18 +275,18 @@ int git_cache::lookup_rev(sha1_ref commit, int &rev) const {
 }
 
 int git_cache::lookup_mono(sha1_ref split, sha1_ref &mono) const {
-  auto &entry = monos[split->get_bits(0, num_cache_bits)];
-  if (entry.key != split)
+  sha1_pair *existing = monos.lookup(*split);
+  if (!existing)
     return 1;
-  mono = entry.value;
+  mono = existing->value;
   return 0;
 }
 
 int git_cache::lookup_tree(git_tree &tree) const {
-  auto &entry = trees[tree.sha1->get_bits(0, num_cache_bits)];
-  if (entry.sha1 != tree.sha1)
+  git_tree *existing = trees.lookup(*tree.sha1);
+  if (!existing)
     return 1;
-  tree = entry;
+  tree = *existing;
   return 0;
 }
 
