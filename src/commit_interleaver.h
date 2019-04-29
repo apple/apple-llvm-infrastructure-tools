@@ -45,10 +45,10 @@ struct commit_interleaver {
                      const std::vector<int> &parent_revs,
                      std::vector<git_tree::item_type> &items,
                      sha1_ref &tree_sha1);
-  int translate_parents(const commit_type &base,
+  int translate_parents(const commit_source &source, const commit_type &base,
                         std::vector<sha1_ref> &new_parents,
-                        std::vector<int> &parent_revs,
-                        sha1_ref first_parent, int &max_rev);
+                        std::vector<int> &parent_revs, sha1_ref first_parent,
+                        int &max_rev);
   int interleave();
   int translate_commit(commit_source &source, const commit_type &base,
                        std::vector<sha1_ref> &new_parents,
@@ -256,27 +256,38 @@ int translation_queue::parse_source(const char *&current, const char *end) {
   return 0;
 }
 
-int commit_interleaver::translate_parents(const commit_type &base,
+int commit_interleaver::translate_parents(const commit_source &source,
+                                          const commit_type &base,
                                           std::vector<sha1_ref> &new_parents,
                                           std::vector<int> &parent_revs,
                                           sha1_ref first_parent, int &max_rev) {
   max_rev = 0;
-  for (int i = 0; i < base.num_parents; ++i) {
+  int max_urev = 0;
+  auto add_parent = [&](sha1_ref p) {
+    new_parents.push_back(p);
     int srev = 0;
-    new_parents.emplace_back();
-    if (i == 0 && first_parent) {
-      new_parents.back() = first_parent;
-      cache.get_rev(first_parent, srev);
-    } else {
-      if (cache.get_mono(base.parents[i], new_parents.back()))
-        return error("parent " + base.parents[i]->to_string() + " of " +
-                     base.commit->to_string() + " not translated");
-      cache.get_rev(new_parents.back(), srev);
-    }
+    cache.get_rev(p, srev);
     parent_revs.push_back(srev);
     int rev = srev < 0 ? -srev : srev;
-    if (rev > max_rev)
-      max_rev = rev;
+    if (rev > max_urev) {
+      max_rev = srev;
+      max_urev = rev;
+    }
+  };
+  if (first_parent)
+    add_parent(first_parent);
+  for (int i = 0; i < base.num_parents; ++i) {
+    // Usually, override the first parent.  However, if this directory has not
+    // yet been active on the branch then its original first parent may not be
+    // in "first_parent"'s ancestory.
+    if (first_parent && i == 0 && dirs.active_dirs.test(source.dir_index))
+      continue;
+
+    sha1_ref mono;
+    if (cache.get_mono(base.parents[i], mono))
+      return error("parent " + base.parents[i]->to_string() + " of " +
+                   base.commit->to_string() + " not translated");
+    add_parent(mono);
   }
   return 0;
 }
@@ -346,6 +357,9 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   }
   dcontext.added.set(base_d);
 
+  if (is_head && !dirs.active_dirs.test(base_d))
+    dirs.active_dirs.set(base_d);
+
   const bool ignore_blobs = source.is_root;
   bool needs_cleanup = false;
   int blob_parent = -1;
@@ -363,8 +377,12 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       if (ignore_blobs && is_blob)
         continue;
 
-      bool is_tracked_dir = true;
-      int d = dirs.lookup_dir(is_blob ? item.name : "-", is_tracked_dir);
+      bool is_tracked_dir = false;
+      int d = dirs.lookup_dir(is_blob ? "-" : item.name, is_tracked_dir);
+      if (is_tracked_dir)
+        is_tracked_dir = dirs.active_dirs.test(d);
+      if (!is_tracked_dir)
+        d = -1;
 
       // The base commit takes priority.
       if (d == base_d)
@@ -373,6 +391,9 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       // Look up context for blobs and untracked trees.
       const bool is_tracked_tree = !is_blob && is_tracked_dir;
       const bool is_tracked_blob = is_blob && is_tracked_dir;
+      assert(int(is_tracked_tree) + int(is_tracked_blob) +
+                 int(!is_tracked_dir) ==
+             1);
       int o = -1;
       if (!is_tracked_tree) {
         bool is_new;
@@ -382,11 +403,9 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       if (is_tracked_blob)
         if (blob_parent == -1)
           blob_parent = p;
-      if (!is_tracked_dir) {
-        d = -1;
+      if (!is_tracked_dir)
         if (untracked_path_parent == -1)
           untracked_path_parent = p;
-      }
 
       // Add it up front if:
       // - item is a tracked tree not yet seen; or
@@ -412,9 +431,11 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
         }
       }
 
-      // First parent takes priority for tracked dirs if this is in the first
-      // parent path (could be head of the branch).
-      if (is_head && is_tracked_dir && p > 0)
+      // The first parent should get caught implicitly by the logic above.
+      assert(p > 0);
+
+      // First parent takes priority for tracked dirs.
+      if (is_head && is_tracked_dir)
         continue;
 
       // Look up revs to pick a winner.
@@ -455,11 +476,11 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 
       // Invalidate the old items.
       needs_cleanup = true;
-      for (int i = 0; i < ocontext.num_names; ++i)
-        if (ocontext.added.test(i))
-          if (ocontext.is_tracked_blob.test(i) == is_tracked_blob) {
-            items[ocontext.where[i]].sha1 = sha1_ref();
-            ocontext.added.reset(i);
+      for (int j = 0; j < ocontext.num_names; ++j)
+        if (ocontext.added.test(j))
+          if (ocontext.is_tracked_blob.test(j) == is_tracked_blob) {
+            items[ocontext.where[j]].sha1 = sha1_ref();
+            ocontext.added.reset(j);
           }
 
       ocontext.where[o] = items.size();
@@ -522,12 +543,14 @@ int commit_interleaver::interleave() {
     while ((--last)->commit != fparent.commit) {
       if (first == last)
         return error("first parent missing from all");
-      if (translate_commit(source, *last, new_parents, parent_revs, items, buffers))
+      if (translate_commit(source, *last, new_parents, parent_revs, items,
+                           buffers))
         return 1;
     }
     dir.head = last->commit;
     source.commits.count = last - first;
-    if (translate_commit(source, *last, new_parents, parent_revs, items, buffers, &head) ||
+    if (translate_commit(source, *last, new_parents, parent_revs, items,
+                         buffers, &head) ||
         report_progress(original_last - last))
       return 1;
   }
@@ -552,8 +575,8 @@ int commit_interleaver::interleave() {
 
 int commit_interleaver::translate_commit(
     commit_source &source, const commit_type &base,
-    std::vector<sha1_ref> &new_parents,
-    std::vector<int> &parent_revs, std::vector<git_tree::item_type> &items,
+    std::vector<sha1_ref> &new_parents, std::vector<int> &parent_revs,
+    std::vector<git_tree::item_type> &items,
     git_cache::commit_tree_buffers &buffers, sha1_ref *head) {
   new_parents.clear();
   parent_revs.clear();
@@ -563,13 +586,13 @@ int commit_interleaver::translate_commit(
   if (head)
     first_parent_override = *head;
   int rev = 0;
-  if (translate_parents(base, new_parents, parent_revs, first_parent_override, rev) ||
-      construct_tree(/*is_head=*/head, source, base.commit, new_parents, parent_revs,items,
-                     new_tree) ||
+  if (translate_parents(source, base, new_parents, parent_revs,
+                        first_parent_override, rev) ||
+      construct_tree(/*is_head=*/head, source, base.commit, new_parents,
+                     parent_revs, items, new_tree) ||
       cache.commit_tree(base.commit, dir, new_tree, new_parents, new_commit,
                         buffers) ||
-      cache.set_rev(new_commit, rev) ||
-      cache.set_mono(base.commit, new_commit))
+      cache.set_rev(new_commit, rev) || cache.set_mono(base.commit, new_commit))
     return 1;
   if (head)
     *head = new_commit;

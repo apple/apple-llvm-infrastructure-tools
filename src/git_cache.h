@@ -666,7 +666,7 @@ int git_cache::ls_tree(git_tree &tree) {
         parse_name(current, last->name))
       return error("ls-tree: could not parse entry");
     ++last;
-    return EOF;
+    return 0;
   };
 
   std::string ref = tree.sha1->to_string();
