@@ -14,8 +14,9 @@ usage() {
         "   <ref>...      the refs for split branches to combine"            \
         "   <dir>...      the dirs for each split branch; '-' for root"      \
         ""                                                                   \
-        "   updates these:"                                                  \
-        "   refs/heads/mt/<branch>/<dir>/mt-split -> <split-commit>"
+        "   updates:"                                                        \
+        "      refs/heads/<branch> -> <interleaved-monorepo-commit>"         \
+        "      refs/heads/mt/<branch>/{<dir>}/mt-split -> <split-commit>"
 }
 
 main() {
@@ -66,20 +67,31 @@ translate_branch() {
     local current
     current=$(run --hide-errors git rev-parse --verify \
         refs/heads/$branch^{commit}) ||
-        current=0000000000000000000000000000000000000000
+        current=$ZERO_SHA1
 
+    local d rd ref sha1
+    local -a sha1dirs
+    local -a refsha1dirs
+    for rd in "${refdirs[@]}"; do
+        d="${rd##*:}"
+        ref=refs/heads/mt/$branch/$d/mt-split
+        sha1=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
+            sha1=$ZERO_SHA1
+        sha1dirs=( "${sha1dirs[@]}" "$sha1:$d" )
+        refsha1dirs=( "${refsha1dirs[@]}" "$ref:$sha1:$d" )
+    done
 
-    list_new_split_commits "$branch" "${refdirs[@]}" |
-    interleave_commits "$branch" "$repeat" "${refdirs[*]}" |
-    update_refs "$branch" "$current" "${refdirs[*]}" ||
+    list_new_split_commits "$branch" "${refdirs[*]}" |
+    interleave_commits "$branch" "$repeat" "${sha1dirs[*]}" |
+    update_refs "$branch" "$current" "${refsha1dirs[*]}" ||
         error "failure interleaving commits"
 }
 
 list_new_split_commits() {
     local branch="$1"
-    shift
+    local refdirs="$2"
     local rd r d head tail format
-    for rd in "$@"; do
+    for rd in $refdirs; do
         r="${rd%:*}"
         d="${rd##*:}"
 
@@ -106,65 +118,67 @@ list_new_split_commits() {
 interleave_commits() {
     local branch="$1"
     local repeat="$2"
-    local refdirs="$3"
+    local sha1dirs="$3"
 
     ref=refs/heads/${branch#refs/heads/}
     local head
     head=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
-        head=0000000000000000000000000000000000000000
-
-    local d rd ref sha1
-    local -a sha1dirs
-    for rd in $refdirs; do
-        d="${rd##*:}"
-        ref=refs/heads/mt/${branch#refs/heads/}/$d/mt-split
-        sha1=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
-            sha1=0000000000000000000000000000000000000000
-        sha1dirs=( "${sha1dirs[@]}" "$sha1:$d" )
-    done
+        head=$ZERO_SHA1
 
     local svn2git split2mono
     split2mono="$(build_executable split2mono)" ||
         error "could not build split2mono"
     run "$split2mono" interleave-commits \
-        "$MT_DB_SPLIT2MONO_DB" "$MT_DB_SVN2GIT_DB" "$head" "${sha1dirs[@]}"
+        "$MT_DB_SPLIT2MONO_DB" "$MT_DB_SVN2GIT_DB" "$head" $sha1dirs
 }
 
 update_refs() {
     local branch="${1#refs/heads/}"
     local current="$2"
-    local refdirs="$3"
-    local head sha1dirs
-    read head sha1dirs
+    local refsha1dirs="$3"
+    local head
+    read head new_sha1dirs
 
     # Detect failure.  No reason to report a new error.
     [ -n "$head" ] || return 1
 
     local ref=refs/heads/$branch
-    log "Updating $branch => $head"
-    run git update-ref $ref $head $current ||
-        error "failed to update $branch"
-    local sd sha1 rd r d
-    for rd in $refdirs; do
-        r=${rd%:*}
-        d=${rd#*:}
-        ref=refs/heads/mt/$branch/$d/mt-split
-        sha1=
-        for sd in $sha1dirs; do
-            [ "$d" = "${sd#*:}" ] || continue
-            sha1=${sd%:*}
-            break
+    {
+        log "Updating $branch => $head"
+        run printf "update %s %s %s\n" $ref $head $current
+        local nsd old_sha1 new_sha1 rd r d
+        for rd in $refsha1dirs; do
+            r=${rd%:*}
+            d=${rd#*:}
+            rd=${rd##*:}
+            old_sha1=${rd%:*}
+            ref=refs/heads/mt/$branch/$d/mt-split
+            new_sha1=
+            for nsd in $new_sha1dirs; do
+                [ "$d" = "${nsd#*:}" ] || continue
+                new_sha1=${nsd%:*}
+                break
+            done
+            if [ -z "$new_sha1" ]; then
+                error "missing output sha1 for $rd"
+                printf "poison update-ref\n"
+            fi
+            if [ $new_sha1 = $ZERO_SHA1 -a \
+                ! "$new_sha1" = "$old_sha1" ]; then
+                error "internal: new value for $ref is $new_sha1" \
+                    "but it was $old_sha1"
+                printf "poison update-ref\n"
+            fi
+            if [ "$new_sha1" = "$old_sha1" ]; then
+                log " - ${ref#refs/heads/} == $new_sha1"
+                run printf "verify %s %s\n" $ref $new_sha1
+            else
+                log " - ${ref#refs/heads/} => $sha1"
+                run printf "update %s %s %s\n" $ref $new_sha1 $old_sha1
+            fi
         done
-        [ -n "$sha1" ] || error "missing output sha1 for $rd"
-        if [ $sha1 = 0000000000000000000000000000000000000000 ]; then
-            sha1=$(run --hide-errors git rev-parse --verify $ref^{commit})
-            [ -z "$sha1" ] || error "$ref had a value, but now does not"
-            continue
-        fi
-        log " - ${ref#refs/heads/} => $sha1"
-        run git update-ref $ref $sha1 ||
-            error "failed to update $ref"
-    done
+    } | run git update-ref --stdin ||
+        error "failed to update $branch and $refdirs"
 }
 
 main "$@"

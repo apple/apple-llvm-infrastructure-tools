@@ -9,6 +9,8 @@ COMMAND="$(basename "$0")"
 COMMAND_DIR="$(dirname "$0")"
 APPLE_LLVM_HELPERS_PATH="$(dirname "$BASH_SOURCE")"
 
+ZERO_SHA1=0000000000000000000000000000000000000000
+
 is_function() { [ "$(type -t "$1" 2>/dev/null)" = function ]; }
 helper() {
     is_function "$1" && return 0
