@@ -29,7 +29,6 @@ int svnbaserev::get_rev() const {
   return static_cast<int>(data);
 }
 void svnbaserev::set_rev(int rev) {
-  assert(rev >= 0);
   unsigned data = static_cast<unsigned>(rev);
   bytes[0] = 0xff & (data >> 24);
   bytes[1] = 0xff & (data >> 16);
