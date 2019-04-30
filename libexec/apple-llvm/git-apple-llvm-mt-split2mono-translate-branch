@@ -136,8 +136,9 @@ update_refs() {
     local branch="${1#refs/heads/}"
     local current="$2"
     local refsha1dirs="$3"
-    local head
+    local head new_sha1dirs
     read head new_sha1dirs
+    [ "${VERBOSE:-0}" = 0 ] || log "translation: $head $new_sha1dirs"
 
     # Detect failure.  No reason to report a new error.
     [ -n "$head" ] || return 1
@@ -146,12 +147,12 @@ update_refs() {
     {
         log "Updating $branch => $head"
         run printf "update %s %s %s\n" $ref $head $current
-        local nsd old_sha1 new_sha1 rd r d
-        for rd in $refsha1dirs; do
-            r=${rd%:*}
-            d=${rd#*:}
-            rd=${rd##*:}
-            old_sha1=${rd%:*}
+        local nsd old_sha1 new_sha1 rsd sd r d
+        for rsd in $refsha1dirs; do
+            r=${rsd%%:*}
+            d=${rsd##*:}
+            sd=${rsd#*:}
+            old_sha1=${sd%:*}
             ref=refs/heads/mt/$branch/$d/mt-split
             new_sha1=
             for nsd in $new_sha1dirs; do
