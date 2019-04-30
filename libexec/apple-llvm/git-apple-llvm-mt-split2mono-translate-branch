@@ -174,7 +174,7 @@ update_refs() {
                 log " - ${ref#refs/heads/} == $new_sha1"
                 run printf "verify %s %s\n" $ref $new_sha1
             else
-                log " - ${ref#refs/heads/} => $sha1"
+                log " - ${ref#refs/heads/} => $new_sha1"
                 run printf "update %s %s %s\n" $ref $new_sha1 $old_sha1
             fi
         done
