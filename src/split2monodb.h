@@ -6,6 +6,7 @@
 #include "file_stream.h"
 #include "index_query.h"
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 
 namespace {
@@ -42,7 +43,8 @@ struct split2monodb {
            svnbase_table::size;
   }
 
-  int close_files();
+  int close_files() { return commits.close_files() | svnbase.close_files(); }
+  ~split2monodb();
 
   void log(std::string x) {
     if (!is_verbose)
@@ -52,8 +54,9 @@ struct split2monodb {
 };
 } // end namespace
 
-int split2monodb::close_files() {
-  return commits.close_files() | svnbase.close_files();
+split2monodb::~split2monodb() {
+  if (close_files())
+    exit(1);
 }
 
 int split2monodb::parse_upstreams() {

@@ -89,7 +89,15 @@ typedef data_query<commits_table> commits_query;
 typedef data_query<svnbase_table> svnbase_query;
 } // end namespace
 
-int table_streams::close_files() { return data.close() | index.close(); }
+int table_streams::close_files() {
+  // Report both errors but close both.
+  int failed = 0;
+  if (data.close())
+    failed |= error("failed to close " + name + " data: " + strerror(errno));
+  if (index.close())
+    failed |= error("failed to close " + name + " index: " + strerror(errno));
+  return failed;
+}
 
 int table_streams::init(int dbfd, bool is_read_only, const unsigned char *magic,
                         int record_offset, int record_size) {
