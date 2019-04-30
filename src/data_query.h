@@ -94,7 +94,7 @@ int table_streams::close_files() { return data.close() | index.close(); }
 int table_streams::init(int dbfd, bool is_read_only, const unsigned char *magic,
                         int record_offset, int record_size) {
   int flags = is_read_only ? O_RDONLY : (O_RDWR | O_CREAT);
-  std::string index_name = name + ".magic";
+  std::string index_name = name + ".index";
   int datafd = openat(dbfd, name.c_str(), flags);
   int indexfd = openat(dbfd, index_name.c_str(), flags);
   int has_error = 0;
