@@ -335,9 +335,6 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   };
 
   int base_d = source.dir_index;
-  sha1_ref base_tree;
-  if (cache.get_commit_tree(base_commit, base_tree))
-    return 1;
   if (source.is_root) {
     git_tree tree;
     tree.sha1 = base_commit;
@@ -350,6 +347,9 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       items.push_back(tree.items[i]);
     }
   } else {
+    sha1_ref base_tree;
+    if (cache.get_commit_tree(base_commit, base_tree))
+      return 1;
     items.emplace_back();
     items.back().sha1 = base_tree;
     items.back().name = dirs.list[base_d].name;
@@ -366,7 +366,8 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   int untracked_path_parent = -1;
   for (int p = 0, pe = parents.size(); p != pe; ++p) {
     git_tree tree;
-    if (cache.get_commit_tree(parents[p], tree.sha1) || cache.ls_tree(tree))
+    tree.sha1 = parents[p];
+    if (cache.ls_tree(tree))
       return 1;
 
     for (int i = 0; i < tree.num_items; ++i) {
