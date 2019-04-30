@@ -239,16 +239,16 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   if (existing_entry->second.num_upstreams > (long)upstream.upstreams.size())
     return error("upstream is missing upstreams we already merged");
 
-  if (existing_entry->second.commits_size > upstream.commits_size())
+  if (existing_entry->second.commits_size > upstream.commits_size_on_open())
     return error("upstream is missing commits we already merged");
 
-  if (existing_entry->second.svnbase_size > upstream.svnbase_size())
+  if (existing_entry->second.svnbase_size > upstream.svnbase_size_on_open())
     return error("upstream is missing svnbase revs we already merged");
 
   // Nothing to do if nothing has changed (or the upstream is empty).
   if (existing_entry->second.num_upstreams == (long)upstream.upstreams.size() &&
-      existing_entry->second.commits_size == upstream.commits_size() &&
-      existing_entry->second.svnbase_size == upstream.svnbase_size())
+      existing_entry->second.commits_size == upstream.commits_size_on_open() &&
+      existing_entry->second.svnbase_size == upstream.svnbase_size_on_open())
     return 0;
 
   // Merge the upstream's upstreams (just in memory, for now).
@@ -269,12 +269,12 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   }
 
   // Read all missing commits and merge them.
-  if (merge_tables<commits_table>(main.commits,
-                                  existing_entry->second.commits_size,
-                                  upstream.commits, upstream.commits_size()) ||
-      merge_tables<svnbase_table>(main.svnbase,
-                                  existing_entry->second.svnbase_size,
-                                  upstream.svnbase, upstream.svnbase_size()))
+  if (merge_tables<commits_table>(
+          main.commits, existing_entry->second.commits_size, upstream.commits,
+          upstream.commits_size_on_open()) ||
+      merge_tables<svnbase_table>(
+          main.svnbase, existing_entry->second.svnbase_size, upstream.svnbase,
+          upstream.svnbase_size_on_open()))
     return 1;
 
   // Close the streams.
@@ -282,7 +282,7 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
     return error("error closing commits or index after writing");
 
   // Merge upstreams.
-  existing_entry->second.commits_size = upstream.commits_size();
+  existing_entry->second.commits_size = upstream.commits_size_on_open();
   existing_entry->second.num_upstreams = upstream.upstreams.size();
   int upstreamsfd = openat(main.dbfd, "upstreams", O_WRONLY | O_TRUNC);
   if (upstreamsfd == -1)

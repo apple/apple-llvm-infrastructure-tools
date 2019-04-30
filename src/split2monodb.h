@@ -34,12 +34,14 @@ struct split2monodb {
 
   int opendb(const char *dbdir);
   int parse_upstreams();
-  long commits_size() const {
-    return (commits.data.get_num_bytes() - commits_table::table_offset) /
+  long commits_size_on_open() const {
+    return (commits.data.get_num_bytes_on_open() -
+            commits_table::table_offset) /
            commits_table::size;
   }
-  long svnbase_size() const {
-    return (svnbase.data.get_num_bytes() - svnbase_table::table_offset) /
+  long svnbase_size_on_open() const {
+    return (svnbase.data.get_num_bytes_on_open() -
+            svnbase_table::table_offset) /
            svnbase_table::size;
   }
 

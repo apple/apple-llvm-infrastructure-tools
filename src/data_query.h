@@ -129,11 +129,11 @@ int table_streams::init(int dbfd, bool is_read_only, const unsigned char *magic,
   // Check that file sizes make sense.
   const unsigned char index_magic[] = {'s', 2, 'm', 0x1, 'n', 0xd, 0xe, 'x'};
   assert(sizeof(index_magic) == magic_size);
-  if (data.get_num_bytes()) {
-    if (!index.get_num_bytes())
+  if (data.get_num_bytes_on_open()) {
+    if (!index.get_num_bytes_on_open())
       return error("unexpected data without index for " + name);
-    if (data.get_num_bytes() < magic_size ||
-        (data.get_num_bytes() - record_offset) % record_size)
+    if (data.get_num_bytes_on_open() < magic_size ||
+        (data.get_num_bytes_on_open() - record_offset) % record_size)
       return error("invalid data for " + name);
 
     unsigned char file_magic[magic_size];
@@ -144,10 +144,10 @@ int table_streams::init(int dbfd, bool is_read_only, const unsigned char *magic,
     if (data.seek(0) || data.write(magic, magic_size) != magic_size)
       return error("could not write magic for " + name);
   }
-  if (index.get_num_bytes()) {
-    if (!data.get_num_bytes())
+  if (index.get_num_bytes_on_open()) {
+    if (!data.get_num_bytes_on_open())
       return error("unexpected index without " + name);
-    if (index.get_num_bytes() < magic_size)
+    if (index.get_num_bytes_on_open() < magic_size)
       return error("invalid index for " + name);
 
     unsigned char file_magic[magic_size];

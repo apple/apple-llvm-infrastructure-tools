@@ -9,7 +9,7 @@ namespace {
 class file_stream {
   FILE *stream = nullptr;
   mmapped_file mmapped;
-  size_t num_bytes = -1;
+  size_t num_bytes_on_open = -1;
   bool is_stream = false;
   bool is_initialized = false;
   long position = 0;
@@ -22,7 +22,7 @@ public:
   int init_stream(int fd);
   int init_mmap(int fd);
 
-  size_t get_num_bytes() const { return num_bytes; }
+  size_t get_num_bytes_on_open() const { return num_bytes_on_open; }
 
   int seek_end();
   long tell();
@@ -40,7 +40,8 @@ int file_stream::init_stream(int fd) {
   assert(fd != -1);
   assert(!is_initialized);
   if (!(stream = fdopen(fd, "w+b")) || fseek(stream, 0, SEEK_END) ||
-      (num_bytes = ftell(stream)) == -1u || fseek(stream, 0, SEEK_SET)) {
+      (num_bytes_on_open = ftell(stream)) == -1u ||
+      fseek(stream, 0, SEEK_SET)) {
     ::close(fd);
     return 1;
   }
@@ -53,14 +54,14 @@ int file_stream::init_mmap(int fd) {
   is_initialized = true;
   is_stream = false;
   mmapped.init(fd);
-  num_bytes = mmapped.num_bytes;
+  num_bytes_on_open = mmapped.num_bytes;
   return 0;
 }
 int file_stream::seek_end() {
   assert(is_initialized);
   if (is_stream)
     return fseek(stream, 0, SEEK_END);
-  position = num_bytes;
+  position = num_bytes_on_open;
   return 0;
 }
 long file_stream::tell() {
@@ -71,13 +72,17 @@ long file_stream::tell() {
 }
 int file_stream::seek_and_read(long pos, unsigned char *bytes, int count) {
   assert(is_initialized);
+  // TODO: add a testcase for reading after writing in the same stream.
+  if (is_stream)
+    return seek(pos) ? 0 : read(bytes, count);
+
   // Check that the position is valid first.
-  if (pos >= (long)num_bytes)
+  if (pos >= (long)num_bytes_on_open)
     return 0;
-  if (pos > (long)num_bytes || seek(pos))
+  if (pos > (long)num_bytes_on_open || seek(pos))
     return 0;
-  if (count + pos > (long)num_bytes)
-    count = num_bytes - pos;
+  if (count + pos > (long)num_bytes_on_open)
+    count = num_bytes_on_open - pos;
   if (!count)
     return 0;
   return read(bytes, count);
@@ -86,7 +91,7 @@ int file_stream::seek(long pos) {
   assert(is_initialized);
   if (is_stream)
     return fseek(stream, pos, SEEK_SET);
-  if (pos > (long)num_bytes)
+  if (pos > (long)num_bytes_on_open)
     return 1;
   position = pos;
   return 0;
@@ -95,8 +100,8 @@ int file_stream::read(unsigned char *bytes, int count) {
   assert(is_initialized);
   if (is_stream)
     return fread(bytes, 1, count, stream);
-  if (position + count > (long)num_bytes)
-    count = num_bytes - position;
+  if (position + count > (long)num_bytes_on_open)
+    count = num_bytes_on_open - position;
   if (count > 0)
     std::memcpy(bytes, mmapped.bytes + position, count);
   position += count;
@@ -112,6 +117,7 @@ int file_stream::close() {
   if (!is_initialized)
     return 0;
   is_initialized = false;
+  num_bytes_on_open = -1;
   if (is_stream)
     return fclose(stream);
   return mmapped.close();
