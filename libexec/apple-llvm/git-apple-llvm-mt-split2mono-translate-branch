@@ -160,14 +160,14 @@ update_refs() {
                 break
             done
             if [ -z "$new_sha1" ]; then
-                error "missing output sha1 for $rd"
                 printf "poison update-ref\n"
+                error "missing output sha1 for $rd"
             fi
             if [ $new_sha1 = $ZERO_SHA1 -a \
                 ! "$new_sha1" = "$old_sha1" ]; then
+                printf "poison update-ref\n"
                 error "internal: new value for $ref is $new_sha1" \
                     "but it was $old_sha1"
-                printf "poison update-ref\n"
             fi
             if [ "$new_sha1" = "$old_sha1" ]; then
                 log " - ${ref#refs/heads/} == $new_sha1"
