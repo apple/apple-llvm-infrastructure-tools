@@ -167,7 +167,7 @@ template <class T> int data_query<T>::lookup_data_impl(table_streams &ts) {
   if (!out.found)
     return 0;
 
-  // Look it up in the commits list.
+  // Look it up in the data table.
   int i = out.entry.num();
   data_offset = table_type::table_offset + table_type::size * i;
   if (ts.data.seek_and_read(data_offset, found_sha1.bytes, 20) != 20)
@@ -180,12 +180,13 @@ template <class T> int data_query<T>::lookup_data_impl(table_streams &ts) {
 template <class T>
 int data_query<T>::lookup_data(table_streams &ts, value_type &value) {
   if (lookup_data_impl(ts))
-    return error("problem looking up split commit");
+    return error("problem looking up " + std::string(T::key_name) + " key");
   if (!found_data)
     return 1;
   if (ts.data.seek_and_read(data_offset + 20, value.bytes, T::value_size) !=
       T::value_size)
-    return error("could not extract mono commit");
+    return error("could not extract " + std::string(T::key_name) +
+                 " after finding " + T::value_name);
   return 0;
 }
 
@@ -194,16 +195,16 @@ int data_query<T>::insert_data_impl(table_streams &ts,
                                     const value_type &value) {
   bool need_new_subtrie = data_offset ? true : false;
 
-  // add the commit to *commits*
+  // Add value to the data file.
   if (ts.data.seek_end())
-    return error("could not seek in commits");
+    return error("could not seek in " + std::string(T::table_name) + " table");
   int new_data_offset = ts.data.tell();
   int new_num = (new_data_offset - table_type::table_offset) / table_type::size;
   assert((new_data_offset - table_type::table_offset) % table_type::size == 0);
   if (ts.data.write(in.sha1.bytes, 20) != 20 ||
       ts.data.write(value.bytes, table_type::value_size) !=
           table_type::value_size)
-    return error("could not write commits");
+    return error("could not write " + std::string(T::value_name));
 
   if (!need_new_subtrie)
     return insert_new_entry(ts, new_num);
@@ -229,7 +230,8 @@ template <class T> static int dump_table(table_streams &ts) {
 
   // Print the table.
   if (ts.data.seek(table_type::table_offset))
-    return error("could not read any commit pairs");
+    return error("could not read data from " + std::string(T::table_name) +
+                 " table");
   printf("%s table\n", table_type::table_name);
   int i = 0;
   binary_sha1 key;
