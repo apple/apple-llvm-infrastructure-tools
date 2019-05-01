@@ -52,6 +52,7 @@ struct commit_interleaver {
                         std::vector<int> &parent_revs, sha1_ref first_parent,
                         int &max_rev);
   int interleave();
+  int interleave_impl();
   int translate_commit(commit_source &source, const commit_type &base,
                        std::vector<sha1_ref> &new_parents,
                        std::vector<int> &parent_revs,
@@ -199,15 +200,6 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     fparents.back().ct = last_ct;
   }
 
-  struct boundary_commit {
-    sha1_ref commit;
-    int index = -1;
-
-    explicit boundary_commit(const binary_sha1 &commit) : commit(&commit) {}
-    explicit operator const binary_sha1 &() const { return *commit; }
-  };
-  sha1_trie<boundary_commit> boundary_index_map;
-
   source.commits.first = commits.size();
   std::vector<sha1_ref> parents;
   while (true) {
@@ -224,7 +216,8 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     // Warm the cache.
     cache.note_commit_tree(commit, tree);
     if (is_boundary) {
-      // Grab the metadata, which could be useful for pulling out the rev.
+      // Grab the metadata, which get_mono might leverage if this is an
+      // upstream git-svn commit.
       if (parse_through_null(current))
         return error("missing null charactor before boundary metadata");
       const char *metadata = current;
@@ -237,25 +230,34 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       if (!source.worker)
         source.worker.reset(new monocommit_worker);
 
-      // Look up the monorepo commit.  Needs to be after noting the metdata to
+      // Look up the monorepo commit.  Needs to be after noting the metadata to
       // avoid needing to shell out to git-log.
       sha1_ref mono;
       if (cache.get_mono(commit, mono))
         return error("cannot find monorepo commit for boundary parent " +
                      commit->to_string());
 
-      // Look up the rev and note it for the monorepo commit, which will have
-      // the same rev.  Needs to be after noting the metdata to avoid needing
-      // to shell out to git-log.
+      // Get the rev.
       int rev = 0;
-      if (cache.get_rev(commit, rev))
-        return error("cannot get rev for boundary parent " +
-                     commit->to_string());
-      cache.note_rev(mono, rev);
+      if (cache.lookup_rev(commit, rev) && rev) {
+        // Figure out the monorepo commit's rev, passing in the split commit's
+        // metadata to suppress a new git-log call.  This is necessary for
+        // checking the svnbase table (where split commits do not have
+        // entries).
+        if (cache.get_rev_with_metadata(mono, rev, metadata))
+          return error("cannot get rev for boundary parent " +
+                       commit->to_string());
+        (void)rev;
+      } else {
+        // Nice; get_mono above filled this in.  Note it in the monorepo commit
+        // as well.
+        cache.note_rev(mono, rev);
+      }
 
-      // Mark it as a boundary commit and store what we need to process it.
+      // Mark it as a boundary commit and tell the worker about it.
       bool was_inserted = false;
-      boundary_commit *bc = boundary_index_map.insert(*commit, was_inserted);
+      boundary_commit *bc =
+          source.worker->boundary_index_map.insert(*commit, was_inserted);
       if (!bc)
         return error("failure to log a commit as a monorepo commit");
       bc->index = source.worker->futures.size();
@@ -272,7 +274,11 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       if (parse_sha1(current, parents.back()))
         return error("failed to parse parent");
 
-      const boundary_commit *bc = boundary_index_map.lookup(*parents.back());
+      if (!source.worker)
+        continue;
+
+      const boundary_commit *bc =
+          source.worker->boundary_index_map.lookup(*parents.back());
       if (!bc)
         continue;
 
@@ -303,6 +309,10 @@ int translation_queue::parse_source(const char *&current, const char *end) {
   source.commits.count = commits.size() - source.commits.first;
   if (source.commits.count < fparents.size() - num_fparents_before)
     return error("first parents missing from commits");
+
+  // Start looking up the tree data.
+  if (source.worker)
+    source.worker->start();
   return 0;
 }
 
@@ -313,7 +323,27 @@ int commit_interleaver::translate_parents(const commit_source &source,
                                           sha1_ref first_parent, int &max_rev) {
   max_rev = 0;
   int max_urev = 0;
+  auto process_future = [&](sha1_ref p) {
+    auto *bc_index = source.worker->boundary_index_map.lookup(*p);
+    if (!bc_index)
+      return;
+
+    auto &bc = source.worker->futures[bc_index->index];
+    assert(bc.commit == p);
+    if (bc.was_noted)
+      return;
+
+    cache.note_tree_raw(bc.commit, bc.tree);
+    git_tree tree;
+    tree.sha1 = bc.commit;
+    assert(!cache.lookup_tree(tree));
+    bc.was_noted = true;
+  };
   auto add_parent = [&](sha1_ref p) {
+    // Deal with this parent.
+    if (base.has_boundary_parents)
+      process_future(p);
+
     new_parents.push_back(p);
     int srev = 0;
     cache.get_rev(p, srev);
@@ -324,6 +354,13 @@ int commit_interleaver::translate_parents(const commit_source &source,
       max_urev = rev;
     }
   };
+
+  // Wait for the worker to dig up information on boundary parents.
+  if (base.has_boundary_parents)
+    while (int(source.worker->last_ready_future) > base.first_boundary_parent)
+      if (bool(source.worker->has_error))
+        return 1;
+
   if (first_parent)
     add_parent(first_parent);
   for (int i = 0; i < base.num_parents; ++i) {
@@ -559,6 +596,21 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 }
 
 int commit_interleaver::interleave() {
+  int status = interleave_impl();
+
+  // Clean up worker threads.
+  for (auto &source : q.sources)
+    if (source.worker)
+      source.worker->should_cancel = true;
+  for (auto &source : q.sources)
+    if (source.worker)
+      if (source.worker->thread)
+        source.worker->thread->join();
+
+  return status;
+}
+
+int commit_interleaver::interleave_impl() {
   // Construct trees and commit them.
   std::vector<sha1_ref> new_parents;
   std::vector<int> parent_revs;
@@ -665,6 +717,10 @@ int commit_interleaver::read_queue_from_stdin() {
 
   if (read_all(/*fd=*/0, stdin_bytes))
     return 1;
+
+  // Initialize call_git, before launching threads.
+  call_git_init();
+
   stdin_bytes.push_back(0);
   const char *current = stdin_bytes.data();
   const char *end = stdin_bytes.data() + stdin_bytes.size() - 1;

@@ -8,26 +8,6 @@
 #include "split2monodb.h"
 
 namespace {
-struct fparent_type {
-  sha1_ref commit;
-  long long ct = -1;
-  int index = -1;
-};
-struct commit_type {
-  sha1_ref commit;
-  sha1_ref tree;
-  sha1_ref *parents = nullptr;
-  int num_parents = 0;
-
-  /// Whether this commit has parents from --boundary, which will already have
-  /// monorepo equivalents.
-  bool has_boundary_parents = false;
-
-  /// Index of the first boundary parent.  Once that one is ready, the cache
-  /// will be hot.
-  int first_boundary_parent = -1;
-};
-
 struct dir_mask {
   static constexpr const int max_size = 64;
   std::bitset<max_size> bits;
@@ -103,11 +83,15 @@ struct git_cache {
   int get_commit_tree(sha1_ref commit, sha1_ref &tree);
   int get_metadata(sha1_ref commit, const char *&metadata);
   int get_rev(sha1_ref commit, int &rev);
+  int get_rev_with_metadata(sha1_ref commit, int &rev, const char *metadata);
   int set_rev(sha1_ref commit, int rev);
   int get_mono(sha1_ref split, sha1_ref &mono);
   int set_mono(sha1_ref split, sha1_ref mono);
   int ls_tree(git_tree &tree);
   int mktree(git_tree &tree);
+
+  static int ls_tree_impl(sha1_ref sha1, std::vector<char> &reply);
+  int note_tree_raw(sha1_ref sha1, const char *rawtree);
 
   const char *make_name(const char *name, size_t len);
   git_tree::item_type *make_items(git_tree::item_type *first,
@@ -429,6 +413,11 @@ int git_cache::set_rev(sha1_ref commit, int rev) {
 }
 
 int git_cache::get_rev(sha1_ref commit, int &rev) {
+  return get_rev_with_metadata(commit, rev, nullptr);
+}
+
+int git_cache::get_rev_with_metadata(sha1_ref commit, int &rev,
+                                     const char *metadata) {
   if (!lookup_rev(commit, rev))
     return 0;
 
@@ -442,9 +431,9 @@ int git_cache::get_rev(sha1_ref commit, int &rev) {
     }
   }
 
-  const char *metadata;
-  if (get_metadata(commit, metadata))
-    return 1;
+  if (!metadata)
+    if (get_metadata(commit, metadata))
+      return 1;
 
   auto try_parse_string = [](const char *&current, const char *s) {
     const char *x = current;
@@ -570,12 +559,25 @@ int git_cache::ls_tree(git_tree &tree) {
   if (!lookup_tree(tree))
     return 0;
 
-  std::string ref = tree.sha1->to_string();
-  const char *args[] = {"git", "ls-tree", ref.c_str(), nullptr};
+  if (ls_tree_impl(tree.sha1, git_reply) ||
+      note_tree_raw(tree.sha1, git_reply.data()))
+    return 1;
+  if (lookup_tree(tree))
+    return error("internal: noted tree not found");
+  return 0;
+}
+
+int git_cache::ls_tree_impl(sha1_ref sha1, std::vector<char> &git_reply) {
+  std::string ref = sha1->to_string();
+  const char *args[] = {"git", "ls-tree", "--full-tree", ref.c_str(), nullptr};
   git_reply.clear();
   if (call_git(args, nullptr, "", git_reply))
     return 1;
+  git_reply.push_back(0);
+  return 0;
+}
 
+int git_cache::note_tree_raw(sha1_ref sha1, const char *rawtree) {
   auto parse_token = [](const char *&current, int token) {
     if (*current != token)
       return 1;
@@ -642,17 +644,20 @@ int git_cache::ls_tree(git_tree &tree) {
     return 0;
   };
   auto parse_name = [this](const char *&current, const char *&name) {
-    if (!*current)
-      return 1;
-    name = make_name(current, strlen(current));
-    return 0;
+    const char *ch = current;
+    for (; *ch; ++ch)
+      if (*ch == '\n') {
+        name = make_name(current, ch - current);
+        current = ch;
+        return 0;
+      }
+    return 1;
   };
 
   constexpr const int max_items = dir_mask::max_size;
   git_tree::item_type items[max_items];
   git_tree::item_type *last = items;
-  git_reply.push_back(0);
-  const char *current = &git_reply[0];
+  const char *current = rawtree;
   while (*current) {
     if (last - items == max_items)
       return error(
@@ -664,9 +669,10 @@ int git_cache::ls_tree(git_tree &tree) {
         parse_name(current, last->name) || parse_token(current, '\n'))
       return error("ls-tree: could not parse entry");
     ++last;
-    return 0;
   }
 
+  git_tree tree;
+  tree.sha1 = sha1;
   tree.num_items = last - items;
   tree.items = make_items(items, last);
   note_tree(tree);

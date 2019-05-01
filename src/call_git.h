@@ -68,24 +68,30 @@ static int call_git_impl(char *argv[], char *envp[], const std::string &input,
 
   bool failed = false;
   failed |= close(fromgit[1]);
-  failed |= close(togit[0]);
+  if (needs_to_write)
+    failed |= close(togit[0]);
   if (failed)
     return error("call-git: failed to close pipe(s) to git");
 
   auto write_all = [&](int fd) {
     size_t next_byte = 0;
+    int num_interrupts = 0;
     while (next_byte < input.size()) {
       auto num_bytes_written =
           write(fd, input.data() + next_byte, input.size() - next_byte);
-      if (num_bytes_written == -1)
-        return 1;
+      if (num_bytes_written == -1) {
+        if (errno != EINTR || ++num_interrupts > 20)
+          return 1;
+        else
+          continue;
+      }
       next_byte += num_bytes_written;
     }
     return 0;
   };
 
   // Write to and read from Git.
-  if (!input.empty())
+  if (needs_to_write)
     if (write_all(togit[1]) || close(togit[1]))
       return error("call-git: failed to read output");
   if (read_all(fromgit[0], reply) || close(fromgit[0]))
@@ -118,27 +124,39 @@ static int call_git_impl(char *argv[], char *envp[], const std::string &input,
   return failed ? 1 : 0;
 }
 
+template <class T> static void call_lambda(void *lambda) {
+  (*reinterpret_cast<T *>(lambda))();
+}
 static int call_git(char *argv[], char *envp[], const std::string &input,
                     std::vector<char> &reply) {
-  if (strcmp(argv[0], "git"))
+  if (argv && strcmp(argv[0], "git"))
     return error("wrong git executable");
 
-  static bool once = false;
   static std::string git;
-  if (!once) {
-    once = true;
+  if (git.empty()) {
     const char *git_argv[] = {"git", "--exec-path", nullptr};
     char *git_envp[] = {nullptr};
-    if (call_git_impl(const_cast<char **>(git_argv), git_envp, input, reply))
+    if (call_git_impl(const_cast<char **>(git_argv), git_envp, input, reply) ||
+        reply.empty() || reply.back() != '\n')
       return error("call-git: failed to scrape git --exec-path");
-    git.reserve(reply.size() + 4);
-    git.assign(reply.begin(), reply.end());
+    git.reserve(reply.size() + sizeof("/git") - 1);
+    git.assign(reply.begin(), reply.end() - 1);
     git += "/git";
     reply.clear();
-  }
-  assert(!git.empty());
+  };
+  if (git.empty())
+    return 1;
+
+  if (!argv)
+    return 0;
+
   argv[0] = const_cast<char *>(git.c_str());
   return call_git_impl(argv, envp, input, reply);
+}
+
+static int call_git_init() {
+  std::vector<char> reply;
+  return call_git(nullptr, nullptr, "", reply);
 }
 
 static int call_git(const char *argv[], const char *envp[],
