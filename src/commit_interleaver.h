@@ -258,8 +258,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
         return error("failure to log a commit as a monorepo commit");
       bc->index = source.worker->futures.size();
       source.worker->futures.emplace_back();
-      source.worker->futures.back().split = commit;
-      source.worker->futures.back().mono = mono;
+      source.worker->futures.back().commit = mono;
       continue;
     }
 
