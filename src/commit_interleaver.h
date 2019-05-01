@@ -4,6 +4,7 @@
 #include "commit_source.h"
 #include "error.h"
 #include "git_cache.h"
+#include "read_all.h"
 #include "sha1_pool.h"
 #include "split2monodb.h"
 
@@ -648,21 +649,6 @@ int commit_interleaver::translate_commit(
   return 0;
 }
 
-static int read_stdin(std::vector<char> &bytes) {
-  assert(bytes.empty());
-  const ssize_t chunk_size = 1 << 14;
-  ssize_t num_bytes_read;
-  do {
-    ssize_t num_bytes = bytes.size();
-    bytes.resize(bytes.size() + chunk_size);
-    num_bytes_read = read(0, bytes.data() + num_bytes, chunk_size);
-    if (num_bytes_read == -1)
-      return 1;
-    bytes.resize(num_bytes + num_bytes_read);
-  } while (num_bytes_read);
-  return 0;
-}
-
 int commit_interleaver::read_queue_from_stdin() {
   // We will interleave first parent commits, sorting by commit timestamp,
   // putting the earliest at the back of the vector and top of the stack.  Use
@@ -676,7 +662,7 @@ int commit_interleaver::read_queue_from_stdin() {
     return lhs.ct > rhs.ct;
   };
 
-  if (read_stdin(stdin_bytes))
+  if (read_all(/*fd=*/0, stdin_bytes))
     return 1;
   stdin_bytes.push_back(0);
   const char *current = stdin_bytes.data();
