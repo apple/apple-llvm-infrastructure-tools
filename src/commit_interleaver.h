@@ -236,11 +236,20 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       if (!source.worker)
         source.worker.reset(new monocommit_worker);
 
-      // Look up the monorepo commit.  Needs to be after noting the metadata.
+      // Look up the monorepo commit.  Needs to be after noting the metdata to
+      // avoid needing to shell out to git-log.
       sha1_ref mono;
       if (cache.get_mono(commit, mono))
         return error("cannot find monorepo commit for boundary parent " +
                      commit->to_string());
+
+      // Look up the rev and note it for the monorepo commit, which will have
+      // the same rev.  Needs to be after noting the metdata to avoid needing
+      // to shell out to git-log.
+      int rev = 0;
+      if (cache.get_rev(commit, rev))
+        return error("cannot get rev for boundary parent " + commit->to_string());
+      cache.note_rev(mono, rev);
 
       // Mark it as a boundary commit and store what we need to process it.
       bool was_inserted = false;
