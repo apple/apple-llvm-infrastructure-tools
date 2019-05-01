@@ -18,6 +18,14 @@ struct commit_type {
   sha1_ref tree;
   sha1_ref *parents = nullptr;
   int num_parents = 0;
+
+  /// Whether this commit has parents from --boundary, which will already have
+  /// monorepo equivalents.
+  bool has_boundary_parents = false;
+
+  /// Index of the first boundary parent.  Once that one is ready, the cache
+  /// will be hot.
+  int first_boundary_parent = -1;
 };
 
 struct dir_mask {

@@ -198,6 +198,15 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     fparents.back().ct = last_ct;
   }
 
+  struct boundary_commit {
+    sha1_ref commit;
+    int index = -1;
+
+    explicit boundary_commit(const binary_sha1 &commit) : commit(&commit) {}
+    explicit operator const binary_sha1 &() const { return *commit; }
+  };
+  sha1_trie<boundary_commit> boundary_index_map;
+
   source.commits.first = commits.size();
   std::vector<sha1_ref> parents;
   while (true) {
@@ -214,6 +223,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     // Warm the cache.
     cache.note_commit_tree(commit, tree);
     if (is_boundary) {
+      // Grab the metadata, which could be useful for pulling out the rev.
       if (parse_through_null(current))
         return error("missing null charactor before boundary metadata");
       const char *metadata = current;
@@ -222,6 +232,25 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       cache.note_metadata(commit, metadata);
       if (parse_newline(current))
         return 1;
+
+      if (!source.worker)
+        source.worker.reset(new monocommit_worker);
+
+      // Look up the monorepo commit.  Needs to be after noting the metadata.
+      sha1_ref mono;
+      if (cache.get_mono(commit, mono))
+        return error("cannot find monorepo commit for boundary parent " +
+                     commit->to_string());
+
+      // Mark it as a boundary commit and store what we need to process it.
+      bool was_inserted = false;
+      boundary_commit *bc = boundary_index_map.insert(*commit, was_inserted);
+      if (!bc)
+        return error("failure to log a commit as a monorepo commit");
+      bc->index = source.worker->futures.size();
+      source.worker->futures.emplace_back();
+      source.worker->futures.back().split = commit;
+      source.worker->futures.back().mono = mono;
       continue;
     }
 
@@ -232,6 +261,16 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       parents.emplace_back();
       if (parse_sha1(current, parents.back()))
         return error("failed to parse parent");
+
+      const boundary_commit *bc = boundary_index_map.lookup(*parents.back());
+      if (!bc)
+        continue;
+
+      // Mark how long to wait.
+      if (!commits.back().has_boundary_parents ||
+          bc->index < commits.back().first_boundary_parent)
+        commits.back().first_boundary_parent = bc->index;
+      commits.back().has_boundary_parents = true;
     }
 
     if (parse_through_null(current))
