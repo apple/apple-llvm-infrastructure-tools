@@ -249,7 +249,8 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       // to shell out to git-log.
       int rev = 0;
       if (cache.get_rev(commit, rev))
-        return error("cannot get rev for boundary parent " + commit->to_string());
+        return error("cannot get rev for boundary parent " +
+                     commit->to_string());
       cache.note_rev(mono, rev);
 
       // Mark it as a boundary commit and store what we need to process it.

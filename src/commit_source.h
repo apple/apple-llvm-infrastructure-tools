@@ -27,7 +27,9 @@ struct monocommit_worker {
   std::atomic<int> last_ready_future = -1;
 
   /// Returns after spawning a thread to process all the futures.
-  void start() { thread.emplace([&]() { process_futures(); }); }
+  void start() {
+    thread.emplace([&]() { process_futures(); });
+  }
   std::optional<std::thread> thread;
 
 private:

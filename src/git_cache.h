@@ -170,6 +170,8 @@ struct git_cache {
   mmapped_file &svn2git;
   sha1_pool &pool;
   dir_list &dirs;
+  std::vector<char> git_reply;
+  std::string git_input;
 };
 } // end namespace
 
@@ -366,34 +368,27 @@ int git_cache::get_commit_tree(sha1_ref commit, sha1_ref &tree) {
   if (!lookup_commit_tree(commit, tree))
     return 0;
 
-  bool once = false;
-  auto reader = [&](std::string line) {
-    if (once)
-      return 1;
-    once = true;
-
-    textual_sha1 text;
-    if (text.from_input(line.c_str()))
-      return 1;
-
-    tree = pool.lookup(text);
-    note_commit_tree(commit, tree);
-    return EOF;
-  };
-
   assert(commit);
   std::string ref = textual_sha1(*commit).bytes;
   ref += "^{tree}";
   const char *argv[] = {"git", "rev-parse", "--verify", ref.c_str(), nullptr};
-  return call_git(argv, nullptr, reader);
+  git_reply.clear();
+  if (call_git(argv, nullptr, "", git_reply))
+    return 1;
+
+  git_reply.push_back(0);
+  const char *end = nullptr;
+  textual_sha1 text;
+  if (text.from_input(&git_reply[0], &end) || *end++ != '\n' || *end)
+    return 1;
+
+  note_commit_tree(commit, pool.lookup(text));
+  return 0;
 }
 
 int git_cache::get_metadata(sha1_ref commit, const char *&metadata) {
   if (!lookup_metadata(commit, metadata))
     return 0;
-
-  std::string message;
-  message.reserve(4096);
 
   textual_sha1 sha1(*commit);
   const char *args[] = {"git",
@@ -403,24 +398,23 @@ int git_cache::get_metadata(sha1_ref commit, const char *&metadata) {
                         "--format=format:%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B",
                         sha1.bytes,
                         nullptr};
-  auto reader = [&message](std::string line) {
-    message += line;
-    message += '\n';
-    return 0;
-  };
-  if (call_git(args, nullptr, reader))
+  git_reply.clear();
+  if (call_git(args, nullptr, "", git_reply))
     return error(std::string("failed to read commit metadata for ") +
                  sha1.bytes);
+  if (git_reply.empty())
+    return error("missing commit metadata for " + sha1.to_string());
 
   char *&storage = const_cast<char *&>(metadata);
-  if (message.size() >= 4096) {
-    big_metadata.emplace_back(new char[message.size() + 1]);
+  if (git_reply.size() >= 4096) {
+    big_metadata.emplace_back(new char[git_reply.size() + 1]);
     storage = big_metadata.back().get();
   } else {
-    storage = new (
-        name_alloc.allocate(message.size() + 1, 1)) char[message.size() + 1];
+    storage = new (name_alloc.allocate(git_reply.size() + 1,
+                                       1)) char[git_reply.size() + 1];
   }
-  memcpy(storage, message.c_str(), message.size() + 1);
+  memcpy(storage, &git_reply[0], git_reply.size());
+  storage[git_reply.size()] = 0;
   note_metadata(commit, storage);
   return 0;
 }
@@ -576,6 +570,12 @@ int git_cache::ls_tree(git_tree &tree) {
   if (!lookup_tree(tree))
     return 0;
 
+  std::string ref = tree.sha1->to_string();
+  const char *args[] = {"git", "ls-tree", ref.c_str(), nullptr};
+  git_reply.clear();
+  if (call_git(args, nullptr, "", git_reply))
+    return 1;
+
   auto parse_token = [](const char *&current, int token) {
     if (*current != token)
       return 1;
@@ -651,25 +651,21 @@ int git_cache::ls_tree(git_tree &tree) {
   constexpr const int max_items = dir_mask::max_size;
   git_tree::item_type items[max_items];
   git_tree::item_type *last = items;
-  auto reader = [&](std::string line) {
+  git_reply.push_back(0);
+  const char *current = &git_reply[0];
+  while (*current) {
     if (last - items == max_items)
       return error(
           "ls-tree: too many items (max: " + std::to_string(max_items) + ")");
 
-    const char *current = line.c_str();
     if (parse_mode(current, last->type) || parse_token(current, ' ') ||
         parse_type(current, last->type) || parse_token(current, ' ') ||
         parse_sha1(current, last->sha1) || parse_token(current, '\t') ||
-        parse_name(current, last->name))
+        parse_name(current, last->name) || parse_token(current, '\n'))
       return error("ls-tree: could not parse entry");
     ++last;
     return 0;
-  };
-
-  std::string ref = tree.sha1->to_string();
-  const char *args[] = {"git", "ls-tree", ref.c_str(), nullptr};
-  if (call_git(args, nullptr, reader))
-    return 1;
+  }
 
   tree.num_items = last - items;
   tree.items = make_items(items, last);
@@ -679,36 +675,37 @@ int git_cache::ls_tree(git_tree &tree) {
 
 int git_cache::mktree(git_tree &tree) {
   assert(!tree.sha1);
-  bool once = false;
-  auto reader = [&](std::string line) {
-    if (once)
-      return 1;
-    once = true;
 
-    textual_sha1 text;
-    if (text.from_input(line.c_str()))
-      return 1;
-
-    tree.sha1 = pool.lookup(text);
-    note_tree(tree);
-    return EOF;
-  };
-
-  auto writer = [&](FILE *file, bool &stop) {
-    assert(!stop);
-    for (auto i = 0; i != tree.num_items; ++i) {
-      assert(tree.items[i].sha1);
-      if (!fprintf(file, "%s %s %s\t%s\n", tree.items[i].get_mode(),
-                   tree.items[i].get_type(),
-                   textual_sha1(*tree.items[i].sha1).bytes, tree.items[i].name))
-        return 1;
-    }
-    stop = true;
-    return 0;
-  };
+  git_input.clear();
+  git_input.reserve(tree.num_items *
+                    (sizeof("tree") + sizeof("100644") + sizeof(textual_sha1) +
+                     sizeof("somedirname") + sizeof("  \t\n")));
+  for (auto i = 0; i != tree.num_items; ++i) {
+    assert(tree.items[i].sha1);
+    git_input += tree.items[i].get_mode();
+    git_input += ' ';
+    git_input += tree.items[i].get_type();
+    git_input += ' ';
+    git_input += textual_sha1(*tree.items[i].sha1).bytes;
+    git_input += '\t';
+    git_input += tree.items[i].name;
+    git_input += '\n';
+  }
 
   const char *argv[] = {"git", "mktree", nullptr};
-  return call_git(argv, nullptr, reader, writer);
+  git_reply.clear();
+  if (call_git(argv, nullptr, git_input, git_reply))
+    return 1;
+  git_reply.push_back(0);
+
+  textual_sha1 text;
+  const char *end = nullptr;
+  if (text.from_input(&git_reply[0], &end) || *end++ != '\n' || *end)
+    return 1;
+
+  tree.sha1 = pool.lookup(text);
+  note_tree(tree);
+  return 0;
 }
 
 int git_cache::parse_commit_metadata(sha1_ref commit,
@@ -823,29 +820,16 @@ int git_cache::commit_tree(sha1_ref base_commit, const char *dir, sha1_ref tree,
   }
   buffers.args.push_back(nullptr);
 
-  bool found = false;
-  auto reader = [&](std::string line) {
-    if (found)
-      return error("extra lines in new commit");
-    found = true;
-    textual_sha1 sha1;
-    const char *end = nullptr;
-    if (sha1.from_input(line.c_str(), &end) ||
-        end != line.c_str() + line.size())
-      return error("invalid sha1 for new commit");
-    commit = pool.lookup(sha1);
-    note_commit_tree(commit, tree);
-    return 0;
-  };
-  auto writer = [&buffers](FILE *file, bool &stop) {
-    fprintf(file, "%s", buffers.message.c_str());
-    stop = true;
-    return 0;
-  };
-  if (call_git(buffers.args.data(), envp, reader, writer))
+  git_reply.clear();
+  if (call_git(buffers.args.data(), envp, buffers.message, git_reply))
     return 1;
+  git_reply.push_back(0);
 
-  if (!found)
-    return error("missing sha1 for new commit");
+  textual_sha1 sha1;
+  const char *end = nullptr;
+  if (sha1.from_input(git_reply.data(), &end) || *end++ != '\n' || *end)
+    return error("invalid sha1 for new commit");
+  commit = pool.lookup(sha1);
+  note_commit_tree(commit, tree);
   return 0;
 }
