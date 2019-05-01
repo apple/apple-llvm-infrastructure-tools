@@ -1,6 +1,7 @@
 // commit_interleaver.h
 #pragma once
 
+#include "commit_source.h"
 #include "error.h"
 #include "git_cache.h"
 #include "sha1_pool.h"

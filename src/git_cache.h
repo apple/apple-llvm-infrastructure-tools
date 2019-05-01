@@ -20,16 +20,6 @@ struct commit_type {
   int num_parents = 0;
 };
 
-struct index_range {
-  int first = -1;
-  unsigned count = 0;
-};
-struct commit_source {
-  index_range commits;
-  int dir_index = -1;
-  bool is_root = false;
-};
-
 struct dir_mask {
   static constexpr const int max_size = 64;
   std::bitset<max_size> bits;
