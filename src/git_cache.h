@@ -225,16 +225,17 @@ int dir_list::add_dir(const char *name, bool &is_new, int &d) {
   return 0;
 }
 int dir_list::lookup_dir(const char *name, const char *end, bool &found) {
-  found = false;
-  return bisect_first_match(list.begin(), list.end(),
-                            [end, name, &found](const dir_type &dir) {
-                              int diff = strncmp(name, dir.name, end - name);
-                              if (!diff)
-                                diff = name[end - name] < 0;
-                              found |= !diff;
-                              return diff <= 0;
-                            }) -
-         list.begin();
+  ptrdiff_t count = end - name;
+  int d = bisect_first_match(list.begin(), list.end(),
+                             [name, count](const dir_type &dir) {
+                               return strncmp(name, dir.name, count) <= 0;
+                             }) -
+          list.begin();
+  if (d == ptrdiff_t(list.size()))
+    found = false;
+  else
+    found = !strncmp(name, list[d].name, count) && !list[d].name[count];
+  return d;
 }
 
 void git_cache::note_commit_tree(sha1_ref commit, sha1_ref tree) {
