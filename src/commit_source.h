@@ -44,7 +44,7 @@ struct boundary_commit {
 
 struct monocommit_future {
   sha1_ref commit;
-  const char *tree = nullptr;
+  const char *rawtree = nullptr;
   bool was_noted = false;
 };
 
@@ -108,7 +108,7 @@ void monocommit_worker::process_futures() {
     } else {
       storage = new (alloc.allocate(reply.size(), 1)) char[reply.size()];
     }
-    futures.back().tree = storage;
+    futures.back().rawtree = storage;
     memcpy(storage, reply.data(), reply.size());
     last_ready_future = processed - futures.begin();
   }

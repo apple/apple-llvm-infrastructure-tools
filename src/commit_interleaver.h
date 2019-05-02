@@ -333,10 +333,12 @@ int commit_interleaver::translate_parents(const commit_source &source,
     if (bc.was_noted)
       return;
 
-    cache.note_tree_raw(bc.commit, bc.tree);
-    git_tree tree;
-    tree.sha1 = bc.commit;
-    assert(!cache.lookup_tree(tree));
+    cache.note_tree_raw(bc.commit, bc.rawtree);
+    {
+      git_tree tree;
+      tree.sha1 = bc.commit;
+      assert(!cache.lookup_tree(tree));
+    }
     bc.was_noted = true;
   };
   auto add_parent = [&](sha1_ref p) {
