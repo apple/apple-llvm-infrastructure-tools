@@ -277,8 +277,11 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       if (!source.worker)
         continue;
 
+      sha1_ref mono;
+      if (cache.lookup_mono(parents.back(), mono))
+        continue;
       const boundary_commit *bc =
-          source.worker->boundary_index_map.lookup(*parents.back());
+          source.worker->boundary_index_map.lookup(*mono);
       if (!bc)
         continue;
 
