@@ -20,6 +20,8 @@ mt_db_init() {
             2) true ;;
             *) error "expected 2 commits in $rev" ;;
         esac
+        run --hide-errors git -C "$wt" reset --hard "$ref" >/dev/null ||
+            error "internal: failed to reset $wt"
         return 0
     fi
     mt_db_make_ref && mt_db_make_worktree
