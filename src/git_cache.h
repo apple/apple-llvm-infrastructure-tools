@@ -560,6 +560,17 @@ int git_cache::ls_tree(git_tree &tree) {
   if (!lookup_tree(tree))
     return 0;
 
+  // Check if this is a commit whose tree we have, likely because we built it.
+  sha1_ref tree_sha1;
+  if (!lookup_commit_tree(tree.sha1, tree_sha1)) {
+    sha1_ref commit = tree.sha1;
+    tree.sha1 = tree_sha1;
+    int status = lookup_tree(tree);
+    tree.sha1 = commit;
+    if (!status)
+      return 0;
+  }
+
   if (ls_tree_impl(tree.sha1, git_reply) ||
       note_tree_raw(tree.sha1, git_reply.data()))
     return 1;
