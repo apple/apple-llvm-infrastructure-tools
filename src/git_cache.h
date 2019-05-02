@@ -264,6 +264,7 @@ void git_cache::note_tree(const git_tree &tree) {
   bool was_inserted = false;
   git_tree *inserted = trees.insert(*tree.sha1, was_inserted);
   assert(inserted);
+  assert(inserted->sha1 == tree.sha1);
   *inserted = tree;
 }
 

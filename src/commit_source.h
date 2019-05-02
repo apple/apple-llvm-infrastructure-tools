@@ -85,16 +85,16 @@ struct commit_source {
 } // end namespace
 
 void monocommit_worker::process_futures() {
-  auto processed = futures.end();
+  auto current = futures.end();
   last_ready_future = futures.size();
 
   std::vector<char> reply;
-  while (processed != futures.begin()) {
+  while (current != futures.begin()) {
     if (bool(should_cancel))
       return;
 
-    --processed;
-    if (git_cache::ls_tree_impl(futures.back().commit, reply)) {
+    --current;
+    if (git_cache::ls_tree_impl(current->commit, reply)) {
       has_error = true;
       return;
     }
@@ -108,8 +108,8 @@ void monocommit_worker::process_futures() {
     } else {
       storage = new (alloc.allocate(reply.size(), 1)) char[reply.size()];
     }
-    futures.back().rawtree = storage;
+    current->rawtree = storage;
     memcpy(storage, reply.data(), reply.size());
-    last_ready_future = processed - futures.begin();
+    last_ready_future = current - futures.begin();
   }
 }
