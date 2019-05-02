@@ -257,7 +257,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       // Mark it as a boundary commit and tell the worker about it.
       bool was_inserted = false;
       boundary_commit *bc =
-          source.worker->boundary_index_map.insert(*commit, was_inserted);
+          source.worker->boundary_index_map.insert(*mono, was_inserted);
       if (!bc)
         return error("failure to log a commit as a monorepo commit");
       bc->index = source.worker->futures.size();
