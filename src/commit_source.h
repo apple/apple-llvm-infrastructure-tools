@@ -31,7 +31,7 @@ struct commit_type {
 
   /// Index of the first boundary parent.  Once that one is ready, the cache
   /// will be hot.
-  int first_boundary_parent = -1;
+  int last_boundary_parent = -1;
 };
 
 struct boundary_commit {
@@ -85,16 +85,12 @@ struct commit_source {
 } // end namespace
 
 void monocommit_worker::process_futures() {
-  auto current = futures.end();
-  last_ready_future = futures.size();
-
   std::vector<char> reply;
-  while (current != futures.begin()) {
+  for (auto fb = futures.begin(), f = fb, fe = futures.end(); f != fe; ++f) {
     if (bool(should_cancel))
       return;
 
-    --current;
-    if (git_cache::ls_tree_impl(current->commit, reply)) {
+    if (git_cache::ls_tree_impl(f->commit, reply)) {
       has_error = true;
       return;
     }
@@ -108,8 +104,8 @@ void monocommit_worker::process_futures() {
     } else {
       storage = new (alloc.allocate(reply.size(), 1)) char[reply.size()];
     }
-    current->rawtree = storage;
+    f->rawtree = storage;
     memcpy(storage, reply.data(), reply.size());
-    last_ready_future = current - futures.begin();
+    last_ready_future = f - fb;
   }
 }

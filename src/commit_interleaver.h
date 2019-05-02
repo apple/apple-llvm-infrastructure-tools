@@ -286,10 +286,9 @@ int translation_queue::parse_source(const char *&current, const char *end) {
         continue;
 
       // Mark how long to wait.
-      if (!commits.back().has_boundary_parents ||
-          bc->index < commits.back().first_boundary_parent)
-        commits.back().first_boundary_parent = bc->index;
       commits.back().has_boundary_parents = true;
+      if (bc->index > commits.back().last_boundary_parent)
+        commits.back().last_boundary_parent = bc->index;
     }
 
     if (parse_through_null(current))
@@ -357,7 +356,7 @@ int commit_interleaver::translate_parents(const commit_source &source,
 
   // Wait for the worker to dig up information on boundary parents.
   if (base.has_boundary_parents)
-    while (int(source.worker->last_ready_future) > base.first_boundary_parent)
+    while (int(source.worker->last_ready_future) < base.last_boundary_parent)
       if (bool(source.worker->has_error))
         return 1;
 
@@ -642,19 +641,24 @@ int commit_interleaver::interleave_impl() {
     assert(source.commits.count);
     auto first = q.commits.begin() + source.commits.first,
          last = first + source.commits.count;
-    auto original_last = last;
-    while ((--last)->commit != fparent.commit) {
-      if (first == last)
-        return error("first parent missing from all");
-      if (translate_commit(source, *last, new_parents, parent_revs, items,
+    auto original_first = first;
+    while (first->commit != fparent.commit) {
+      if (translate_commit(source, *first, new_parents, parent_revs, items,
                            buffers))
         return 1;
+
+      if (++first == last)
+        return error("first parent missing from all");
     }
-    dir.head = last->commit;
+    dir.head = first->commit;
+    if (translate_commit(source, *first, new_parents, parent_revs, items,
+                         buffers, &head))
+      return 1;
+
+    ++first;
     source.commits.count = last - first;
-    if (translate_commit(source, *last, new_parents, parent_revs, items,
-                         buffers, &head) ||
-        report_progress(original_last - last))
+    source.commits.first = first - q.commits.begin();
+    if (report_progress(first - original_first))
       return 1;
   }
   if (report_progress())
