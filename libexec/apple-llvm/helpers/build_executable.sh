@@ -8,7 +8,7 @@ build_executable() {
     # Hash the files in src/, but don't bother with system headers.
     local sha1 f path
     sha1="$(
-    for f in $(cd "$srcdir" && ls *.h *.cpp); do
+    for f in $(cd "$srcdir" && ls *.h *.cpp Makefile | sort); do
         path="$srcdir"/$f
         printf "%s " "$f"
         git hash-object --stdin <"$path"
