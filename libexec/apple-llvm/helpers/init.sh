@@ -82,7 +82,15 @@ run() {
         shift
     fi
 
-    verbose && echo "#$space${SHOWPIDS:+[$$] }$*" >&2
+    if verbose; then
+        printf "#%s%s" "$space" "${SHOWPIDS:+[$$] }"
+        local sep= arg=
+        for arg in "$@"; do
+            printf "%s%q" "$sep" "$arg"
+            sep=" "
+        done
+        printf "\n"
+    fi >&2
     [ "${skip:-0}" -eq 0 ] || return 0
 
     if [ $hide_errors -eq 1 ]; then
