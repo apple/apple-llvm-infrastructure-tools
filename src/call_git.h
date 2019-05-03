@@ -4,6 +4,7 @@
 #include "error.h"
 #include "read_all.h"
 #include <cstdio>
+#include <mutex>
 #include <spawn.h>
 #include <string>
 #include <sys/errno.h>
@@ -16,6 +17,7 @@ static int call_git_impl(char *argv[], char *envp[], const std::string &input,
 
   static bool once = false;
   static bool trace_git = false;
+  static std::mutex tracing_mutex;
   if (!once) {
     once = true;
     if (const char *var = getenv("MT_TRACE_GIT"))
@@ -44,12 +46,14 @@ static int call_git_impl(char *argv[], char *envp[], const std::string &input,
     envp = default_envp;
 
   if (trace_git) {
+    std::lock_guard<std::mutex> lock(tracing_mutex);
     fprintf(stderr, "#");
     for (char **x = envp; *x; ++x)
       fprintf(stderr, " '%s'", *x);
     for (char **x = argv; *x; ++x)
       fprintf(stderr, " '%s'", *x);
     fprintf(stderr, "\n");
+    fflush(stderr);
   }
 
   bool needs_to_write = !input.empty();
