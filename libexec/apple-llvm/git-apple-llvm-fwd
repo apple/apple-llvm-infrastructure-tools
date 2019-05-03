@@ -1,0 +1,88 @@
+#!/bin/bash
+
+NONGIT_OK=1
+. "$(dirname "$0")"/helpers/init.sh
+helper canonicalize_path
+
+usage() {
+    printf "%s\n"                                                             \
+        "usage: $(print_cmdname) [options] <downstream>"                      \
+        ""                                                                    \
+        "   --git-dir=<dir> Git directory to use (default: $DEFAULT_GIT_DIR)" \
+        "   --[no-]verbose  Print out what will happen"                       \
+        "   --dry-run       Don't do anything"
+}
+
+APPLE_LLVM_FWD_CONFIG="$(
+    relative_canonicalize_path "$APPLE_LLVM_LIBEXEC_DIR/../../fwd-config")"
+
+fwd_setup() {
+    GIT_DIR="$(canonicalize_path "$GIT_DIR")"
+
+    # Always change directory.
+    log "Updating remotes up and syncing $GIT_DIR"
+    if [ -d "$GIT_DIR" ]; then
+        run --dry cd "$GIT_DIR" || error "failed to enter '$GIT_DIR'"
+    else
+        run --dry mkdir -p "$GIT_DIR" || error "failed to make '$GIT_DIR'"
+        run --dry git init || error "failed to create '$GIT_DIR'"
+    fi
+
+    local -a remotes
+    for remote in $(run cat "$FWD_CONFIG" |
+        run awk '$1=="remote"{print $2 ":" $3}'); do
+        name="${remote%%:*}"
+        url="${remote#*:}"
+        existing="$(run --dry git remote -v |
+        run --dry awk -vn="$name" '$1==n{print $2}')"
+        if [ -z "$existing" ]; then
+            run --dry git remote add "$name" "$url"
+        elif [ ! "$url" = "$existing" ]; then
+            error "remote '$name' exists with URL '$existing';" \
+            "refusing to set-url to '$url'"
+        fi
+        log "  - $name $url"
+        run --dry git fetch "$name" ||
+            error "failed to fetch from '$name'"
+    done
+}
+
+DEFAULT_GIT_DIR=apple-llvm-fwd-repo.git
+GIT_DIR=$DEFAULT_GIT_DIR
+SETUP=1
+NAME=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --git-dir|--git-dir=*)
+            parse_cmdline_option --git-dir GIT_DIR "$@"
+            shift $?
+            [ -n "$GIT_DIR" ] || usage_error "--git-dir cannot be empty"
+            ;;
+        --dry-run)  DRY_RUN=1; shift ;;
+        --verbose)    VERBOSE=1; shift ;;
+        --no-verbose) VERBOSE=0; shift ;;
+        --help|--usage|-h) usage; exit 0 ;;
+        -*) usage_error "unknown option '$1'" ;;
+        *)
+            [ -z "$NAME" ] || usage_error "too many positional arguments"
+            [ -n "$1" ] || usage_error "empty name for downstream"
+            NAME="$1"
+            FWD_CONFIG="$APPLE_LLVM_FWD_CONFIG/$NAME.fwd-config"
+            [ -f "$FWD_CONFIG" ] ||
+                usage_error "config for '$NAME' not found at '$FWD_CONFIG'"
+            shift
+            ;;
+    esac
+done
+
+[ -n "$NAME" ] || usage_error "missing name of fwd-config"
+
+fwd_setup || exit 1
+
+log "Forwarding refs"
+cat "$FWD_CONFIG" | awk '$1 == "push" {print $2, $3}' |
+while read remote refspec; do
+    log "  - $remote $refspec"
+    run --dry git push "$remote" "$refspec" || error "failed to push '$3' to '$2'"
+done
+exit 0

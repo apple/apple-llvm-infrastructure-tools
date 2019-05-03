@@ -67,6 +67,7 @@ print_cmdname() {
 showpids() { [ ! "${SHOWPIDS:-0}" = 0 ]; }
 verbose() { [ ! "${VERBOSE:-0}" = 0 ]; }
 DRY_RUN=0
+dry_run() { [ ! "${DRY_RUN:-0}" = 0 ]; }
 run() {
     # Support hiding errors so that clients don't hide the verbose-mode
     # logging.
@@ -78,7 +79,7 @@ run() {
     elif [ "$1" = --dry ]; then
         skip="$DRY_RUN"
         # TODO: add a test that --dry only uses an extra '#' when DRY_RUN.
-        [ "${skip:-0}" -eq 0 ] || space="#"
+        dry_run && space="#"
         shift
     fi
 
