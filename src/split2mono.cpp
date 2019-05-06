@@ -355,7 +355,8 @@ static int main_interleave_commits(const char *cmd, int argc,
                  cmd);
 
   // Parse refs and directories.
-  auto parse_sha1 = [&interleaver](const char *&current, sha1_ref sha1) {
+  auto parse_sha1 = [&interleaver](const char *&current, sha1_ref &sha1) {
+    // TODO: add a testcase where sha1 is non-zero.
     textual_sha1 text;
     if (text.from_input(current, &current))
       return 1;
