@@ -45,6 +45,8 @@ template <class T> struct sha1_trie {
   T *lookup(const binary_sha1 &sha1) const;
   T *lookup_impl(const binary_sha1 &sha1, bool should_insert,
                  bool &was_inserted);
+
+  bool empty() const { return root.mask.none(); }
 };
 template <class T> struct sha1_trie<T>::subtrie_type {
   static constexpr const long num_bits = 6;

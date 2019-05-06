@@ -200,6 +200,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     fparents.back().ct = last_ct;
   }
 
+  sha1_trie<binary_sha1> skipped;
   source.commits.first = commits.size();
   std::vector<sha1_ref> parents;
   while (true) {
@@ -321,6 +322,8 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       assert(mono);
       commits.pop_back();
       parents.clear();
+      bool was_inserted = false;
+      skipped.insert(*commit, was_inserted);
       continue;
     }
 
@@ -331,6 +334,16 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     }
     parents.clear();
   }
+
+  // Clear out first parents we skipped over.
+  if (!skipped.empty())
+    fparents.erase(std::remove_if(fparents.begin(), fparents.end(),
+                                  [&](const fparent_type &fparent) {
+                                    return skipped.lookup(*fparent.commit) !=
+                                           nullptr;
+                                  }),
+                   fparents.end());
+
   source.commits.count = commits.size() - source.commits.first;
   if (source.commits.count < fparents.size() - num_fparents_before)
     return error("first parents missing from commits");
