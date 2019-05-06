@@ -311,6 +311,19 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     if (parse_newline(current))
       return 1;
 
+    // Now that we have metadata (necessary for an SVN revision, if relevant),
+    // check if commit has already been translated.
+    //
+    // TODO: add a testcase where a split repository history has forked with
+    // upstream LLVM and no splitref was added by mt-config.
+    sha1_ref mono;
+    if (!cache.get_mono(commit, mono)) {
+      assert(mono);
+      commits.pop_back();
+      parents.clear();
+      continue;
+    }
+
     commits.back().num_parents = parents.size();
     if (!parents.empty()) {
       commits.back().parents = new (parent_alloc) sha1_ref[parents.size()];
