@@ -270,6 +270,16 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     commits.back().commit = commit;
     commits.back().tree = tree;
     while (!try_parse_space(current)) {
+      // Check for a null character after the space, in case there are no
+      // parents at all.
+      //
+      // TODO: add a testcase where there is a commit to map with no parents.
+      if (!*current) {
+        if (parents.empty())
+          break;
+        return error("expected another parent after space");
+      }
+
       parents.emplace_back();
       if (parse_sha1(current, parents.back()))
         return error("failed to parse parent");
