@@ -5,3 +5,6 @@ __pycache__
 # Tracking venv for python setup by make
 ###
 .python_env
+
+# The output of lit tests
+.lit_test_output

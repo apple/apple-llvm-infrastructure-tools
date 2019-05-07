@@ -3,7 +3,7 @@
 # Used to run the tests.
 
 .PHONY: all clean
-all: check-tools
+all: check-tools check-lit-example
 
 VENV_OUT=.python_env
 REQUIREMENTS_OUT=$(VENV_OUT)/.requirements.txt.install_log
@@ -29,3 +29,6 @@ $(REQUIREMENTS_OUT): $(REQUIREMENTS_FILE)
 
 check-tools: venv requirements Makefile
 	$(PYTHON_ROOT)pytest tools/
+
+check-lit-example: venv requirements Makefile
+	$(PYTHON_ROOT)lit lit-example/
