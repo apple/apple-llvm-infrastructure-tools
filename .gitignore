@@ -7,4 +7,4 @@ __pycache__
 .python_env
 
 # The output of lit tests
-.lit_test_output
+test/Run.lit
