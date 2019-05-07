@@ -80,12 +80,13 @@ struct git_cache {
   int lookup_rev(sha1_ref commit, int &rev) const;
   int lookup_tree(git_tree &tree) const;
   int lookup_metadata(sha1_ref commit, const char *&metadata) const;
-  int get_commit_tree(sha1_ref commit, sha1_ref &tree);
-  int get_metadata(sha1_ref commit, const char *&metadata);
-  int get_rev(sha1_ref commit, int &rev);
-  int get_rev_with_metadata(sha1_ref commit, int &rev, const char *metadata);
+  int compute_commit_tree(sha1_ref commit, sha1_ref &tree);
+  int compute_metadata(sha1_ref commit, const char *&metadata);
+  int compute_rev(sha1_ref commit, int &rev);
+  int compute_rev_with_metadata(sha1_ref commit, int &rev,
+                                const char *metadata);
   int set_rev(sha1_ref commit, int rev);
-  int get_mono(sha1_ref split, sha1_ref &mono);
+  int compute_mono(sha1_ref split, sha1_ref &mono);
   int set_mono(sha1_ref split, sha1_ref mono);
   int ls_tree(git_tree &tree);
   int mktree(git_tree &tree);
@@ -322,7 +323,7 @@ int git_cache::set_mono(sha1_ref split, sha1_ref mono) {
   note_mono(split, mono);
   return 0;
 }
-int git_cache::get_mono(sha1_ref split, sha1_ref &mono) {
+int git_cache::compute_mono(sha1_ref split, sha1_ref &mono) {
   if (!lookup_mono(split, mono))
     return 0;
 
@@ -334,7 +335,7 @@ int git_cache::get_mono(sha1_ref split, sha1_ref &mono) {
   }
 
   int rev = -1;
-  if (get_rev(split, rev) || rev <= 0)
+  if (compute_rev(split, rev) || rev <= 0)
     return 1;
 
   auto *bytes = reinterpret_cast<const unsigned char *>(svn2git.bytes);
@@ -352,7 +353,7 @@ int git_cache::get_mono(sha1_ref split, sha1_ref &mono) {
   return 0;
 }
 
-int git_cache::get_commit_tree(sha1_ref commit, sha1_ref &tree) {
+int git_cache::compute_commit_tree(sha1_ref commit, sha1_ref &tree) {
   if (!lookup_commit_tree(commit, tree))
     return 0;
 
@@ -374,7 +375,7 @@ int git_cache::get_commit_tree(sha1_ref commit, sha1_ref &tree) {
   return 0;
 }
 
-int git_cache::get_metadata(sha1_ref commit, const char *&metadata) {
+int git_cache::compute_metadata(sha1_ref commit, const char *&metadata) {
   if (!lookup_metadata(commit, metadata))
     return 0;
 
@@ -416,12 +417,12 @@ int git_cache::set_rev(sha1_ref commit, int rev) {
   return 0;
 }
 
-int git_cache::get_rev(sha1_ref commit, int &rev) {
-  return get_rev_with_metadata(commit, rev, nullptr);
+int git_cache::compute_rev(sha1_ref commit, int &rev) {
+  return compute_rev_with_metadata(commit, rev, nullptr);
 }
 
-int git_cache::get_rev_with_metadata(sha1_ref commit, int &rev,
-                                     const char *metadata) {
+int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
+                                         const char *metadata) {
   if (!lookup_rev(commit, rev))
     return 0;
 
@@ -436,7 +437,7 @@ int git_cache::get_rev_with_metadata(sha1_ref commit, int &rev,
   }
 
   if (!metadata)
-    if (get_metadata(commit, metadata))
+    if (compute_metadata(commit, metadata))
       return 1;
 
   auto try_parse_string = [](const char *&current, const char *s) {
@@ -742,7 +743,7 @@ int git_cache::parse_commit_metadata(sha1_ref commit,
     *vars[i] = prefixes[i];
 
   const char *metadata;
-  if (get_metadata(commit, metadata))
+  if (compute_metadata(commit, metadata))
     return 1;
 
   auto skip_until = [](const char *&current, int ch) {

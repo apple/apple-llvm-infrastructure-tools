@@ -218,7 +218,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     // Warm the cache.
     cache.note_commit_tree(commit, tree);
     if (is_boundary) {
-      // Grab the metadata, which get_mono might leverage if this is an
+      // Grab the metadata, which compute_mono might leverage if this is an
       // upstream git-svn commit.
       if (parse_through_null(current))
         return error("missing null charactor before boundary metadata");
@@ -235,7 +235,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       // Look up the monorepo commit.  Needs to be after noting the metadata to
       // avoid needing to shell out to git-log.
       sha1_ref mono;
-      if (cache.get_mono(commit, mono))
+      if (cache.compute_mono(commit, mono))
         return error("cannot find monorepo commit for boundary parent " +
                      commit->to_string());
 
@@ -246,13 +246,13 @@ int translation_queue::parse_source(const char *&current, const char *end) {
         // metadata to suppress a new git-log call.  This is necessary for
         // checking the svnbase table (where split commits do not have
         // entries).
-        if (cache.get_rev_with_metadata(mono, rev, metadata))
+        if (cache.compute_rev_with_metadata(mono, rev, metadata))
           return error("cannot get rev for boundary parent " +
                        commit->to_string());
         (void)rev;
       } else {
-        // Nice; get_mono above filled this in.  Note it in the monorepo commit
-        // as well.
+        // Nice; compute_mono above filled this in.  Note it in the monorepo
+        // commit as well.
         cache.note_rev(mono, rev);
       }
 
@@ -319,7 +319,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     // TODO: add a testcase where a split repository history has forked with
     // upstream LLVM and no splitref was added by mt-config.
     sha1_ref mono;
-    if (!cache.get_mono(commit, mono)) {
+    if (!cache.compute_mono(commit, mono)) {
       assert(mono);
       commits.pop_back();
       parents.clear();
@@ -359,7 +359,8 @@ int commit_interleaver::translate_parents(const commit_source &source,
                                           const commit_type &base,
                                           std::vector<sha1_ref> &new_parents,
                                           std::vector<int> &parent_revs,
-                                          sha1_ref first_parent, int &max_srev) {
+                                          sha1_ref first_parent,
+                                          int &max_srev) {
   max_srev = 0;
   int max_urev = 0;
   auto process_future = [&](sha1_ref p) {
@@ -384,7 +385,7 @@ int commit_interleaver::translate_parents(const commit_source &source,
 
     new_parents.push_back(p);
     int srev = 0;
-    cache.get_rev(p, srev);
+    cache.compute_rev(p, srev);
     parent_revs.push_back(srev);
     int urev = srev < 0 ? -srev : srev;
     if (urev > max_urev) {
@@ -413,7 +414,7 @@ int commit_interleaver::translate_parents(const commit_source &source,
       continue;
 
     sha1_ref mono;
-    if (cache.get_mono(base.parents[i], mono))
+    if (cache.compute_mono(base.parents[i], mono))
       return error("parent " + base.parents[i]->to_string() + " of " +
                    base.commit->to_string() + " not translated");
     add_parent(mono);
@@ -479,7 +480,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
     }
   } else {
     sha1_ref base_tree;
-    if (cache.get_commit_tree(base_commit, base_tree))
+    if (cache.compute_commit_tree(base_commit, base_tree))
       return 1;
     items.emplace_back();
     items.back().sha1 = base_tree;
