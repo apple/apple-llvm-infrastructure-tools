@@ -19,7 +19,7 @@ check-tools: venv requirements Makefile
 	$(PYTHON_ROOT)pytest tools/
 
 $(lit_targets) : check-%: venv requirements Makefile
-	$(PYTHON_ROOT)lit $*/
+	$(PYTHON_ROOT)lit $(PWD)/$*/
 
 check-lit: venv requirements Makefile
-	$(PYTHON_ROOT)lit */
+	$(PYTHON_ROOT)lit $(PWD)/*/

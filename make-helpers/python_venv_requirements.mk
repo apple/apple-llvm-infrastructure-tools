@@ -1,6 +1,6 @@
-VENV_OUT=.python_env
+VENV_OUT=$(PWD)/.python_env
 REQUIREMENTS_OUT=$(VENV_OUT)/.requirements.txt.install_log
-REQUIREMENTS_FILE=requirements.txt
+REQUIREMENTS_FILE=$(PWD)/requirements.txt
 
 PYTHON_ROOT := $(VENV_OUT)/bin/
 
