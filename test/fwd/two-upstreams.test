@@ -36,6 +36,6 @@ RUN: git -C %t/repos/c.git show-ref b/master
 RUN: not git -C %t/repos/c.git show-ref refs/heads/master
 RUN: git -C %t/repos/a.git show-ref master | awk '{print $1}'  >%t/in.sha1s
 RUN: git -C %t/repos/b.git show-ref master | awk '{print $1}' >>%t/in.sha1s
-RUN: git -C %t/repos/c.git show-ref master | sort \
+RUN: git -C %t/repos/c.git show-ref master | sort -k 2,2 \
 RUN:   | awk '{print $1}'  >%t/out.sha1s
 RUN: diff %t/in.sha1s %t/out.sha1s
