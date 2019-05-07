@@ -59,6 +59,7 @@ struct commit_interleaver {
                        std::vector<git_tree::item_type> &items,
                        git_cache::commit_tree_buffers &buffers,
                        sha1_ref *head = nullptr);
+  void print_heads(FILE *file);
 };
 } // end namespace
 
@@ -642,6 +643,11 @@ int commit_interleaver::interleave() {
       if (source.worker->thread)
         source.worker->thread->join();
 
+  if (!status)
+    return 0;
+
+  fprintf(stderr, "interleave-progress: \n");
+  print_heads(stderr);
   return status;
 }
 
@@ -700,20 +706,25 @@ int commit_interleaver::interleave_impl() {
   if (report_progress())
     return 1;
 
-  if (!head)
-    return 0;
+  if (head)
+    print_heads(stdout);
 
-  textual_sha1 sha1(*head);
-  printf("%s", sha1.bytes);
+  return 0;
+}
+
+void commit_interleaver::print_heads(FILE *file) {
+  textual_sha1 sha1;
+  if (head)
+    sha1 = textual_sha1(*head);
+  fprintf(file, "%s", sha1.bytes);
   for (auto &dir : dirs.list) {
     if (dir.head)
       sha1 = textual_sha1(*dir.head);
     else
       memset(sha1.bytes, '0', 40);
-    printf(" %s:%s", sha1.bytes, dir.name);
+    fprintf(file, " %s:%s", sha1.bytes, dir.name);
   }
-  printf("\n");
-  return 0;
+  fprintf(file, "\n");
 }
 
 int commit_interleaver::translate_commit(
