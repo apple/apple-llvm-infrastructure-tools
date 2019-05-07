@@ -4,7 +4,7 @@
 help: venv requirements Makefile
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-include ../make-helpers/python_venv_requirements.make
+include ../make-helpers/python_venv_requirements.mk
 
 # You can set these variables from the command line.
 SPHINXOPTS    =

@@ -8,7 +8,7 @@ lit_targets := $(patsubst %/lit.cfg.py,check-%,$(lit_configs))
 .PHONY: all clean clean-venv venv requirements
 all: check-tools $(lit_targets)
 
-include ../make-helpers/python_venv_requirements.make
+include ../make-helpers/python_venv_requirements.mk
 
 clean: clean-venv
 	@echo "cleaning..."
