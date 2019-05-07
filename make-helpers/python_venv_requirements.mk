@@ -1,6 +1,7 @@
-VENV_OUT=$(PWD)/.python_env
+makefile_dir := $(dir $(abspath $(firstword $(MAKEFILE_LIST))))
+VENV_OUT=$(makefile_dir)/.python_env
 REQUIREMENTS_OUT=$(VENV_OUT)/.requirements.txt.install_log
-REQUIREMENTS_FILE=$(PWD)/requirements.txt
+REQUIREMENTS_FILE=$(makefile_dir)/requirements.txt
 
 PYTHON_ROOT := $(VENV_OUT)/bin/
 
