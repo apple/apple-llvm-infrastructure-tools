@@ -581,6 +581,7 @@ int git_cache::ls_tree(git_tree &tree) {
 }
 
 int git_cache::ls_tree_impl(sha1_ref sha1, std::vector<char> &git_reply) {
+  assert(!sha1->is_zeros());
   std::string ref = sha1->to_string();
   const char *args[] = {"git", "ls-tree", "--full-tree", ref.c_str(), nullptr};
   git_reply.clear();

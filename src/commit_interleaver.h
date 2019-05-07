@@ -376,6 +376,8 @@ int commit_interleaver::translate_parents(const commit_source &source,
     bc.was_noted = true;
   };
   auto add_parent = [&](sha1_ref p) {
+    assert(!p->is_zeros());
+
     // Deal with this parent.
     if (base.has_boundary_parents)
       process_future(p);
@@ -400,6 +402,8 @@ int commit_interleaver::translate_parents(const commit_source &source,
   if (first_parent)
     add_parent(first_parent);
   for (int i = 0; i < base.num_parents; ++i) {
+    assert(!base.parents[i]->is_zeros());
+
     // Usually, override the first parent.  However, if this directory has not
     // yet been active on the branch then its original first parent may not be
     // in "first_parent"'s ancestory.
@@ -421,6 +425,8 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
                                        const std::vector<int> &revs,
                                        std::vector<git_tree::item_type> &items,
                                        sha1_ref &tree_sha1) {
+  assert(!base_commit->is_zeros());
+
   struct tracking_context {
     std::bitset<dir_mask::max_size> added;
     int where[dir_mask::max_size] = {0};
@@ -488,6 +494,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   int blob_parent = -1;
   int untracked_path_parent = -1;
   for (int p = 0, pe = parents.size(); p != pe; ++p) {
+    assert(!parents[p]->is_zeros());
     git_tree tree;
     tree.sha1 = parents[p];
     if (cache.ls_tree(tree))

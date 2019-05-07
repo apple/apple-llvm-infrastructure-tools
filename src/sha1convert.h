@@ -72,6 +72,7 @@ struct binary_sha1 {
     return !memcmp(lhs.bytes, rhs.bytes, 20);
   }
   std::string to_string() const;
+  bool is_zeros() const;
 };
 struct textual_sha1 {
   char bytes[41] = {0};
@@ -85,8 +86,23 @@ struct textual_sha1 {
     return bin;
   }
   std::string to_string() const;
+  bool is_zeros() const;
 };
 } // end namespace
+
+bool binary_sha1::is_zeros() const {
+  for (int i = 0; i < 20; ++i)
+    if (bytes[i] != 0)
+      return false;
+  return true;
+}
+
+bool textual_sha1::is_zeros() const {
+  for (int i = 0; bytes[i] && i < 40; ++i)
+    if (bytes[i] != '0')
+      return false;
+  return true;
+}
 
 std::string textual_sha1::to_string() const { return bytes; }
 std::string binary_sha1::to_string() const {
