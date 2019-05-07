@@ -22,6 +22,10 @@ Each test suite is invoked from the makefile, either using `pytest`, or using
 
 A new test suite can be added by creating a subdirectory under `test/`.
 
+### Testing tools
+
+- `not`: invert the exit status of a `RUN:` command.
+
 ## Documentation
 
 The documentation for apple-llvm-infrastucture-tools is located in the `docs/`
