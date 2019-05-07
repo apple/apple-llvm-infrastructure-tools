@@ -187,5 +187,7 @@ sha1_ref sha1_pool::lookup(const textual_sha1 &sha1) {
 
 sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
   bool was_inserted = false;
+  if (sha1.is_zeros())
+    return sha1_ref();
   return sha1_ref(root.insert(sha1, was_inserted));
 }

@@ -342,6 +342,8 @@ int git_cache::get_mono(sha1_ref split, sha1_ref &mono) {
   if (offset + 20 > svn2git.num_bytes)
     return 1;
   sha1.from_binary(bytes + offset);
+  // TODO: add testcase for something like r137571 which has a valid SVN
+  // revision but is not in the monorepo.
   mono = pool.lookup(sha1);
   if (!mono)
     return 1;

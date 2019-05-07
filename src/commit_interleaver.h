@@ -402,6 +402,8 @@ int commit_interleaver::translate_parents(const commit_source &source,
   if (first_parent)
     add_parent(first_parent);
   for (int i = 0; i < base.num_parents; ++i) {
+    // fprintf(stderr, "  - parent = %s\n",
+    //         base.parents[i]->to_string().c_str());
     assert(!base.parents[i]->is_zeros());
 
     // Usually, override the first parent.  However, if this directory has not
@@ -747,6 +749,9 @@ int commit_interleaver::translate_commit(
   if (head)
     first_parent_override = *head;
   int rev = 0;
+  // fprintf(stderr, "translate-commit = %s, tree = %s, num-parents = %d\n",
+  //         base.commit->to_string().c_str(),
+  //         base.tree->to_string().c_str(), base.num_parents);
   if (translate_parents(source, base, new_parents, parent_revs,
                         first_parent_override, rev) ||
       construct_tree(/*is_head=*/head, source, base.commit, new_parents,
