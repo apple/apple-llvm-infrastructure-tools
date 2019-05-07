@@ -1,0 +1,41 @@
+remote a __REPOS__/a.git
+remote b __REPOS__/b.git
+
+push b refs/remotes/a/release/*:refs/heads/a/release/*
+
+# Clean up.
+RUN: rm -rf %t
+
+# Make repos and fill with data.
+RUN: mkdir -p %t/repos
+RUN: mkrepo --bare %t/repos/a.git
+RUN: mkrepo --bare %t/repos/b.git
+RUN: git clone %t/repos/a.git %t/a
+RUN: mkblob %t/a b1
+RUN: git -C %t/a branch release/1
+RUN: mkblob %t/a b2
+RUN: git -C %t/a branch release/2
+
+# Push and check.
+RUN: git -C %t/a push origin master release/1 release/2
+RUN: git -C %t/repos/a.git show-ref master
+RUN: git -C %t/repos/a.git show-ref release/1
+RUN: git -C %t/repos/a.git show-ref release/2
+
+# Set up configs and run.
+RUN: mkdir -p %t/configs %t/working
+RUN: cat %s | sed -e s,__REPOS__,%t/repos, > %t/configs/t.fwd-config
+RUN: cd %t/working
+RUN: git apple-llvm fwd --config-dir %t/configs t
+
+# Check the output.
+RUN: git -C %t/repos/b.git show-ref a/release/1
+RUN: git -C %t/repos/b.git show-ref a/release/2
+RUN: not git -C %t/repos/b.git show-ref master
+RUN: not git -C %t/repos/b.git show-ref refs/heads/release/1
+RUN: not git -C %t/repos/b.git show-ref refs/heads/release/2
+RUN: git -C %t/repos/a.git show-ref   release/1 | awk '{print $1}'  >%t/a.sha1s
+RUN: git -C %t/repos/a.git show-ref   release/2 | awk '{print $1}' >>%t/a.sha1s
+RUN: git -C %t/repos/b.git show-ref a/release/1 | awk '{print $1}'  >%t/b.sha1s
+RUN: git -C %t/repos/b.git show-ref a/release/2 | awk '{print $1}' >>%t/b.sha1s
+RUN: diff %t/a.sha1s %t/b.sha1s

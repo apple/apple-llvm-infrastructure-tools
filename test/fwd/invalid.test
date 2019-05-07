@@ -1,0 +1,6 @@
+# Set up configs and run.
+RUN: mkdir -p %t/configs
+RUN: not git apple-llvm fwd
+RUN: not git apple-llvm fwd --config-dir %t/configs
+RUN: not git apple-llvm fwd --config-dir %t/configs x
+RUN: not git apple-llvm fwd --config-dir /dev/null

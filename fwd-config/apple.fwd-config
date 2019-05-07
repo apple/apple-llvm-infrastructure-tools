@@ -1,5 +1,5 @@
 remote llvm git@github.com:llvm/llvm-project.git
 remote apple git@github.com:apple/llvm-project-v0.git
 
-push apple refs/remotes/llvm/master:refs/remotes/apple/llvm/master
-push apple refs/remotes/llvm/release/*:refs/remotes/apple/llvm/release/*
+push apple refs/remotes/llvm/master:refs/heads/llvm/master
+push apple refs/remotes/llvm/release/*:refs/heads/llvm/release/*

@@ -8,16 +8,21 @@ usage() {
     printf "%s\n"                                                             \
         "usage: $(print_cmdname) [options] <downstream>"                      \
         ""                                                                    \
-        "   --git-dir=<dir> Git directory to use (default: $DEFAULT_GIT_DIR)" \
-        "   --[no-]verbose  Print out what will happen"                       \
-        "   --dry-run       Don't do anything"
+        "   --config-dir=<dir> Config directory (default: $DEFAULT_CONFIG_DIR)"  \
+        "   --git-dir=<dir>    Git directory (default: $DEFAULT_GIT_DIR)"     \
+        "   --[no-]verbose     Print out what will happen"                    \
+        "   --dry-run          Don't do anything"
 }
 
-APPLE_LLVM_FWD_CONFIG="$(
+DEFAULT_CONFIG_DIR="$(
     relative_canonicalize_path "$APPLE_LLVM_LIBEXEC_DIR/../../fwd-config")"
+DEFAULT_GIT_DIR=apple-llvm-fwd-repo.git
 
 fwd_setup() {
     GIT_DIR="$(canonicalize_path "$GIT_DIR")"
+    FWD_CONFIG="$(canonicalize_path "$CONFIG_DIR/$NAME.fwd-config")"
+    [ -f "$FWD_CONFIG" ] ||
+        usage_error "config for '$NAME' not found at '$FWD_CONFIG'"
 
     # Always change directory.
     log "Updating remotes up and syncing $GIT_DIR"
@@ -34,7 +39,7 @@ fwd_setup() {
         name="${remote%%:*}"
         url="${remote#*:}"
         existing="$(run --dry git remote -v |
-        run --dry awk -vn="$name" '$1==n{print $2}')"
+        run --dry awk -v n="$name" '$1==n{print $2}')"
         if [ -z "$existing" ]; then
             run --dry git remote add "$name" "$url"
         elif [ ! "$url" = "$existing" ]; then
@@ -47,12 +52,18 @@ fwd_setup() {
     done
 }
 
-DEFAULT_GIT_DIR=apple-llvm-fwd-repo.git
+CONFIG_DIR="$DEFAULT_CONFIG_DIR"
 GIT_DIR=$DEFAULT_GIT_DIR
 SETUP=1
 NAME=
 while [ $# -gt 0 ]; do
     case "$1" in
+        --config-dir|--config-dir=*)
+            parse_cmdline_option --config-dir CONFIG_DIR "$@"
+            shift $?
+            [ -n "$CONFIG_DIR" ] || usage_error "--config-dir cannot be empty"
+            [ -d "$CONFIG_DIR" ] || usage_error "'$CONFIG_DIR' not a directory"
+            ;;
         --git-dir|--git-dir=*)
             parse_cmdline_option --git-dir GIT_DIR "$@"
             shift $?
@@ -67,9 +78,6 @@ while [ $# -gt 0 ]; do
             [ -z "$NAME" ] || usage_error "too many positional arguments"
             [ -n "$1" ] || usage_error "empty name for downstream"
             NAME="$1"
-            FWD_CONFIG="$APPLE_LLVM_FWD_CONFIG/$NAME.fwd-config"
-            [ -f "$FWD_CONFIG" ] ||
-                usage_error "config for '$NAME' not found at '$FWD_CONFIG'"
             shift
             ;;
     esac
