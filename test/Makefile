@@ -2,7 +2,7 @@
 #
 # Used to run the tests.
 
-lit_tests := $(filter-out ./.%,$(shell find . -name "*.test"))
+lit_tests := $(filter-out ./.%,$(shell find . -name "*.test" -o -name "*.py"))
 lit_testdirs := $(sort $(foreach t,$(lit_tests),$(dir $t)))
 lit_targets := $(patsubst ./%/,check-%,$(lit_testdirs))
 
@@ -14,9 +14,7 @@ include ../make-helpers/python_venv_requirements.mk
 clean: clean-venv
 	@echo "cleaning..."
 
-.PHONY: check-tools check-lit $(lit_targets)
-check-tools: venv requirements Makefile
-	$(PYTHON_ROOT)pytest tools/
+.PHONY: check-lit $(lit_targets)
 
 $(lit_targets) : check-%: venv requirements Makefile
 	$(PYTHON_ROOT)lit $(PWD)/$*/
