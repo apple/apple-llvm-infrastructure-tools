@@ -1,7 +1,7 @@
 import os, sys
 import lit.formats
 
-config.name = 'not'
+config.name = 'apple-llvm'
 config.test_format = lit.formats.ShTest(execute_external=False)
 
 # suffixes: A list of file extensions to treat as test files.
