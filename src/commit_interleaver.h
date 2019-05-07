@@ -50,7 +50,7 @@ struct commit_interleaver {
   int translate_parents(const commit_source &source, const commit_type &base,
                         std::vector<sha1_ref> &new_parents,
                         std::vector<int> &parent_revs, sha1_ref first_parent,
-                        int &max_rev);
+                        int &max_srev);
   int interleave();
   int interleave_impl();
   int translate_commit(commit_source &source, const commit_type &base,
@@ -359,8 +359,8 @@ int commit_interleaver::translate_parents(const commit_source &source,
                                           const commit_type &base,
                                           std::vector<sha1_ref> &new_parents,
                                           std::vector<int> &parent_revs,
-                                          sha1_ref first_parent, int &max_rev) {
-  max_rev = 0;
+                                          sha1_ref first_parent, int &max_srev) {
+  max_srev = 0;
   int max_urev = 0;
   auto process_future = [&](sha1_ref p) {
     auto *bc_index = source.worker->boundary_index_map.lookup(*p);
@@ -386,10 +386,10 @@ int commit_interleaver::translate_parents(const commit_source &source,
     int srev = 0;
     cache.get_rev(p, srev);
     parent_revs.push_back(srev);
-    int rev = srev < 0 ? -srev : srev;
-    if (rev > max_urev) {
-      max_rev = srev;
-      max_urev = rev;
+    int urev = srev < 0 ? -srev : srev;
+    if (urev > max_urev) {
+      max_urev = urev;
+      max_srev = srev;
     }
   };
 
