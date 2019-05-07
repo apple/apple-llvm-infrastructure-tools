@@ -10,7 +10,7 @@ An overview of infrastructure and tools for Apple's fork of llvm-project
    :maxdepth: 2
    :caption: Contents:
 
-   Intro
+   ContributingToTools
 
 Indices and tables
 ==================
