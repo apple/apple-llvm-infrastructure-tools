@@ -5,17 +5,27 @@
 .PHONY: all clean
 all: check-tools
 
-REQUIREMENTS_OUT=.requirements.txt.install_log
+VENV_OUT=.python_env
+REQUIREMENTS_OUT=$(VENV_OUT)/.requirements.txt.install_log
 REQUIREMENTS_FILE=requirements.txt
+
+PYTHON_ROOT := $(VENV_OUT)/bin/
 
 clean:
 	@echo "cleaning..."
-	rm -rf $(REQUIREMENTS_OUT)
+	rm -rf $(REQUIREMENTS_OUT) $(VENV_OUT)
 
-requirements: $(REQUIREMENTS_OUT)
+venv: $(VENV_OUT) Makefile
+
+$(VENV_OUT):
+	@echo "Setting up python venv..."
+	python3 -m venv $(VENV_OUT)
+	@echo ""
+
+requirements: $(REQUIREMENTS_OUT) Makefile
 
 $(REQUIREMENTS_OUT): $(REQUIREMENTS_FILE)
-	python3 -m pip install --user -r $(REQUIREMENTS_FILE) | tee $(REQUIREMENTS_OUT)
+	$(PYTHON_ROOT)pip install -r $(REQUIREMENTS_FILE) | tee $(REQUIREMENTS_OUT)
 
-check-tools: requirements Makefile
-	python3 -m pytest tools/
+check-tools: venv requirements Makefile
+	$(PYTHON_ROOT)pytest tools/

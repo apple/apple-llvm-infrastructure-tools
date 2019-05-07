@@ -2,6 +2,6 @@ docs/_build
 __pycache__
 
 ###
-# Tracking files from `pip install` for make
+# Tracking venv for python setup by make
 ###
-.requirements.txt.install_log
+.python_env
