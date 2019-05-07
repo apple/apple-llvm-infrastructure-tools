@@ -21,7 +21,6 @@ Each test suite is invoked from the makefile, either using `pytest`, or using
 ### Adding a new test suite
 
 A new test suite can be added by creating a subdirectory under `test/`.
-TODO: Let's make it easy to add them without modifying the makefile.
 
 ## Documentation
 
