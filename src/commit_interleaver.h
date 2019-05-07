@@ -241,7 +241,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
 
       // Get the rev.
       int rev = 0;
-      if (cache.lookup_rev(commit, rev) && rev) {
+      if (cache.lookup_rev(commit, rev) || !rev) {
         // Figure out the monorepo commit's rev, passing in the split commit's
         // metadata to suppress a new git-log call.  This is necessary for
         // checking the svnbase table (where split commits do not have
@@ -253,6 +253,9 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       } else {
         // Nice; compute_mono above filled this in.  Note it in the monorepo
         // commit as well.
+        //
+        // TODO: add a testcase where a second-level branch needs the
+        // rev from a parent on a first-level branch.
         cache.note_rev(mono, rev);
       }
 
