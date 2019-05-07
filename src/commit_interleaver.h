@@ -495,6 +495,8 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   if (is_head && !dirs.active_dirs.test(base_d))
     dirs.active_dirs.set(base_d);
 
+  // FIXME: This might be cleaner as a two pass algorithm: (1) to understand
+  // the various input trees and (2) to construct the output tree.
   const bool ignore_blobs = source.is_root;
   bool needs_cleanup = false;
   int blob_parent = -1;
@@ -571,8 +573,29 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       // The first parent should get caught implicitly by the logic above.
       assert(p > 0);
 
-      // First parent takes priority for tracked dirs.
-      if (is_head && is_tracked_dir)
+      // First parent wins for tracked directories.
+      //
+      // TODO: add a testcase where a side-history commit (i.e., is_head is
+      // false) has a second parent with a higher rev than the first parent and
+      // different content for a tracked directory.  Confirm the first parent's
+      // version of the directory is used.
+      //
+      // FIXME: this logic is insufficient to make the following case sane:
+      //
+      //  - branch A is LLVM upstream
+      //  - branch B tracks llvm and clang; is downstream of A
+      //  - branch C tracks llvm (only)   ; is downstream of B
+      //  - branch C sometimes merges directly from A
+      //
+      // since the clang in branch C will swing seemingly arbitrarily between a
+      // version from A and a version from B, depending on the last merge.
+      //
+      // Instead, we'd want C to always pick the most recent B for its clang.
+      // But we don't currently have a way to distinguish that.  Maybe there's
+      // a way to annotate the LLVM svnbaserev with a branch depth, extending
+      // the concept that a negative svnbaserev takes priority over a positive
+      // one.
+      if (is_tracked_dir)
         continue;
 
       // Look up revs to pick a winner.
