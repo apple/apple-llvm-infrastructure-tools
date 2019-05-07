@@ -1,2 +1,2 @@
-RUN: true
+RUN: not false
 RUN: not not true
