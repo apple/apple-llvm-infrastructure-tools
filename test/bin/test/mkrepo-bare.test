@@ -1,0 +1,7 @@
+RUN: not mkrepo
+RUN: mkrepo --bare %t
+RUN: test -d %t
+RUN: not test -d %t/.git
+RUN: test -f %t/HEAD
+RUN: touch %t/file
+RUN: not git -C %t add file

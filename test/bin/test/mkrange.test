@@ -1,0 +1,11 @@
+RUN: not mkrange
+
+RUN: mkrepo %t
+RUN: mkrange %t 3 5
+RUN: test -f %t/3
+RUN: test -f %t/4
+RUN: test -f %t/5
+RUN: mkrange %t z x
+RUN: test -f %t/z
+RUN: test -f %t/y
+RUN: test -f %t/x

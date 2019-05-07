@@ -1,0 +1,24 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/init.sh
+
+BARE=
+bare() { [ $BARE -eq 1 ]; }
+if [ "$1" = --bare ]; then
+    BARE=--bare
+    shift
+fi
+
+REPO="$1"
+
+[ -n "$REPO" ] || error "invalid repo: '$REPO'"
+
+if [ -d "$REPO" ]; then
+    [ -d "$REPO"/.git ] || [ -f "$REPO"/HEAD ] ||
+        error "expected git repo or nothing at '$REPO'"
+
+    # Clean up from previous test run.
+    rm -rf "$REPO"
+fi
+
+check command git init${BARE:+ }$BARE "$REPO"

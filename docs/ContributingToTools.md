@@ -25,6 +25,11 @@ A new test suite can be added by creating a subdirectory under `test/`.
 ### Testing tools
 
 - `not`: invert the exit status of a `RUN:` command.
+- `mkrepo.sh [--bare] <repo>`: create a git repository.
+- `mkblob.sh <repo> <blob>`: create and commit a blob with the given name.
+- `mkrange.sh <repo> <first> <last>`: run `mkblob.sh` on `{<first>..<last>}` in
+  sequence.
+- `mksvn.sh <co>`: make an SVN repo at `<co>.repo` and check it out to `<co>`
 
 ## Documentation
 

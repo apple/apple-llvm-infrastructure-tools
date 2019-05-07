@@ -1,0 +1,9 @@
+RUN: not mkblob
+
+RUN: mkrepo %t
+RUN: not git -C %t log --oneline | wc -l | grep '^ *0$'
+RUN: mkblob %t a
+RUN: cat %t/a | grep '^a$'
+RUN: git -C %t log --oneline | wc -l | grep '^ *1$'
+RUN: git -C %t log --oneline | grep ' mkblob: a$'
+RUN: git -C %t log --format=%b | grep '^added the blob a$'

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/init.sh
+
+REPO="$1"
+FIRST=$2
+LAST=$3
+
+[ -d "$REPO" ] || error "invalid repo: '$REPO'"
+
+for n in $(eval "echo {$FIRST..$LAST}"); do
+    execdir --check mkblob "$REPO" $n
+done
