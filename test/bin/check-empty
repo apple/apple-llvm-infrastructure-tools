@@ -1,7 +1,5 @@
 #!/bin/bash
 
-if read -r -n 1; then
-    printf "expected empty, got: '%s'\n" "$REPLY" >&2
-    exit 1
-fi
+error() { printf "error: %s\n" "$*" >&2; exit 1; }
+read -r -n 1 && error "expected empty, got '$REPLY'"
 exit 0
