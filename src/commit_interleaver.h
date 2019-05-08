@@ -518,14 +518,23 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 
       bool is_tracked_dir = false;
       int d = dirs.lookup_dir(is_blob ? "-" : item.name, is_tracked_dir);
-      if (is_tracked_dir)
+      if (is_tracked_dir) {
+        // The base commit takes priority even if we haven't seen it in a
+        // first-parent commit yet.
+        //
+        // TODO: add a test where the base directory is possibly inactive,
+        // because there are non-first-parent commits that get mapped ahead of
+        // time.
+        if (d == base_d)
+          continue;
+
+        // Aside from the base dir, treat inactive dirs as if they are not
+        // tracked at all.
         is_tracked_dir = dirs.active_dirs.test(d);
+      }
+
       if (!is_tracked_dir)
         d = -1;
-
-      // The base commit takes priority.
-      if (d == base_d)
-        continue;
 
       // Look up context for blobs and untracked trees.
       const bool is_tracked_tree = !is_blob && is_tracked_dir;
@@ -656,6 +665,17 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
                     items.begin(), items.end(),
                     [](const git_tree::item_type &item) { return !item.sha1; }),
                 items.end());
+
+  // Sort and assert that we don't have any duplicates.
+  std::sort(items.begin(), items.end(),
+            [](const git_tree::item_type &lhs, const git_tree::item_type &rhs) {
+              return strcmp(lhs.name, rhs.name) < 0;
+            });
+  assert(std::adjacent_find(items.begin(), items.end(),
+                            [](const git_tree::item_type &lhs,
+                               const git_tree::item_type &rhs) {
+                              return strcmp(lhs.name, rhs.name) == 0;
+                            }) == items.end());
 
   git_tree tree;
   tree.num_items = items.size();
