@@ -1,4 +1,4 @@
-# Format of mt-config files
+# git-apple-llvm: mt-config
 
 mt-config files consists of declarations of:
 

@@ -1,7 +1,6 @@
-# git-apple-llvm-fwd
+# git-apple-llvm: fwd
 
 `git apple-llvm fwd` is a tool for forwarding branches between two remotes.
-
 
 ## Configuration
 
