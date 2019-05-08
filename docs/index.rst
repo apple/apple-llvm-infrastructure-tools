@@ -11,7 +11,9 @@ An overview of infrastructure and tools for Apple's fork of llvm-project
    :caption: Contents:
 
    ContributingToTools
+   git-apple-llvm
    git-apple-llvm-fwd
+   git-apple-llvm-mt
    mt-config
 
 Indices and tables
