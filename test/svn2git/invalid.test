@@ -1,0 +1,10 @@
+RUN: rm -rf %t.db
+RUN: %svn2git create %t.db
+
+RUN: not %svn2git lookup %t.db 0
+RUN: not %svn2git insert %t.db 0 0123456789abcdef0123456789abcdef01234567
+RUN: not %svn2git lookup %t.db 0
+
+RUN: not %svn2git lookup %t.db -1
+RUN: not %svn2git insert %t.db -1 0123456789abcdef0123456789abcdef01234567
+RUN: not %svn2git lookup %t.db -1

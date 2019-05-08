@@ -1,4 +1,24 @@
 RUN: rm -rf %t.db
 RUN: %svn2git create %t.db
+RUN: not %svn2git lookup %t.db 1 | check-empty
+RUN: not %svn2git lookup %t.db 2 | check-empty
+RUN: not %svn2git lookup %t.db 3 | check-empty
+RUN: not %svn2git lookup %t.db 4 | check-empty
+RUN: not %svn2git lookup %t.db 5 | check-empty
+RUN: not %svn2git lookup %t.db 6 | check-empty
+
 RUN: %svn2git insert %t.db 4 0123456789abcdef0123456789abcdef01234567
 RUN: %svn2git lookup %t.db 4 | grep ^0123456789abcdef0123456789abcdef01234567'$'
+
+RUN: %svn2git insert %t.db 5 9876543210abcdef0123456789abcdef01234567
+RUN: %svn2git lookup %t.db 5 | grep ^9876543210abcdef0123456789abcdef01234567'$'
+RUN: %svn2git lookup %t.db 4 | grep ^0123456789abcdef0123456789abcdef01234567'$'
+
+RUN: %svn2git insert %t.db 3 abcdef6789abcdef0123456789abcdef01234567
+RUN: %svn2git lookup %t.db 3 | grep ^abcdef6789abcdef0123456789abcdef01234567'$'
+RUN: %svn2git lookup %t.db 4 | grep ^0123456789abcdef0123456789abcdef01234567'$'
+RUN: %svn2git lookup %t.db 5 | grep ^9876543210abcdef0123456789abcdef01234567'$'
+
+RUN: not %svn2git lookup %t.db 1 | check-empty
+RUN: not %svn2git lookup %t.db 2 | check-empty
+RUN: not %svn2git lookup %t.db 6 | check-empty

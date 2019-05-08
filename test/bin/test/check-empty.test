@@ -1,0 +1,8 @@
+RUN: check-empty </dev/null
+RUN: printf "" | check-empty
+RUN: printf "a\n" | not check-empty
+RUN: printf "a" | not check-empty
+RUN: printf "\n" | not check-empty
+RUN: printf " " | not check-empty
+RUN: printf "%%s" '\' | not check-empty
+RUN: printf "%%s\n" '\' | not check-empty
