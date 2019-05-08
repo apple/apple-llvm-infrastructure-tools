@@ -1,6 +1,5 @@
 #!/bin/bash
 
-set -o xtrace
 if read -r -n 1; then
     printf "expected empty, got: '%s'\n" "$REPLY" >&2
     exit 1
