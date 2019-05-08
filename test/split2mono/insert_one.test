@@ -1,5 +1,6 @@
 RUN: rm -rf %t.db
 RUN: mkdir %t.db
 RUN: %split2mono create %t.db
-RUN: %split2mono insert %t.db 0123456789abcdef0123456789abcdef01234567 0123456789abcdef0123456789abcdef01234567
-RUN: %split2mono lookup %t.db 0123456789abcdef0123456789abcdef01234567 | grep ^0123456789abcdef0123456789abcdef01234567'$'
+RUN: %split2mono insert %t.db 0123456789abcdef0123456789abcdef01234567 9876543210abcdef0123456789abcdef01234567
+RUN: %split2mono lookup %t.db 0123456789abcdef0123456789abcdef01234567 | grep ^9876543210abcdef0123456789abcdef01234567'$'
+RUN: %split2mono dump %t.db | grep "split=0123456789abcdef0123456789abcdef01234567 mono=9876543210abcdef0123456789abcdef01234567"
