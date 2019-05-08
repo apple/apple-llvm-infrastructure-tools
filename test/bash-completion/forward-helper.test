@@ -1,0 +1,10 @@
+# Check that a couple of known commands are reported back after calling
+# --complete.
+RUN: rm -rf %t
+RUN: git apple-llvm --complete > %t
+RUN: grep fwd %t
+RUN: grep mt %t
+RUN: not grep test_completion %t
+RUN: git apple-llvm mt --complete > %t
+RUN: grep generate %t
+RUN: grep split2mono %t

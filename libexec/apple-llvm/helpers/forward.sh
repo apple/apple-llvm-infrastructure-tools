@@ -20,6 +20,10 @@ forward() {
             usage
             exit 0
             ;;
+        --complete)
+           printf "%s\n" $(forward_list)
+           exit 0
+           ;;
         -*)
             usage_error "unrecognized option $subcmd"
             ;;
