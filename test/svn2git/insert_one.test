@@ -1,0 +1,4 @@
+RUN: rm -rf %t.db
+RUN: %svn2git create %t.db
+RUN: %svn2git insert %t.db 4 0123456789abcdef0123456789abcdef01234567
+RUN: %svn2git lookup %t.db 4 | grep ^0123456789abcdef0123456789abcdef01234567'$'

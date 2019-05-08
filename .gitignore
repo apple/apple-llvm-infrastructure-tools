@@ -8,3 +8,4 @@ __pycache__
 
 # The output of lit tests
 test/Run.lit
+test/Built

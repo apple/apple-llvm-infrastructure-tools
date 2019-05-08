@@ -11,15 +11,23 @@ testdir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 .PHONY: all clean clean-venv venv requirements
 all: check-tools check-lit
 
-include ../make-helpers/python_venv_requirements.mk
+S := $(testdir)../src/
+D := $(testdir)Built
 
-clean: clean-venv
+include ../make-helpers/python_venv_requirements.mk
+include ../src/Programs.mk
+
+clean: clean-venv clean-programs clean-lit
 	@echo "cleaning..."
 
-.PHONY: check-lit $(lit_targets)
+.PHONY: clean-lit check-lit $(lit_targets)
+clean-lit:
+	rm -rf Run.lit
 
 $(lit_targets) : check-%: venv requirements Makefile
-	$(PYTHON_ROOT)lit $(testdir)/$*/
+	$(PYTHON_ROOT)lit -sv $(testdir)/$*/
 
 check-lit: venv requirements Makefile
-	$(PYTHON_ROOT)lit $(testdir)/*/
+	$(PYTHON_ROOT)lit -sv $(testdir)/*/
+
+check-lit check-split2mono check-svn2git: programs
