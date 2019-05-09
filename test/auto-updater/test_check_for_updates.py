@@ -1,6 +1,5 @@
 """
   Tests for the update checker.
-  RUN: %pytest %s
 """
 
 import os
