@@ -21,6 +21,7 @@ print_repos() { cat "$MT_CONFIG" | awk '$1 == "repo" {print $2, $3}'; }
 
 mt_setup() {
     GIT_DIR="$(canonicalize_path "$GIT_DIR")"
+    MT_CONFIG="$(canonicalize_path "$MT_CONFIG")"
 
     # Always change directory.
     if ! should_setup; then
