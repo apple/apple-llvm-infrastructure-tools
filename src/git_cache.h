@@ -19,14 +19,16 @@ struct dir_mask {
 
 struct dir_type {
   const char *name = nullptr;
-  int source_index = -1;
   sha1_ref head;
+  int source_index = -1;
+  bool is_root = false;
 
   explicit dir_type(const char *name) : name(name) {}
 };
 struct dir_list {
   std::vector<dir_type> list;
   dir_mask active_dirs;
+  dir_mask tracked_dirs;
 
   int add_dir(const char *name, bool &is_new, int &d);
   int lookup_dir(const char *name, const char *end, bool &found);
@@ -223,6 +225,8 @@ int dir_list::add_dir(const char *name, bool &is_new, int &d) {
   is_new = !found;
   if (is_new)
     list.insert(list.begin() + d, dir);
+  if (name[0] == '-' && name[1] == 0)
+    list[d].is_root = true;
   return 0;
 }
 int dir_list::lookup_dir(const char *name, const char *end, bool &found) {

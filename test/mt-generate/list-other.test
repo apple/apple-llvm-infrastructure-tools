@@ -1,0 +1,3 @@
+# Reject other listings.
+RUN: not %mtgen list --list-other | check-empty
+RUN: not %mtgen list --list-other 2>&1 | grep error:

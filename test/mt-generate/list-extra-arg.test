@@ -1,0 +1,4 @@
+# Reject extra args.
+RUN: not %mtgen list --list-repos= | check-empty
+RUN: not %mtgen list --list-repos=b1 | check-empty
+RUN: not %mtgen list --list-repos b1 | check-empty

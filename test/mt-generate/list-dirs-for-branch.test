@@ -1,0 +1,25 @@
+# Check branch b2, which is the first one generated.
+RUN: %mtgen list --list-active-dirs b2 | check-diff %s ACTIVE-DIRS-B2 %t
+RUN: %mtgen list --list-active-dirs=b2 | check-diff %s ACTIVE-DIRS-B2 %t
+RUN: %mtgen list --list-repeat-dirs=b2 | check-empty
+RUN: %mtgen list --list-inactive-dirs=b2 | check-diff %s INACTIVE-DIRS-B2 %t
+RUN: %mtgen list --list-active-refdirs=b2 | check-diff %s ACTIVE-REFDIRS-B2 %t
+RUN: %mtgen list --list-repeat-refdirs=b2 | check-empty
+RUN: %mtgen list --list-inactive-refdirs=b2 | check-diff %s INACTIVE-REFDIRS-B2 %t
+RUN: %mtgen list --list-all-refdirs=b2 | check-diff %s ALL-REFDIRS-B2 %t
+ACTIVE-DIRS-B2: x
+ACTIVE-DIRS-B2: y
+ACTIVE-REFDIRS-B2: a-name/x:x
+ACTIVE-REFDIRS-B2: b-name/xyz:y
+INACTIVE-DIRS-B2: v
+INACTIVE-DIRS-B2: w
+INACTIVE-DIRS-B2: z
+INACTIVE-REFDIRS-B2: -:v
+INACTIVE-REFDIRS-B2: -:w
+INACTIVE-REFDIRS-B2: -:z
+ALL-REFDIRS-B2: -:v
+ALL-REFDIRS-B2: -:w
+ALL-REFDIRS-B2: a-name/x:x
+ALL-REFDIRS-B2: b-name/xyz:y
+ALL-REFDIRS-B2: -:z
+

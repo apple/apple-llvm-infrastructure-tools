@@ -1,0 +1,5 @@
+RUN: %mtgen list --list-repeat b2 | check-empty
+RUN: %mtgen list --list-repeat b1 | check-diff %s B1 %t
+RUN: %mtgen list --list-repeat b3 | check-diff %s B3 %t
+B1: b2
+B3: b1

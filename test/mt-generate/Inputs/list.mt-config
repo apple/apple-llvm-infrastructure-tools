@@ -1,0 +1,21 @@
+repo a-name git://a/url
+repo b-name git://b/url
+
+declare-dir w
+declare-dir y
+declare-dir z
+declare-dir x
+declare-dir v
+
+dir b2 x a-name/x
+dir b2 y b-name/xyz
+dir b1 w b-name/w
+dir b3 z a-name/z
+
+repeat b1 b2
+repeat b3 b1
+
+generate 0000 mapping a-name/master
+generate 0100 branch b1
+generate 0020 branch b2
+generate 3000 branch b3

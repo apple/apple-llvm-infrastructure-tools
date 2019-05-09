@@ -22,13 +22,17 @@ CHECKS="$1"
 PREFIX="$2"
 T="$3"
 D="$T"."$PREFIX".d
-A="$D"/a
-B="$D"/b
+A="$D"/expected
+B="$D"/observed
 
-run grep -e "$PREFIX:" || error "no hits for '$PREFIX' in '$CHECKS'"
+es=(
+-e "^$PREFIX:"
+-e "[^-]\b$PREFIX:"
+)
+
 check mkdir -p "$D"
-check cat >"$A"
-check cat <"$CHECKS" |
-check grep -e "$PREFIX:" |
-check sed -e "s,.*$PREFIX:" >"$B"
-check diff -w "$A" "$B"
+run grep -q "${es[@]}" "$CHECKS" ||
+    error "no hits for '$PREFIX' in '$CHECKS'"
+run grep    "${es[@]}" "$CHECKS" | run sed -e "s,.*$PREFIX:,," >"$A" || exit 1
+check cat >"$B"
+check diff -u -w "$A" "$B"

@@ -1,0 +1,2 @@
+RUN: not %mtgen list --list-active-dirs=other | check-empty
+RUN: not %mtgen list --list-active-dirs other | check-empty

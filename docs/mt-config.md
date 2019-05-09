@@ -3,6 +3,7 @@
 mt-config files consists of declarations of:
 
 - `repo`, for remote repositories;
+- `declare-dir`, for declaring the full set of split directories;
 - `repeat`, for repeating commits from another generated branch;
 - `dir`, for declaring which remote branches to use for directory content; and
 - `generate`, for declaring what to generate.
@@ -14,6 +15,19 @@ repo <name> <url>
 ```
 
 where `<name>` is the local name for the remote and `<url>` is its URL.
+
+## `declare-dir`: Declaring a directory
+
+```
+declare-dir <name>
+```
+
+where `<name>` is the name of a directory that comes from a different split
+repository and `-` declares the monorepo root.  Any directory not declared here
+will be assumed to be part of the monorepo root.  All non-root directories
+should be declared even if there are no downstream changes.
+
+See also `dir`, below.
 
 ## Defining a branch
 
@@ -41,7 +55,10 @@ dir <branch> ( <name> | '-' ) <source>
 
 `dir` declares the repositories to interleave to generate `<branch>`.  The
 commits are taken from `<source>`, which is expected to be a commitish (branch,
-tag, commit hash, etc.) from one of the `repo` declarations, and interleaved into `<branch>` at the directory named `<name>/`.
+tag, commit hash, etc.) from one of the `repo` declarations, and interleaved
+into `<branch>` at the directory named `<name>/`.
+
+`<name>` must have been previously declared with `declare-dir`.
 
 `-` can be given instead of `<name>`, which cause `<source>`'s contents to be
 "dereferenced" and put at the root.  This is intended for downstream repos of

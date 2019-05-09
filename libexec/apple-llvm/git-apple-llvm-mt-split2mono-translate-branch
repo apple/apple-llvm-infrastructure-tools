@@ -5,18 +5,15 @@ helper mt_split2mono
 helper mt_llvm_svn2git
 
 usage() {
-    printf "%s\n"                                                            \
-        "usage: $(print_cmdname) <branch> "                                  \
-        "           [--repeat <upstream>]..."                                \
-        "           <ref>:<dir>..."                                          \
-        "   <branch>      the branch to interleave"                          \
-        "   <upstream>    monorepo upstream to interleave with <ref>:<dir>"  \
-        "   <ref>...      the refs for split branches to combine"            \
-        "   <dir>...      the dirs for each split branch; '-' for root"      \
-        ""                                                                   \
-        "   updates:"                                                        \
-        "      refs/heads/<branch> -> <interleaved-monorepo-commit>"         \
-        "      refs/heads/mt/<branch>/{<dir>}/mt-split -> <split-commit>"
+    printf "%s\n" \
+        "usage: $(print_cmdname) <branch> <ref>:<dir>..."                   \
+        ""                                                                  \
+        "   <branch>      the branch to interleave"                         \
+        "   <ref>         a ref to interleave commits from"                 \
+        "                   '%<ref>' to repeat commits from <upstream>"     \
+        "                   '-' if there is no relevant split repo"         \
+        "   <dir>         the name of the top-level tree to put <ref> into" \
+        "                   '-' for root (splat contents)"
 }
 
 main() {

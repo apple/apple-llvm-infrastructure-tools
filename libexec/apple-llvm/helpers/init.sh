@@ -21,6 +21,12 @@ helper canonicalize_path
 APPLE_LLVM_HELPERS_PATH="$(canonicalize_path "$APPLE_LLVM_HELPERS_PATH")"
 APPLE_LLVM_LIBEXEC_DIR="$(dirname "$APPLE_LLVM_HELPERS_PATH")"
 
+awk_helper() {
+    local name="$1"
+    shift
+    awk -f "$APPLE_LLVM_HELPERS_PATH"/"$name".awk "$@";
+}
+
 mt_register_paths_to_clean_up() {
     if [ -z "$MT_CLEANUP_ONCE" ]; then
         MT_CLEANUP_ONCE=1
@@ -136,15 +142,20 @@ log() {
 parse_cmdline_option() {
     local param="$1"
     local var="$2"
-    shift 2
-    [ "${1%%=*}" = "$param" ] ||
-        error "internal: expected '$1' to be '$param[=*]'"
+    local spell="$3"
+    local next="$4"
+    local spell_noarg="${spell%%=*}"
+
+    # Sanity check: param is (or is a glob for) spell.
+    local leftover="${spell_noarg#$param}"
+    [ -z "$leftover" ] ||
+        error "internal: expected '$spell' to be '$param[=*]'"
     local value ret
-    if [ "$param" = "$1" ]; then
-        value="$2"
+    if [ "$spell" = "$spell_noarg" ]; then
+        value="$next"
         ret=2
     else
-        value="${1#*=}"
+        value="${spell#*=}"
         ret=1
     fi
     eval "$var=\"\$value\""

@@ -1,0 +1,5 @@
+RUN: %mtgen list --list-actions | check-diff %s ACTIONS %t
+ACTIONS: mapping a-name/master
+ACTIONS: branch b2
+ACTIONS: branch b1
+ACTIONS: branch b3

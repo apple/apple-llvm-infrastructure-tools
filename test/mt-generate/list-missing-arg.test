@@ -1,0 +1,7 @@
+# Reject listings that require arguments that are missing the argument.
+RUN: not %mtgen list --list-active-dirs | check-empty
+
+# Check that the = gets stripped.
+RUN: not %mtgen list --list-active-dirs= | check-empty
+RUN: not %mtgen list --list-active-dirs= 2>&1 | grep error: | check-diff %s ARG %t
+ARG: error: --list-active-dirs requires an argument

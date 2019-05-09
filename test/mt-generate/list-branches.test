@@ -1,0 +1,4 @@
+RUN: %mtgen list --list-branches | check-diff %s BRANCHES %t
+BRANCHES: b1
+BRANCHES: b2
+BRANCHES: b3

@@ -1,0 +1,24 @@
+# Check branch b3, which repeats commits from b1.
+RUN: %mtgen list --list-active-dirs b3 | check-diff %s ACTIVE-DIRS-B3 %t
+RUN: %mtgen list --list-active-dirs=b3 | check-diff %s ACTIVE-DIRS-B3 %t
+RUN: %mtgen list --list-repeat-dirs=b3 | check-diff %s REPEAT-DIRS-B3 %t
+RUN: %mtgen list --list-inactive-dirs=b3 | check-diff %s INACTIVE-DIRS-B3 %t
+RUN: %mtgen list --list-active-refdirs=b3 | check-diff %s ACTIVE-REFDIRS-B3 %t
+RUN: %mtgen list --list-repeat-refdirs=b3 | check-diff %s REPEAT-REFDIRS-B3 %t
+RUN: %mtgen list --list-inactive-refdirs=b3 | check-diff %s INACTIVE-REFDIRS-B3 %t
+RUN: %mtgen list --list-all-refdirs=b3 | check-diff %s ALL-REFDIRS-B3 %t
+ACTIVE-DIRS-B3: z
+ACTIVE-REFDIRS-B3: a-name/z:z
+REPEAT-DIRS-B3: w
+REPEAT-DIRS-B3: x
+REPEAT-DIRS-B3: y
+REPEAT-REFDIRS-B3: %b1:w
+REPEAT-REFDIRS-B3: %b1:x
+REPEAT-REFDIRS-B3: %b1:y
+INACTIVE-DIRS-B3: v
+INACTIVE-REFDIRS-B3: -:v
+ALL-REFDIRS-B3: -:v
+ALL-REFDIRS-B3: %b1:w
+ALL-REFDIRS-B3: %b1:x
+ALL-REFDIRS-B3: %b1:y
+ALL-REFDIRS-B3: a-name/z:z

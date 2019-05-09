@@ -1,0 +1,6 @@
+RUN: %mtgen list --list-dirs | check-diff %s DIRS %t
+DIRS: v
+DIRS: w
+DIRS: x
+DIRS: y
+DIRS: z

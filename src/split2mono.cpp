@@ -78,9 +78,10 @@ static int usage(const std::string &msg, const char *cmd) {
           "                                     <head> (<sha1>:<dir>)+]\n"
           "       %s dump               <dbdir>\n"
           "\n"
-          "   <dbdir>/upstreams: merged upstreams (text)\n"
-          "   <dbdir>/commits: translated commits (bin)\n"
-          "   <dbdir>/index: translated commits (bin)\n",
+          "special handling for <sha1>:<dir> pairs\n"
+          "       <dir>     '-'         root\n"
+          "                 000...0     not yet started\n"
+          "       <sha1>    '-'         untracked\n",
           cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd);
   return 1;
 }
@@ -363,18 +364,31 @@ static int main_interleave_commits(const char *cmd, int argc,
     sha1 = interleaver.sha1s.lookup(text);
     return 0;
   };
-  bool is_new = false;
+  auto try_parse_ch = [](const char *&current, int ch) {
+    if (*current != ch)
+      return 1;
+    ++current;
+    return 0;
+  };
   for (int i = 0; i < argc; ++i) {
     const char *arg = argv[i];
     sha1_ref head;
+    bool is_tracked = false;
+    if (try_parse_ch(arg, '-'))
+      is_tracked = true;
+    if ((is_tracked && parse_sha1(arg, head)) || try_parse_ch(arg, ':'))
+      return error("invalid <sha1>:... in '" + std::string(argv[i]) + "'");
+
     int d = -1;
-    if (parse_sha1(arg, head) || *arg++ != ':' ||
-        interleaver.dirs.add_dir(arg, is_new, d))
-      return error("invalid <sha1>:<dir> '" + std::string(argv[i]) + "'");
+    bool is_new = false;
+    if (interleaver.dirs.add_dir(arg, is_new, d))
+      return error("invalid ...:<dir> in '" + std::string(argv[i]) + "'");
     if (!is_new)
       return usage("duplicate <dir> '" + std::string(arg) + "'", cmd);
+    if (!is_tracked)
+      continue;
+    interleaver.dirs.tracked_dirs.set(d);
     interleaver.dirs.set_head(d, head);
-    interleaver.has_root |= !strcmp("-", arg);
   }
 
   return interleaver.read_queue_from_stdin() || interleaver.interleave();

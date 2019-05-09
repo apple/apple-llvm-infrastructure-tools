@@ -8,16 +8,73 @@ helper mt_llvm_svn2git
 
 usage() {
     printf "%s\n"                                                             \
-        "usage: $(print_cmdname) [options] <downstream>"                      \
+        "usage: $(print_cmdname) [options] <name>"                            \
         ""                                                                    \
+        "   --config-dir=<dir>"                                               \
+        "                   Config directory to find <name>.mt-config in"     \
         "   --git-dir=<dir> Git directory to use (default: $DEFAULT_GIT_DIR)" \
         "   --[no-]setup    Set up <dir> and update remotes (default: on)"    \
-        "   --dry-run       Don't actually generate anything"
+        "   --dry-run       Don't actually generate anything"                 \
+        "   --list-actions  List generate actions in order (and exit)"        \
+        "   --list-repos    List repos (and exit)"                            \
+        "   --list-branches List branches to generate (and exit)"             \
+        "   --list-dirs     List declared dirs (and exit)"                    \
+        "   --list-(active|inactive|repeat)-dirs=<branch>"                    \
+        "                   List active, inactive, or repeated dirs for"      \
+        "                   <branch> (and exit)"                              \
+        "   --list-(active|inactive|repeat|all)-refdirs=<branch>"             \
+        "                   List active, inactive, repeated, or all dirs for" \
+        "                   <branch> in <ref>:<dir> format (and exit)"
 }
 
-APPLE_LLVM_MT_CONFIG="$(
+DEFAULT_CONFIG_DIR="$(
     relative_canonicalize_path "$APPLE_LLVM_LIBEXEC_DIR/../../mt-config")"
+DEFAULT_GIT_DIR=mt-repo.git
+
+print_list() {
+    local list="$1"
+    shift
+    local which="$list"
+    which="${which#--list-}"
+    which="${which%%=*}"
+    which="${which//-/_}"
+
+    is_function print_"$which" || usage_error "unknown option '$list'"
+    print_"$which" "$@"
+}
+print_actions() {
+    cat "$MT_CONFIG" | sort | awk '$1 == "generate" {print $3, $4}'
+}
 print_repos() { cat "$MT_CONFIG" | awk '$1 == "repo" {print $2, $3}'; }
+print_branches() { print_actions | awk '$1 == "branch" {print $2}' | sort; }
+print_dirs() {
+    cat "$MT_CONFIG" | awk '$1 == "declare-dir" {print $2}' | sort
+}
+print_repeat() {
+    awk -v branch="$1" '
+    $1 == "repeat" && $2 == branch {
+        if (any) {
+            printf "error: %s:%s: second repeat for branch %s\n" >"/dev/stderr"
+            exit 1
+        }
+        print $3
+        any = 1
+    }' "$MT_CONFIG"
+}
+print_active_dirs()      { print_dirs_impl "$1" 1 0 0 0 0; }
+print_inactive_dirs()    { print_dirs_impl "$1" 0 1 0 0 0; }
+print_repeat_dirs()      { print_dirs_impl "$1" 0 0 1 0 0; }
+print_active_refdirs()   { print_dirs_impl "$1" 1 0 0 1 0; }
+print_inactive_refdirs() { print_dirs_impl "$1" 0 1 0 1 0; }
+print_repeat_refdirs()   { print_dirs_impl "$1" 0 0 1 1 0; }
+print_all_refdirs()      { print_dirs_impl "$1" 1 1 1 1 0; }
+print_undeclared_dirs()  { print_dirs_impl "$1" 1 0 0 0 1; }
+print_dirs_impl() {
+    local branch="$1" undecl=$6
+    awk_helper mt-config-dirs -v branch="$branch" -v active=$2              \
+        -v inactive=$3 -v repeat=$4 -v refs=$5 -v undecl=$undecl            \
+        "$MT_CONFIG" "$MT_CONFIG"
+}
 
 mt_setup() {
     GIT_DIR="$(canonicalize_path "$GIT_DIR")"
@@ -130,10 +187,11 @@ mt_generate_branch() {
     local branch=$rawbranch
     [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
 
-    local refdirs="$(cat "$MT_CONFIG" |
-    awk -v branch=$rawbranch '$1=="dir"&&$2==branch{print $4":"$3}')"
-    local repeat="$(cat "$MT_CONFIG" |
-    awk -v branch=$rawbranch '$1=="repeat"&&$2==branch{print $3}')"
+    local refdirs repeatdirs inactivedirs
+    refdirs="$(print_active_refdirs "$rawbranch")" ||
+        error "failed to extract active refdirs for $rawbranch"
+    repeat="$(print_repeat "$rawbranch")" ||
+        error "failed to extract any repeat directive for $rawbranch"
 
     [ -n "$refdirs" ] ||
         error "generate $branch: no 'dir' declarations"
@@ -144,20 +202,20 @@ mt_generate_branch() {
         dir=${refdir#*:}
         [ "$refdir" = "$ref:$dir" ] ||
             error "generate $branch: invalid 'dir' with colon '$refdir'"
-        run git rev-parse $ref^{commit} >/dev/null ||
+        run --dry git rev-parse $ref^{commit} >/dev/null ||
             error "generate $branch: invalid ref '$ref' in dir '$dir'"
         [ "$dir" = "*" ] &&
             error "generate $branch: invalid dir '$dir' for ref '$ref'"
     done
-
     if [ -n "$repeat" ]; then
         [ "${repeat:0:${#heads}}" = $heads ] || repeat=$heads$repeat
-        run git rev-parse $repeat^{commit} >/dev/null ||
+        run --dry git rev-parse $repeat^{commit} >/dev/null ||
             error "generate $branch: invalid repeat ref '$ref'"
     fi
 
-    run --dry git apple-llvm mt split2mono-translate-branch \
-        ${repeat:+--repeat }$repeat $branch $refdirs ||
+    refdirs="$(print_all_refdirs "$rawbranch")" ||
+        error "failed to extract complete refdirs for $rawbranch"
+    run --dry git apple-llvm mt split2mono-translate-branch $branch $refdirs ||
         error "failed to generate branch '$branch'"
 }
 
@@ -194,13 +252,20 @@ mt_generate_splitrefs() {
         error "failed to update splitrefs for '$branch'"
 }
 
-DEFAULT_GIT_DIR=mt-repo.git
+CONFIG_DIR="$DEFAULT_CONFIG_DIR"
 GIT_DIR=$DEFAULT_GIT_DIR
 SETUP=1
 should_setup() { [ ! "${SETUP:-0}" = 0 ]; }
 NAME=
 while [ $# -gt 0 ]; do
     case "$1" in
+        --config-dir|--config-dir=*)
+            parse_cmdline_option --config-dir CONFIG_DIR "$@"
+            shift $?
+            [ -n "$CONFIG_DIR" ] || usage_error "--config-dir cannot be empty"
+            [ -d "$CONFIG_DIR" ] ||
+                usage_error "expected config dir '$CONFIG_DIR' to be directory"
+            ;;
         --git-dir|--git-dir=*)
             parse_cmdline_option --git-dir GIT_DIR "$@"
             shift $?
@@ -209,6 +274,22 @@ while [ $# -gt 0 ]; do
         --dry-run)  DRY_RUN=1; shift ;;
         --setup)    SETUP=1; shift ;;
         --no-setup) SETUP=0; shift ;;
+        --list-*-*dirs|--list-*-*dirs=*)
+            LIST="$1"
+            parse_cmdline_option "--list-*-*dirs" LIST_BRANCH "$@"
+            shift $?
+            [ -n "$LIST_BRANCH" ] ||
+                usage_error "${LIST%=} requires an argument"
+            ;;
+        --list-repeat|--list-repeat=*)
+            LIST="$1"
+            parse_cmdline_option "--list-repeat" LIST_BRANCH "$@"
+            shift $?
+            [ -n "$LIST_BRANCH" ] ||
+                usage_error "${LIST%=} requires an argument"
+            ;;
+        --list-*=*) usage_error "unknown option '$1'" ;;
+        --list-*) LIST="$1"; shift ;;
         --help|--usage|-h) usage; exit 0 ;;
         -*) usage_error "unknown option '$1'" ;;
         *)
@@ -216,18 +297,22 @@ while [ $# -gt 0 ]; do
             [ -n "$1" ] || usage_error "empty name for downstream"
             has_no_spaces "$1" || usage_error "branch name '$1' has spaces"
             NAME=$1
-            MT_CONFIG="$APPLE_LLVM_MT_CONFIG/$NAME.mt-config"
-            [ -f "$MT_CONFIG" ] ||
-                usage_error "config for '$NAME' not found at '$MT_CONFIG'"
+            MT_CONFIG="$CONFIG_DIR/$NAME.mt-config"
+            [ -r "$MT_CONFIG" ] ||
+                usage_error "cannot read '$MT_CONFIG'"
             shift
             ;;
     esac
 done
 
-[ -n "$NAME" ] || usage_error "missing name of mt-config"
+[ -n "$MT_CONFIG" ] || usage_error "missing name of mt-config"
+if [ -n "$LIST" ]; then
+    print_list "$LIST" "$LIST_BRANCH"
+    exit $?
+fi
 
 mt_setup || exit 1
-cat "$MT_CONFIG" | sort | awk '$1 == "generate" {print $3, $4}' |
+print_actions |
 while read action object; do
     mt_generate "$action" "$object" ||
         error "failed to generate '$action' using '$object'"

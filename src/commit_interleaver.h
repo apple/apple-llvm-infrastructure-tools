@@ -7,6 +7,7 @@
 #include "read_all.h"
 #include "sha1_pool.h"
 #include "split2monodb.h"
+#include <array>
 
 namespace {
 struct translation_queue {
@@ -29,7 +30,6 @@ struct commit_interleaver {
 
   sha1_ref head;
   dir_list dirs;
-  bool has_root = false;
   translation_queue q;
 
   std::vector<char> stdin_bytes;
@@ -99,6 +99,9 @@ int translation_queue::parse_source(const char *&current, const char *end) {
         d = dirs.lookup_dir(current, end, found);
         if (!found)
           return error("undeclared directory '" + std::string(current, end) +
+                       "' in start directive");
+        if (!dirs.tracked_dirs.test(d))
+          return error("untracked directory '" + std::string(current, end) +
                        "' in start directive");
         current = end;
         return 0;
@@ -433,43 +436,19 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
                                        sha1_ref &tree_sha1) {
   assert(!base_commit->is_zeros());
 
-  struct tracking_context {
-    std::bitset<dir_mask::max_size> added;
-    int where[dir_mask::max_size] = {0};
-    int parents[dir_mask::max_size] = {0};
-  };
-  struct other_tracking_context : tracking_context {
-    const char *names[dir_mask::max_size];
-    int num_names = 0;
-    std::bitset<dir_mask::max_size> is_tracked_blob;
-  };
-  tracking_context dcontext;
-  other_tracking_context ocontext;
+  std::array<int, dir_mask::max_size> parent_for_d;
+  parent_for_d.fill(-1);
 
-  // Index by parent.
   constexpr static const size_t max_parents = 128;
+  std::array<git_tree, max_parents> trees;
+  std::bitset<max_parents> contributed;
   if (parents.size() > max_parents)
     return error(std::to_string(parents.size()) +
                  " is too many parents (max: " + std::to_string(max_parents) +
                  ")");
 
-  auto lookup_other = [&ocontext](const char *name, int &index, bool &is_new) {
-    auto &o = ocontext;
-    for (int i = 0; i < o.num_names; ++i)
-      if (!strcmp(o.names[i], name)) {
-        index = i;
-        is_new = false;
-        return 0;
-      }
-    if (o.num_names == dir_mask::max_size)
-      return 1;
-    index = o.num_names++;
-    o.names[index] = name;
-    is_new = true;
-    return 0;
-  };
-
-  int base_d = source.dir_index;
+  // Add the base directory.
+  const int base_d = source.dir_index;
   if (source.is_root) {
     git_tree tree;
     tree.sha1 = base_commit;
@@ -490,93 +469,71 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
     items.back().name = dirs.list[base_d].name;
     items.back().type = git_tree::item_type::tree;
   }
-  dcontext.added.set(base_d);
-
   if (is_head && !dirs.active_dirs.test(base_d))
     dirs.active_dirs.set(base_d);
 
-  // FIXME: This might be cleaner as a two pass algorithm: (1) to understand
-  // the various input trees and (2) to construct the output tree.
-  const bool ignore_blobs = source.is_root;
-  bool needs_cleanup = false;
-  int blob_parent = -1;
-  int untracked_path_parent = -1;
+  // Pick parents for all the other directories.
+  auto find_d = [&](const char *name, bool is_known_dir) {
+    int d = dirs.lookup_dir(name, is_known_dir);
+    if (is_known_dir)
+      return d;
+
+    // Anything unknown is part of the monorepo root.
+    d = dirs.lookup_dir("-", is_known_dir);
+    if (is_known_dir)
+      return d;
+    return -1;
+  };
+  int inactive_p = -1;
+  auto get_dir_p = [&](int d) -> int & {
+    return dirs.active_dirs.test(d) ? parent_for_d[d] : inactive_p;
+  };
+  auto update_p = [&](int &dir_p, int p) {
+    dir_p = p;
+    contributed.set(p);
+  };
   for (int p = 0, pe = parents.size(); p != pe; ++p) {
     assert(!parents[p]->is_zeros());
-    git_tree tree;
+    git_tree &tree = trees[p];
     tree.sha1 = parents[p];
     if (cache.ls_tree(tree))
       return 1;
 
     for (int i = 0; i < tree.num_items; ++i) {
       auto &item = tree.items[i];
-      // Pretend "commit" items (for submodules) are also blobs, since they
-      // aren't interestingly different and we should treat them similarly.
-      const bool is_blob = item.type != git_tree::item_type::tree;
-      if (ignore_blobs && is_blob)
+
+      // Optimization: skip the directory lookup if this source is contributing
+      // the monorepo root.
+      if (source.is_root && item.type != git_tree::item_type::tree)
         continue;
 
-      bool is_tracked_dir = false;
-      int d = dirs.lookup_dir(is_blob ? "-" : item.name, is_tracked_dir);
-      if (is_tracked_dir) {
-        // The base commit takes priority even if we haven't seen it in a
-        // first-parent commit yet.
-        //
-        // TODO: add a test where the base directory is possibly inactive,
-        // because there are non-first-parent commits that get mapped ahead of
-        // time.
-        if (d == base_d)
-          continue;
+      bool is_known_dir = false;
+      int d = find_d(item.name, is_known_dir);
+      if (!is_known_dir)
+        return error("no monorepo root to claim undeclared directory '" +
+                     std::string(dirs.list[d].name) + "' in " +
+                     parents[p]->to_string());
+      if (!dirs.list[d].is_root)
+        if (item.type != git_tree::item_type::tree)
+          return error("invalid non-tree for directory '" +
+                       std::string(dirs.list[d].name) + "' in " +
+                       parents[p]->to_string());
 
-        // Aside from the base dir, treat inactive dirs as if they are not
-        // tracked at all.
-        is_tracked_dir = dirs.active_dirs.test(d);
-      }
+      // The base commit takes priority even if we haven't seen it in a
+      // first-parent commit yet.
+      //
+      // TODO: add a test where the base directory is possibly inactive,
+      // because there are non-first-parent commits that get mapped ahead of
+      // time.
+      if (d == base_d)
+        continue;
 
-      if (!is_tracked_dir)
-        d = -1;
+      int &dir_p = get_dir_p(d);
 
-      // Look up context for blobs and untracked trees.
-      const bool is_tracked_tree = !is_blob && is_tracked_dir;
-      const bool is_tracked_blob = is_blob && is_tracked_dir;
-      assert(int(is_tracked_tree) + int(is_tracked_blob) +
-                 int(!is_tracked_dir) ==
-             1);
-      int o = -1;
-      if (!is_tracked_tree) {
-        bool is_new;
-        if (lookup_other(item.name, o, is_new))
-          return error("too many blobs and untracked trees");
-      }
-      if (is_tracked_blob)
-        if (blob_parent == -1)
-          blob_parent = p;
-      if (!is_tracked_dir)
-        if (untracked_path_parent == -1)
-          untracked_path_parent = p;
-
-      // Add it up front if:
-      // - item is a tracked tree not yet seen; or
-      // - item is a tracked blob and p is the current blob parent; or
-      // - item is untracked and p is the current untracked path parent.
-      if (is_tracked_tree) {
-        if (!dcontext.added.test(d)) {
-          dcontext.where[d] = items.size();
-          dcontext.parents[d] = p;
-          dcontext.added.set(d);
-          items.push_back(item);
-          continue;
-        }
-      } else {
-        if ((is_tracked_blob && blob_parent == p) ||
-            (!is_tracked_dir && untracked_path_parent == p)) {
-          ocontext.where[o] = items.size();
-          ocontext.parents[o] = p;
-          ocontext.added.set(o);
-          ocontext.is_tracked_blob.set(o, is_tracked_blob);
-          items.push_back(item);
-          continue;
-        }
+      // Use the first parent found that has content for a directory.
+      if (dir_p == -1) {
+        update_p(dir_p, p);
+        continue;
       }
 
       // The first parent should get caught implicitly by the logic above.
@@ -604,17 +561,14 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       // a way to annotate the LLVM svnbaserev with a branch depth, extending
       // the concept that a negative svnbaserev takes priority over a positive
       // one.
-      if (is_tracked_dir)
+      if (dirs.active_dirs.test(d))
         continue;
 
       // Look up revs to pick a winner.
-      int old_p = is_tracked_tree
-                      ? dcontext.parents[d]
-                      : is_tracked_blob ? blob_parent : untracked_path_parent;
-
+      //
       // Revs are stored signed, where negative indicates the parent itself is
       // not a commit from upstream LLVM (positive indicates that it is).
-      const int old_srev = revs[old_p];
+      const int old_srev = revs[dir_p];
       const int new_srev = revs[p];
       const int new_rev = new_srev < 0 ? -new_srev : new_srev;
       const int old_rev = old_srev < 0 ? -old_srev : old_srev;
@@ -629,42 +583,31 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
         if (old_srev <= 0 || new_srev >= 0)
           continue;
 
-      // Handle changes.
-      if (is_tracked_tree) {
-        // Easy for tracked trees.
-        dcontext.parents[d] = p;
-        items[dcontext.where[d]] = item;
-        continue;
-      }
-
-      // Update the parent.
-      if (is_tracked_blob)
-        blob_parent = p;
-      else
-        untracked_path_parent = p;
-
-      // Invalidate the old items.
-      needs_cleanup = true;
-      for (int j = 0; j < ocontext.num_names; ++j)
-        if (ocontext.added.test(j))
-          if (ocontext.is_tracked_blob.test(j) == is_tracked_blob) {
-            items[ocontext.where[j]].sha1 = sha1_ref();
-            ocontext.added.reset(j);
-          }
-
-      ocontext.where[o] = items.size();
-      ocontext.parents[o] = p;
-      ocontext.added.set(o);
-      ocontext.is_tracked_blob.set(o, is_tracked_blob);
-      items.push_back(item);
+      // Change the parent.
+      update_p(dir_p, p);
     }
   }
 
-  if (needs_cleanup)
-    items.erase(std::remove_if(
-                    items.begin(), items.end(),
-                    [](const git_tree::item_type &item) { return !item.sha1; }),
-                items.end());
+  // Fill up the items for the tree.
+  for (int p = 0, pe = parents.size(); p != pe; ++p) {
+    if (!contributed.test(p))
+      continue;
+
+    const git_tree &tree = trees[p];
+    for (int i = 0; i < tree.num_items; ++i) {
+      auto &item = tree.items[i];
+      if (source.is_root && item.type != git_tree::item_type::tree)
+        continue;
+
+      bool is_known_dir = false;
+      int d = find_d(item.name, is_known_dir);
+      assert(is_known_dir);
+      assert(d != -1);
+      if (d != base_d)
+        if (p == get_dir_p(d))
+          items.push_back(item);
+    }
+  }
 
   // Sort and assert that we don't have any duplicates.
   std::sort(items.begin(), items.end(),
@@ -677,6 +620,10 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
                               return strcmp(lhs.name, rhs.name) == 0;
                             }) == items.end());
 
+  // Make the tree.
+  if (items.size() > dir_mask::max_size)
+    return error("too many items (max: " + std::to_string(dir_mask::max_size) +
+                 "); constructing tree for " + base_commit.sha1->to_string());
   git_tree tree;
   tree.num_items = items.size();
   tree.items = cache.make_items(items.data(), items.data() + items.size());
@@ -773,7 +720,12 @@ void commit_interleaver::print_heads(FILE *file) {
   if (head)
     sha1 = textual_sha1(*head);
   fprintf(file, "%s", sha1.bytes);
-  for (auto &dir : dirs.list) {
+  for (int d = 0, de = dirs.list.size(); d != de; ++d) {
+    if (!dirs.tracked_dirs.test(d))
+      continue;
+
+    auto &dir = dirs.list[d];
+    assert(bool(dir.head) == dirs.active_dirs.test(d));
     if (dir.head)
       sha1 = textual_sha1(*dir.head);
     else

@@ -1,5 +1,6 @@
 RUN: printf "\n" | check-diff %s EMPTY %t
-RUN: printf "" | check-diff %s EMPTY %t
+RUN: printf "\n\n" | not check-diff %s EMPTY %t
+RUN: printf "" | not check-diff %s EMPTY %t
 EMPTY: 
 
 RUN: printf "" | not check-diff %s MISSING %t
@@ -14,3 +15,20 @@ RUN: printf "x\na b\nc"         | not check-diff %s ABC %t
 RUN: printf "a b\nc\nx"         | not check-diff %s ABC %t
 ABC: a b
 ABC: c
+
+RUN: printf "d1\nd2\nd3\nd4\nd5\nd6\nd7\nd8\nd9\nd10\n" \
+RUN:   | check-diff %s DS %t
+DS: d1
+ DS: d2
+	DS: d3
+#DS: d4
+$DS: d5
+&DS: d6
+*DS: d7
+@DS: d8
+# DS: d9
+most things DS: d10
+NOTDS: not d1
+NOT_DS: not d2
+NOT-DS: not d3
+DSNOT: not d4
