@@ -1,0 +1,34 @@
+#!/bin/bash
+
+usage() {
+    printf "usage: $(basename "$0") <checks-input> <prefix> <tempdir>\n"
+}
+usage_error() {
+    usage >&2
+    error "$@"
+}
+error() { printf "error: %s\n" "$*" >&2; exit 1; }
+run() { printf "# %s\n" "$*" >&2; "$@"; }
+check() { run "$@" || exit 1; }
+
+
+if [ $# -eq 0 ]; then
+    usage
+    exit 0
+fi
+
+[ $# -eq 3 ] || usage_error "wrong number of positional parameter"
+CHECKS="$1"
+PREFIX="$2"
+T="$3"
+D="$T"."$PREFIX".d
+A="$D"/a
+B="$D"/b
+
+run grep -e "$PREFIX:" || error "no hits for '$PREFIX' in '$CHECKS'"
+check mkdir -p "$D"
+check cat >"$A"
+check cat <"$CHECKS" |
+check grep -e "$PREFIX:" |
+check sed -e "s,.*$PREFIX:" >"$B"
+check diff -w "$A" "$B"

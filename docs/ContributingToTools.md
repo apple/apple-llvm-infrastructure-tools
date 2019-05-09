@@ -29,6 +29,8 @@ For test suites that use `pytest`, add the name of the subdirectory to the
 ### Testing tools
 
 - `not`: invert the exit status of a `RUN:` command.
+- `check-empty`: check for empty output.
+- `check-diff`: check for matching output.
 - `mkrepo.sh [--bare] <repo>`: create a git repository.
 - `mkblob.sh <repo> <blob>`: create and commit a blob with the given name.
 - `mkrange.sh <repo> <first> <last>`: run `mkblob.sh` on `{<first>..<last>}` in

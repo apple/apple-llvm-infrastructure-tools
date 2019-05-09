@@ -1,0 +1,16 @@
+RUN: printf "\n" | check-diff %s EMPTY %t
+RUN: printf "" | check-diff %s EMPTY %t
+EMPTY: 
+
+RUN: printf "" | not check-diff %s MISSING %t
+
+RUN: printf "a b\nc"            | check-diff %s ABC %t
+RUN: printf "a b\nc\n"          | check-diff %s ABC %t
+RUN: printf " a   b \nc\n"      | check-diff %s ABC %t
+RUN: printf "c\na b"            | not check-diff %s ABC %t
+RUN: printf "a b"               | not check-diff %s ABC %t
+RUN: printf "c"                 | not check-diff %s ABC %t
+RUN: printf "x\na b\nc"         | not check-diff %s ABC %t
+RUN: printf "a b\nc\nx"         | not check-diff %s ABC %t
+ABC: a b
+ABC: c
