@@ -23,3 +23,10 @@ RUN:   | check-diff %s MAPPED %t
 MAPPED: SHA1-3
 MAPPED: SHA1-2
 MAPPED: SHA1-1
+
+RUN: number-commits -p CUSTOM %t HEAD >%t.custom
+RUN: git -C %t rev-list HEAD | apply-commit-numbers %t.custom \
+RUN:   | check-diff %s CUSTOM %t
+CUSTOM: CUSTOM-3
+CUSTOM: CUSTOM-2
+CUSTOM: CUSTOM-1
