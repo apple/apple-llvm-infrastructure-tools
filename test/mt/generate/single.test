@@ -1,0 +1,76 @@
+RUN: mkrepo %t.split
+RUN: mkrange %t.split 1 3
+RUN: git -C %t.split rm 2
+RUN: mkcommit %t.split -am 'remove 2'
+RUN: echo x >%t.split/3
+RUN: mkcommit %t.split -am 'change 3'
+RUN: git -C %t.split log --format=%%s --stat --name-status \
+RUN:   | check-diff %s SPLIT %t
+SPLIT: change 3
+SPLIT:
+SPLIT: M 3
+SPLIT: remove 2
+SPLIT:
+SPLIT: D 2
+SPLIT: mkblob: 3
+SPLIT:
+SPLIT: A 3
+SPLIT: mkblob: 2
+SPLIT:
+SPLIT: A 2
+SPLIT: mkblob: 1
+SPLIT:
+SPLIT: A 1
+
+RUN: mkrepo --bare %t.mono
+RUN: git -C %t.mono remote add split/dir %t.split
+RUN: git -C %t.mono fetch split/dir
+
+RUN: %svn2git create %t.svn2git
+RUN: mkdir %t.split2mono
+RUN: %split2mono create %t.split2mono
+RUN: %split2mono interleave-commits \
+RUN:   %t.split2mono %t.svn2git     \
+RUN:   0000000000000000000000000000000000000000 \
+RUN:   0000000000000000000000000000000000000000:dir >%t.out
+RUN: number-commits -p SPLIT %t.split HEAD  >%t.map
+RUN: number-commits -p MONO  %t.mono  HEAD >>%t.map
+RUN: cat %t.out | awk '{print $1}' \
+RUN:   | xargs git -C %t.mono log --format="%%H %%s%%n%%(trailers)%%n--" \
+RUN:       --stat --name-status \
+RUN:   | apply-commit-numbers %t.map | check-diff %s MONO %t
+MONO: MONO-5 change 3
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-5
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: M 3
+MONO: --
+MONO: MONO-4 remove 2
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-4
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: D 2
+MONO: --
+MONO: MONO-3 mkblob: 3
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-3
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: A 3
+MONO: --
+MONO: MONO-2 mkblob: 2
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-2
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: A 2
+MONO: --
+MONO: MONO-1 mkblob: 1
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-1
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: A 1
+MONO: --

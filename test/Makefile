@@ -45,3 +45,5 @@ check-split2mono check-svn2git: programs
 help:
 	@echo "Supported check targets:"
 	@echo $(lit_targets) $(pytest_targets)
+check-lit check-split2mono check-svn2git \
+	$(filter check-mt/%,$(lit_targets)): programs
