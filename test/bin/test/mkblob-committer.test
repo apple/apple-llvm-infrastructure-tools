@@ -1,0 +1,13 @@
+RUN: mkrepo %t
+RUN: env cn=abc ce=def ct=1550000001 ctz=+0100 mkblob %t b
+RUN: git -C %t log -1 --date=raw --format=format:%an%n%cn%n%ae%n%ce%n%ad%n%cd%n%B \
+RUN:   | check-diff %s LOG %t
+LOG: mkblob.sh
+LOG: abc
+LOG: mkblob@apple.llvm
+LOG: def
+LOG: 1550000000 +0000
+LOG: 1550000001 +0100
+LOG: mkblob: b
+LOG:
+LOG: added the blob b

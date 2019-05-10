@@ -1,0 +1,13 @@
+RUN: mkrepo %t
+RUN: env an=abc ae=def at=1550000001 atz=+0100 mkblob %t c
+RUN: git -C %t log -1 --date=raw --format=format:%an%n%cn%n%ae%n%ce%n%ad%n%cd%n%B \
+RUN:   | check-diff %s LOG %t
+LOG: abc
+LOG: abc
+LOG: def
+LOG: def
+LOG: 1550000001 +0100
+LOG: 1550000001 +0100
+LOG: mkblob: c
+LOG:
+LOG: added the blob c
