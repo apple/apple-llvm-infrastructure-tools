@@ -11,7 +11,7 @@ pytest_dirs := auto-updater
 pytest_targets := $(foreach t,$(pytest_dirs),check-$t)
 
 .PHONY: all clean clean-venv venv requirements
-all: $(lit_targets) $(pytest_targets)
+all: $(lit_targets) $(pytest_targets) check-lint check-types
 
 S := $(testdir)../src/
 D := $(testdir)Built
@@ -31,6 +31,12 @@ $(lit_targets) : check-%: venv requirements Makefile
 
 $(pytest_targets) : check-%: venv requirements Makefile
 	$(PYTHON_ROOT)pytest $(testdir)/$*/
+
+check-lint : venv requirements Makefile
+	$(PYTHON_ROOT)flake8 --exclude="*env" --tee flake8_report.pep8.txt $(S) $(testdir)
+
+check-types : venv requirements Makefile
+	env MYPYPATH=$(S) $(PYTHON_ROOT)mypy $(S)**/*.py $(testdir)/**/*.py
 
 check-split2mono check-svn2git: programs
 

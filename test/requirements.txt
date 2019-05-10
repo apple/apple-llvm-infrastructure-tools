@@ -1,3 +1,5 @@
 pytest
 GitPython==2.1.11
 lit
+flake8
+mypy
