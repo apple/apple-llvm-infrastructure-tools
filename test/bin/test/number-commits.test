@@ -30,3 +30,14 @@ RUN:   | check-diff %s CUSTOM %t
 CUSTOM: CUSTOM-3
 CUSTOM: CUSTOM-2
 CUSTOM: CUSTOM-1
+
+# Handle bare repos.
+RUN: mkrepo --bare %t.bare
+RUN: git -C %t.bare remote add origin %t
+RUN: git -C %t.bare fetch origin
+RUN: number-commits %t.bare origin/master >%t.bare.map
+RUN: git -C %t.bare rev-list origin/master | apply-commit-numbers %t.bare.map \
+RUN:   | check-diff %s BARE %t.bare
+BARE: SHA1-3
+BARE: SHA1-2
+BARE: SHA1-1

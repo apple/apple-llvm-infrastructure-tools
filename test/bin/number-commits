@@ -11,8 +11,12 @@ fi
 REPO="$1"
 shift
 
+# GIT_DIR should be inside REPO.
 [ -d "$REPO" ] || error "no such repo: '$REPO'"
-[ -d "$REPO"/.git ] || error "invalid repo: '$REPO'"
+GIT_DIR="$(git -C "$REPO" rev-parse --git-dir 2>/dev/null)" ||
+    error "cannot find --git-dir: '$REPO'"
+[ "$GIT_DIR" = . -o "$GIT_DIR" = .git ] ||
+    error "suspicious --git-dir '$GIT_DIR' for '$REPO'"
 
 set -o pipefail
 git rev-list --reverse "$@" | cat -n |

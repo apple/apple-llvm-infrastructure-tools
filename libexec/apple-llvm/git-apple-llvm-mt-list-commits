@@ -1,0 +1,8 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/helpers/init.sh
+helper mt_list_commits
+
+usage() { printf "%s\n" "usage: $(print_cmdname) <dir> <rev-list-args>..."; }
+
+run mt_list_commits "$@"

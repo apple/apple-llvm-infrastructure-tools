@@ -26,51 +26,44 @@ RUN: mkrepo --bare %t.mono
 RUN: git -C %t.mono remote add split/dir %t.split
 RUN: git -C %t.mono fetch split/dir
 
+RUN: rm -rf %t.svn2git
+RUN: rm -rf %t.split2mono
 RUN: %svn2git create %t.svn2git
 RUN: mkdir %t.split2mono
 RUN: %split2mono create %t.split2mono
-RUN: %split2mono interleave-commits \
-RUN:   %t.split2mono %t.svn2git     \
-RUN:   0000000000000000000000000000000000000000 \
-RUN:   0000000000000000000000000000000000000000:dir >%t.out
-RUN: number-commits -p SPLIT %t.split HEAD  >%t.map
-RUN: number-commits -p MONO  %t.mono  HEAD >>%t.map
-RUN: cat %t.out | awk '{print $1}' \
-RUN:   | xargs git -C %t.mono log --format="%%H %%s%%n%%(trailers)%%n--" \
+RUN: git -C %t.mono apple-llvm mt list-commits dir split/dir/master \
+RUN: | %split2mono -C %t.mono interleave-commits                    \
+RUN:     %t.split2mono %t.svn2git                                   \
+RUN:     0000000000000000000000000000000000000000                   \
+RUN:     0000000000000000000000000000000000000000:dir >%t.out
+RUN: cat %t.out | awk '{print $1}' | xargs git -C %t.mono update-ref master
+RUN: number-commits -p SPLIT %t.split master  >%t.map
+RUN: number-commits -p MONO  %t.mono  master >>%t.map
+RUN: git -C %t.mono log master --format="--%%n%%H %%s%%n%%(trailers:only)" \
 RUN:       --stat --name-status \
-RUN:   | apply-commit-numbers %t.map | check-diff %s MONO %t
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s MONO %t
+MONO: --
 MONO: MONO-5 change 3
-MONO:
 MONO: apple-llvm-split-commit: SPLIT-5
 MONO: apple-llvm-split-dir: dir/
-MONO:
-MONO: M 3
+MONO: M dir/3
 MONO: --
 MONO: MONO-4 remove 2
-MONO:
 MONO: apple-llvm-split-commit: SPLIT-4
 MONO: apple-llvm-split-dir: dir/
-MONO:
-MONO: D 2
+MONO: D dir/2
 MONO: --
 MONO: MONO-3 mkblob: 3
-MONO:
 MONO: apple-llvm-split-commit: SPLIT-3
 MONO: apple-llvm-split-dir: dir/
-MONO:
-MONO: A 3
+MONO: A dir/3
 MONO: --
 MONO: MONO-2 mkblob: 2
-MONO:
 MONO: apple-llvm-split-commit: SPLIT-2
 MONO: apple-llvm-split-dir: dir/
-MONO:
-MONO: A 2
+MONO: A dir/2
 MONO: --
 MONO: MONO-1 mkblob: 1
-MONO:
 MONO: apple-llvm-split-commit: SPLIT-1
 MONO: apple-llvm-split-dir: dir/
-MONO:
-MONO: A 1
-MONO: --
+MONO: A dir/1

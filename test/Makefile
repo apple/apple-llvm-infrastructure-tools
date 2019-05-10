@@ -3,6 +3,8 @@
 # Used to run the tests.
 
 lit_tests := $(filter-out ./.%,$(shell find . -name "*.test"))
+lit_test_targets := $(sort $(patsubst ./%.test,check-%, \
+														 $(filter %.test,$(lit_tests))))
 lit_testdirs := $(sort $(foreach t,$(lit_tests),$(dir $t)))
 lit_targets := $(patsubst ./%/,check-%,$(lit_testdirs))
 testdir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -29,8 +31,14 @@ clean-lit:
 $(lit_targets) : check-%: venv requirements Makefile
 	$(PYTHON_ROOT)lit -sv $(testdir)/$*/
 
+$(lit_test_targets) : check-%: venv requirements Makefile
+	$(PYTHON_ROOT)lit -sv $(testdir)/$*.test
+
 $(pytest_targets) : check-%: venv requirements Makefile
 	$(PYTHON_ROOT)pytest $(testdir)/$*/
+
+check-lit: venv requirements Makefile
+	$(PYTHON_ROOT)lit -sv $(testdir)/*/
 
 python_sources := $(shell find $(testdir) $(testdir)../libexec $(testdir)../src -not \( -path $(testdir)/.python_env -prune \) -name "*.py")
 
@@ -45,5 +53,6 @@ check-split2mono check-svn2git: programs
 help:
 	@echo "Supported check targets:"
 	@echo $(lit_targets) $(pytest_targets)
+
 check-lit check-split2mono check-svn2git \
-	$(filter check-mt/%,$(lit_targets)): programs
+	$(filter check-mt%,$(lit_targets) $(lit_test_targets)): programs

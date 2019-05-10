@@ -61,6 +61,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 static int usage(const std::string &msg, const char *cmd) {
@@ -395,12 +396,25 @@ static int main_interleave_commits(const char *cmd, int argc,
 }
 
 int main(int argc, const char *argv[]) {
-  if (argc < 2)
-    return usage("missing command", argv[0]);
+  const char *exec = argv[0];
+  --argc, ++argv;
+  if (argc > 0 && !strcmp(argv[0], "-C")) {
+    --argc, ++argv;
+    if (argc <= 0)
+      return usage("missing directory with -C", exec);
+    if (chdir(argv[0]))
+      return usage("failed to change directory '" + std::string(argv[1]) + "'",
+                   exec);
+    --argc, ++argv;
+  }
+  if (argc <= 0)
+    return usage("missing command", exec);
+  const char *cmd = argv[0];
+  --argc, ++argv;
 #define SUB_MAIN_IMPL(STR, F)                                                  \
   do {                                                                         \
-    if (!strcmp(argv[1], STR))                                                 \
-      return main_##F(argv[0], argc - 2, argv + 2);                            \
+    if (!strcmp(cmd, STR))                                                     \
+      return main_##F(exec, argc, argv);                                       \
   } while (false)
 #define SUB_MAIN(X) SUB_MAIN_IMPL(#X, X)
 #define SUB_MAIN_SVNBASE(X) SUB_MAIN_IMPL(#X "-svnbase", X##_svnbase)
@@ -415,5 +429,5 @@ int main(int argc, const char *argv[]) {
 #undef SUB_MAIN_IMPL
 #undef SUB_MAIN
 #undef SUB_MAIN_SVNBASE
-  return usage("unknown command '" + std::string(argv[1]) + "'", argv[0]);
+  return usage("unknown command '" + std::string(cmd) + "'", exec);
 }

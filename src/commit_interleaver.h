@@ -473,7 +473,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
     dirs.active_dirs.set(base_d);
 
   // Pick parents for all the other directories.
-  auto find_d = [&](const char *name, bool is_known_dir) {
+  auto find_d = [&](const char *name, bool &is_known_dir) {
     int d = dirs.lookup_dir(name, is_known_dir);
     if (is_known_dir)
       return d;
