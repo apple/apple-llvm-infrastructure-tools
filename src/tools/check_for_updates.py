@@ -7,7 +7,6 @@ from datetime import datetime
 import os
 import subprocess
 from typing import List
-import sys
 import logging
 
 
@@ -42,8 +41,12 @@ class InfrastructureToolsGitRepo:
             branch, the InfrastructureToolsNotMasterCheckout error is raised.
         """
         try:
-            remote_branch = subprocess.check_output(['git', '-C', self.checkout_path, 'rev-parse', '--abbrev-ref',
-                                                     '--symbolic-full-name', '@{u}'], stderr=subprocess.PIPE).decode('utf-8').strip()
+            remote_branch = subprocess.check_output(['git',
+                                                     '-C', self.checkout_path,
+                                                     'rev-parse',
+                                                     '--abbrev-ref',
+                                                     '--symbolic-full-name', '@{u}'],
+                                                    stderr=subprocess.PIPE).decode('utf-8').strip()
             # If we have a checkout of *master, we can probably pull.
             if remote_branch.endswith('/master'):
                 slash_idx = remote_branch.find('/')

@@ -4,7 +4,6 @@
 
 import os
 import sys
-import subprocess
 from shutil import copy, rmtree
 
 from git import Repo
@@ -28,7 +27,7 @@ def test_update_checker(tmp_path):
 
     # Create a fake tools repo with 1 commit,
     # and a clone repo.
-    fake_repo = init_repo(tmp_path)
+    init_repo(tmp_path)
     clone_dir = tmp_path / 'clone_repo'
     clone_dir.mkdir()
     clone_repo = Repo.clone_from(
