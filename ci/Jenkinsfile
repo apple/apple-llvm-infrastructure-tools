@@ -1,0 +1,29 @@
+pipeline {
+    agent {label 'MonorepoToolsNode'}
+    stages {
+        stage('Run Tests') {
+
+            steps {
+                sh '''
+                cd test
+                make -k all
+                '''
+            }
+        }
+        stage('Make Docs') {
+
+            steps {
+
+                sh '''
+                cd docs
+                make -k html
+                '''
+            }
+        }
+    }
+     post {
+        always {
+            cleanWs()
+        }
+     }
+}
