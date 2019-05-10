@@ -5,11 +5,13 @@
 REPO="$1"
 BLOB="$2"
 
-[ -d "$REPO" ] || error "invalid repo: '$REPO'"
+[ -d "$REPO" ] || error "no such repo: '$REPO'"
+[ -d "$REPO"/.git ] || error "invalid repo: '$REPO'"
 
 FILE="$REPO"/"$BLOB"
 check mkdir -p "$(dirname "$FILE")"
 check printf "%s\n" "$BLOB" > "$FILE"
+check cd "$REPO"
 check git add "$BLOB"
-check git commit -q -am \
+check git commit -am \
     "$(printf "%s\n\n%s\n" "mkblob: $BLOB" "added the blob $BLOB")"

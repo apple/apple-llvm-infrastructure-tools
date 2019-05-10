@@ -3,7 +3,17 @@ PROGRAM="$(basename "$0")"
 EXECDIR="$(dirname "$0")"
 [ "${EXECDIR:0:1}" = / ] || EXECDIR="$PWD/$EXECDIR"
 
-run() { printf "%s\n" "$*" >&2; "$@"; }
+run() {
+    local arg
+    {
+        printf "#"
+        for arg in "$@"; do
+            printf " %q" "$arg"
+        done
+        printf "\n"
+    } >&2
+    "$@"
+}
 check() { run "$@" || exit $?; }
 git() { command git -C "$REPO" "$@"; }
 
