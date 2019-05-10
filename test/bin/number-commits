@@ -1,0 +1,13 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/init.sh
+
+REPO="$1"
+shift
+
+[ -d "$REPO" ] || error "no such repo: '$REPO'"
+[ -d "$REPO"/.git ] || error "invalid repo: '$REPO'"
+
+set -o pipefail
+git rev-list --reverse "$@" | cat -n |
+awk '{printf "s/%s/SHA1-%s/g\n", $2, $1}'

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/init.sh
+
+MAP="$1"
+[ -r "$MAP" ] || error "invalid commit map '$MAP'"
+run sed -f "$MAP"

@@ -31,11 +31,14 @@ For test suites that use `pytest`, add the name of the subdirectory to the
 - `not`: invert the exit status of a `RUN:` command.
 - `check-empty`: check for empty output.
 - `check-diff`: check for matching output.
-- `mkrepo.sh [--bare] <repo>`: create a git repository.
-- `mkblob.sh <repo> <blob>`: create and commit a blob with the given name.
-- `mkrange.sh <repo> <first> <last>`: run `mkblob.sh` on `{<first>..<last>}` in
+- `mkcommit <repo> ...`: wrapper around git-commit.
+- `number-commits <repo> ...`: wrapper around git-rev-list that creates a map.
+- `apply-commit-numbers <map>`: filter input using map from `number-commits`.
+- `mkrepo [--bare] <repo>`: create a git repository.
+- `mkblob <repo> <blob>`: create and commit a blob with the given name.
+- `mkrange <repo> <first> <last>`: run `mkblob.sh` on `{<first>..<last>}` in
   sequence.
-- `mksvn.sh <co>`: make an SVN repo at `<co>.repo` and check it out to `<co>`
+- `mksvn <co>`: make an SVN repo at `<co>.repo` and check it out to `<co>`
 
 ## Documentation
 

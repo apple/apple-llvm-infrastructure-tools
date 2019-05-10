@@ -1,0 +1,25 @@
+RUN: not number-commits
+RUN: rm -rf %t
+RUN: not number-commits %t HEAD
+RUN: rm -rf %t-bad-repo
+RUN: mkdir -p %t-bad-repo
+RUN: not number-commits %t-bad-repo HEAD
+
+RUN: mkrepo %t
+RUN: mkrange %t 1 3
+RUN: number-commits %t HEAD | wc -l | check-diff %s COUNT-3 %t
+RUN: number-commits %t HEAD^ | wc -l | check-diff %s COUNT-2 %t
+RUN: number-commits %t HEAD | grep -e "^s/[a-f0-9]*/SHA1-[0-9]*/g$" \
+RUN:   | wc -l | check-diff %s COUNT-3 %t
+RUN: number-commits %t HEAD^ | grep -e "^s/[a-f0-9]*/SHA1-[0-9]*/g$" \
+RUN:   | wc -l | check-diff %s COUNT-2 %t
+COUNT-3: 3
+COUNT-2: 2
+
+RUN: number-commits %t HEAD >%t.map
+RUN: not apply-commit-numbers
+RUN: git -C %t rev-list HEAD | apply-commit-numbers %t.map \
+RUN:   | check-diff %s MAPPED %t
+MAPPED: SHA1-3
+MAPPED: SHA1-2
+MAPPED: SHA1-1
