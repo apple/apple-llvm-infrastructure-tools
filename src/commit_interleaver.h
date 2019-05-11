@@ -530,13 +530,15 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 
       int &dir_p = get_dir_p(d);
 
+      // Check for a second object from the monorepo root.
+      if (dir_p == p)
+        continue;
+
       // Use the first parent found that has content for a directory.
       if (dir_p == -1) {
         update_p(dir_p, p);
         continue;
       }
-
-      // The first parent should get caught implicitly by the logic above.
       assert(p > 0);
 
       // First parent wins for tracked directories.

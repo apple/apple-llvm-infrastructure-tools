@@ -1,0 +1,91 @@
+RUN: mkrepo %t.root
+RUN: mkrepo %t.a
+RUN: mkrepo %t.b
+RUN: env ct=1550000001 mkblob %t.a    1
+RUN: env ct=1550000002 mkblob %t.b    1
+RUN: env ct=1550000003 mkblob %t.root 1
+RUN: env ct=1550000004 mkblob %t.b    2
+RUN: env ct=1550000005 mkblob %t.root 2
+RUN: env ct=1550000006 mkblob %t.root 3
+RUN: env ct=1550000007 mkblob %t.b    3
+RUN: env ct=1550000008 mkblob %t.a    2
+RUN: git -C %t.root log --format=%%s | check-diff %s SPLIT-3 %t
+RUN: git -C %t.a    log --format=%%s | check-diff %s SPLIT-2 %t
+RUN: git -C %t.b    log --format=%%s | check-diff %s SPLIT-3 %t
+SPLIT-2: mkblob: 2
+SPLIT-2: mkblob: 1
+SPLIT-3: mkblob: 3
+SPLIT-3: mkblob: 2
+SPLIT-3: mkblob: 1
+
+RUN: mkrepo --bare %t.mono
+RUN: git -C %t.mono remote add split/root %t.root
+RUN: git -C %t.mono remote add split/a    %t.a
+RUN: git -C %t.mono remote add split/b    %t.b
+RUN: git -C %t.mono fetch --all
+
+RUN: rm -rf %t.svn2git
+RUN: rm -rf %t.split2mono
+RUN: %svn2git create %t.svn2git
+RUN: mkdir %t.split2mono
+RUN: %split2mono create %t.split2mono
+RUN: git -C %t.mono apple-llvm mt list-commits - split/root/master >%t.in
+RUN: git -C %t.mono apple-llvm mt list-commits a split/a/master   >>%t.in
+RUN: git -C %t.mono apple-llvm mt list-commits b split/b/master   >>%t.in
+RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN:     %t.split2mono %t.svn2git                                   \
+RUN:     0000000000000000000000000000000000000000                   \
+RUN:     0000000000000000000000000000000000000000:-                 \
+RUN:     0000000000000000000000000000000000000000:a                 \
+RUN:     0000000000000000000000000000000000000000:b                 \
+RUN:     <%t.in >%t.out
+RUN: cat %t.out | awk '{print $1}' | xargs git -C %t.mono update-ref master
+RUN: number-commits -p MONO %t.mono master  >%t.map
+RUN: number-commits -p ROOT %t.root master >>%t.map
+RUN: number-commits -p A    %t.a    master >>%t.map
+RUN: number-commits -p B    %t.b    master >>%t.map
+RUN: cat %t.out | apply-commit-numbers %t.map | check-diff %s OUT %t
+OUT: MONO-8 ROOT-3:- A-2:a B-3:b
+RUN: git -C %t.mono log master --format="--%%n%%H%%n%%(trailers:only)" \
+RUN:       --stat --name-status                                        \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s MONO %t
+MONO: --
+MONO: MONO-8
+MONO: apple-llvm-split-commit: A-2
+MONO: apple-llvm-split-dir: a/
+MONO: A a/2
+MONO: --
+MONO: MONO-7
+MONO: apple-llvm-split-commit: B-3
+MONO: apple-llvm-split-dir: b/
+MONO: A b/3
+MONO: --
+MONO: MONO-6
+MONO: apple-llvm-split-commit: ROOT-3
+MONO: apple-llvm-split-dir: -
+MONO: A 3
+MONO: --
+MONO: MONO-5
+MONO: apple-llvm-split-commit: ROOT-2
+MONO: apple-llvm-split-dir: -
+MONO: A 2
+MONO: --
+MONO: MONO-4
+MONO: apple-llvm-split-commit: B-2
+MONO: apple-llvm-split-dir: b/
+MONO: A b/2
+MONO: --
+MONO: MONO-3
+MONO: apple-llvm-split-commit: ROOT-1
+MONO: apple-llvm-split-dir: -
+MONO: A 1
+MONO: --
+MONO: MONO-2
+MONO: apple-llvm-split-commit: B-1
+MONO: apple-llvm-split-dir: b/
+MONO: A b/1
+MONO: --
+MONO: MONO-1
+MONO: apple-llvm-split-commit: A-1
+MONO: apple-llvm-split-dir: a/
+MONO: A a/1
