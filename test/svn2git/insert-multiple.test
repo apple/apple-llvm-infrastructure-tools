@@ -1,0 +1,14 @@
+RUN: rm -rf %t.db
+RUN: %svn2git create %t.db
+
+RUN: printf "%%s %%s\n"                            \
+RUN:    4 0123456789abcdef0123456789abcdef01234567 \
+RUN:    5 9876543210abcdef0123456789abcdef01234567 \
+RUN:    3 abcdef6789abcdef0123456789abcdef01234567 \
+RUN: | %svn2git insert %t.db
+RUN: %svn2git lookup %t.db 3 | grep ^abcdef6789abcdef0123456789abcdef01234567'$'
+RUN: %svn2git lookup %t.db 4 | grep ^0123456789abcdef0123456789abcdef01234567'$'
+RUN: %svn2git lookup %t.db 5 | grep ^9876543210abcdef0123456789abcdef01234567'$'
+RUN: not %svn2git lookup %t.db 1 | check-empty
+RUN: not %svn2git lookup %t.db 2 | check-empty
+RUN: not %svn2git lookup %t.db 6 | check-empty
