@@ -1,9 +1,8 @@
 RUN: mkrepo %t.split
-RUN: env at=1550000002 ct=1550000002 mkblob %t.split 1
-RUN: env at=1550000001 ct=1550000001 mkblob %t.split 2
-RUN: git -C %t.split log --format=%%s | check-diff %s SPLIT %t
-SPLIT: mkblob: 2
-SPLIT: mkblob: 1
+RUN: env an=me  ae=x@y.z at=1550000002 atz=+0100 \
+RUN: env cn=you ce=a@b.c ct=1550000007 ctz=-0100 \
+RUN:   mkblob %t.split 1
+RUN: git -C %t.split log --format=%%s
 
 RUN: mkrepo --bare %t.mono
 RUN: git -C %t.mono remote add split/dir %t.split
@@ -23,12 +22,9 @@ RUN: cat %t.out | awk '{print $1}' | xargs git -C %t.mono update-ref master
 RUN: number-commits -p SPLIT %t.split master  >%t.map
 RUN: number-commits -p MONO  %t.mono  master >>%t.map
 RUN: cat %t.out | apply-commit-numbers %t.map | check-diff %s OUT %t
-OUT: MONO-2 SPLIT-2:dir
-RUN: git -C %t.mono log master --format="%%H %%at %%ct%%n%%(trailers:only)" \
+OUT: MONO-1 SPLIT-1:dir
+RUN: git -C %t.mono log master --date=raw \
+RUN:   --format="%%an %%ae %%ad%%n%%cn %%ce %%cd" \
 RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s MONO %t
-MONO: MONO-2 1550000001 1550000001
-MONO: apple-llvm-split-commit: SPLIT-2
-MONO: apple-llvm-split-dir: dir/
-MONO: MONO-1 1550000002 1550000002
-MONO: apple-llvm-split-commit: SPLIT-1
-MONO: apple-llvm-split-dir: dir/
+MONO: me  x@y.z 1550000002 +0100
+MONO: you a@b.c 1550000007 -0100
