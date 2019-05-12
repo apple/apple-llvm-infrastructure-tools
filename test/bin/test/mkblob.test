@@ -16,7 +16,8 @@ RUN: not git -C %t log | check-empty
 RUN: not mkblob %t
 RUN: mkblob %t a
 RUN: cat %t/a | check-diff %s BLOB %t
-RUN: git -C %t log --date=raw --format=format:%an%n%cn%n%ae%n%ce%n%ad%n%cd%n%B \
+RUN: git -C %t log --date=raw \
+RUN:      --format=format:%%an%%n%%cn%%n%%ae%%n%%ce%%n%%ad%%n%%cd%%n%%B \
 RUN:   | check-diff %s LOG %t
 BLOB: a
 LOG: mkblob.sh

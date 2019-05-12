@@ -38,6 +38,9 @@ For test suites that use `pytest`, add the name of the subdirectory to the
 - `mkblob <repo> <blob>`: create and commit a blob with the given name.
 - `mkrange <repo> <first> <last>`: run `mkblob.sh` on `{<first>..<last>}` in
   sequence.
+- `mkmerge <repo> <id> <args>...`: create a merge commit from `<args>` using
+  `<id>` in the subject of the commit message.  Uses `--no-ff` so there is
+  always a merge commit.
 - `mksvn <co>`: make an SVN repo at `<co>.repo` and check it out to `<co>`
 
 ## Documentation

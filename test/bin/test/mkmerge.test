@@ -1,0 +1,26 @@
+RUN: not mkmerge 2>&1 | check-diff %s NO-REPO %t
+NO-REPO: error: no such repo: ''
+RUN: rm -rf %t
+RUN: not mkmerge %t 5 2>&1 | sed -e "s,'%t',missing-repo," \
+RUN:   | check-diff %s MISSING-REPO %t
+MISSING-REPO: error: no such repo: missing-repo
+
+RUN: rm -rf %t-bad-repo
+RUN: mkdir -p %t-bad-repo
+RUN: not mkmerge %t-bad-repo 5 2>&1 | sed -e "s,'%t-bad-repo',bad-repo," \
+RUN:   | check-diff %s BAD-REPO %t
+BAD-REPO: error: invalid repo: bad-repo
+
+RUN: mkrepo %t
+RUN: not git -C %t log | check-empty
+RUN: not mkmerge %t
+RUN: env ct=1550000001 mkblob %t 1
+RUN: git -C %t branch branch
+RUN: env ct=1550000002 mkblob %t 2
+RUN: git -C %t checkout branch
+RUN: not env ct=1550000003 mkmerge %t 3
+RUN: env ct=1550000003 mkmerge %t 3 master
+RUN: number-commits %t branch >%t.map
+RUN: git -C %t log -1 --format=format:"%%ct %%H %%P %%s %%b" --date-order \
+RUN:   | apply-commit-numbers %t.map | check-diff %s LOG %t
+LOG: 1550000003 SHA1-3 SHA1-1 SHA1-2 mkmerge: 3 merging master
