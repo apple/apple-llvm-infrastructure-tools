@@ -1,0 +1,131 @@
+RUN: mkrepo %t.split
+RUN: mkcommit %t.split --allow-empty --allow-empty-message -F /dev/null
+RUN: printf "subject\n" | mkcommit %t.split --allow-empty -F -
+RUN: printf "subject\n\ntrailer: valid\n" | mkcommit %t.split --allow-empty -F -
+RUN: printf "subject\n\nbody\n" | mkcommit %t.split --allow-empty -F -
+RUN: printf "subject\n\nbody\n\ntrailer: valid\n" \
+RUN:   | mkcommit %t.split --allow-empty -F -
+RUN: printf "subject: trailer-ish\nwith: two-lines\n" \
+RUN:   | mkcommit %t.split --allow-empty -F -
+RUN: printf "subject\n\ntrailer ish: invalid\n" \
+RUN:   | mkcommit %t.split --allow-empty -F -
+RUN: printf "subject\n\n trailer-ish: has-space\n" \
+RUN:   | mkcommit %t.split --allow-empty -F -
+RUN: printf "subject\n\ntrailer-ish:: invalid\n" \
+RUN:   | mkcommit %t.split --allow-empty -F -
+RUN: printf "subject\n\ntrailer:ish: invalid\n" \
+RUN:   | mkcommit %t.split --allow-empty -F -
+RUN: printf "subject\n\ninvalid-trailer-ish: \n" \
+RUN:   | mkcommit %t.split --allow-empty -F -
+
+RUN: mkrepo --bare %t.mono
+RUN: git -C %t.mono remote add split/dir %t.split
+RUN: git -C %t.mono fetch split/dir
+
+RUN: rm -rf %t.svn2git
+RUN: rm -rf %t.split2mono
+RUN: %svn2git create %t.svn2git
+RUN: mkdir %t.split2mono
+RUN: %split2mono create %t.split2mono
+RUN: git -C %t.mono apple-llvm mt list-commits dir split/dir/master \
+RUN: | %split2mono -C %t.mono interleave-commits                    \
+RUN:     %t.split2mono %t.svn2git                                   \
+RUN:     0000000000000000000000000000000000000000                   \
+RUN:     0000000000000000000000000000000000000000:dir >%t.out
+RUN: cat %t.out | awk '{print $1}' | xargs git -C %t.mono update-ref master
+RUN: number-commits -p SPLIT %t.split master  >%t.map
+RUN: number-commits -p MONO  %t.mono  master >>%t.map
+RUN: git -C %t.mono log master --reverse --format="--%%n%%H%%n%%B" \
+RUN:   | apply-commit-numbers %t.map | check-diff %s MONO %t
+MONO: --
+MONO: MONO-1
+MONO: apple-llvm-split-commit: SPLIT-1
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-2
+MONO: subject
+MONO: 
+MONO: apple-llvm-split-commit: SPLIT-2
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-3
+MONO: subject
+MONO:
+MONO: trailer: valid
+MONO: apple-llvm-split-commit: SPLIT-3
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-4
+MONO: subject
+MONO:
+MONO: body
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-4
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-5
+MONO: subject
+MONO:
+MONO: body
+MONO:
+MONO: trailer: valid
+MONO: apple-llvm-split-commit: SPLIT-5
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-6
+MONO: subject: trailer-ish
+MONO: with: two-lines
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-6
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-7
+MONO: subject
+MONO:
+MONO: trailer ish: invalid
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-7
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-8
+MONO: subject
+MONO:
+MONO: trailer-ish: has-space
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-8
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-9
+MONO: subject
+MONO:
+MONO: trailer-ish:: invalid
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-9
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-10
+MONO: subject
+MONO:
+MONO: trailer:ish: invalid
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-10
+MONO: apple-llvm-split-dir: dir/
+MONO:
+MONO: --
+MONO: MONO-11
+MONO: subject
+MONO:
+MONO: invalid-trailer-ish:
+MONO:
+MONO: apple-llvm-split-commit: SPLIT-11
+MONO: apple-llvm-split-dir: dir/
+MONO:

@@ -775,30 +775,74 @@ int git_cache::parse_commit_metadata(sha1_ref commit,
 }
 
 static int num_newlines_before_trailers(const std::string &message) {
+  // Check for an empty message.
   if (message.empty())
     return 0;
-  if (message.end()[-1] != '\n')
+
+  // Check if the subject ends.
+  const char *first = message.c_str();
+  const char *last = first + message.size();
+  assert(*last == 0);
+  if (*--last != '\n')
     return 2;
-  if (message.size() == 1)
-    return 1;
-  if (message.end()[-2] == '\n')
-    return 0;
-  size_t start = message.rfind('\n', message.size() - 2);
-  start = start == std::string::npos ? 0 : start + 1;
-  const char *ch = message.c_str() + start;
-  for (; *ch; ++ch) {
-    if (*ch >= 'a' && *ch <= 'z')
+
+  // Pattern match for a suffix of trailers.
+  bool newline = true;
+  bool space = false;
+  bool colon = false;
+  bool in_trailer = false;
+  while (first != last) {
+    int ch = *--last;
+    if (ch == '\n') {
+      if (newline)
+        return 0;
+      if (!in_trailer)
+        return 1;
+      newline = true;
+      in_trailer = false;
       continue;
-    if (*ch >= 'Z' && *ch <= 'Z')
+    }
+    newline = false;
+
+    if (ch == ' ') {
+      // Line matches "* *\n";
+      space = true;
+      colon = false;
+      in_trailer = false;
       continue;
-    if (*ch >= '0' && *ch <= '9')
+    }
+    if (ch == ':') {
+      // Line matches "*: *\n";
+      if (colon) {
+        colon = false;
+        continue;
+      }
+      if (space)
+        colon = true;
+      space = false;
+      in_trailer = false;
       continue;
-    if (*ch == '_' || *ch == '-' || *ch == '+')
+    }
+
+    space = false;
+    if (!in_trailer && !colon)
       continue;
-    if (*ch == ':')
-      return *++ch != ' ' ? 1 : 0;
-    return 1;
+    colon = false;
+
+    // Line matches "*: *\n".
+    in_trailer = true;
+    if (ch >= 'a' && ch <= 'z')
+      continue;
+    if (ch >= 'Z' && ch <= 'Z')
+      continue;
+    if (ch >= '0' && ch <= '9')
+      continue;
+    if (ch == '_' || ch == '-' || ch == '+')
+      continue;
+    in_trailer = false;
   }
+
+  // The subject is never a trailer.
   return 1;
 }
 
@@ -840,6 +884,8 @@ int git_cache::commit_tree(sha1_ref base_commit, const char *dir, sha1_ref tree,
   buffers.args.clear();
   buffers.args.push_back("git");
   buffers.args.push_back("commit-tree");
+  buffers.args.push_back("-F");
+  buffers.args.push_back("-");
   buffers.args.push_back(text_tree.bytes);
   for (auto &p : buffers.parents) {
     buffers.args.push_back("-p");
