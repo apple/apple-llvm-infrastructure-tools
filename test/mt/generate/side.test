@@ -1,0 +1,61 @@
+RUN: mkrepo %t.split
+RUN: env ct=1550000001 mkblob %t.split 1
+RUN: env ct=1550000002 mkblob %t.split 2
+RUN: git -C %t.split checkout -b side HEAD^
+RUN: env ct=1550000003 mkblob %t.split 3
+RUN: git -C %t.split checkout master
+RUN: env ct=1550000004 mkmerge %t.split 4 side
+RUN: number-commits -p SPLIT %t.split master --date-order >>%t.map
+RUN: git -C %t.split log --date-order --format="%%H %%s %%P" \
+RUN:   | apply-commit-numbers %t.map | check-diff %s SPLIT %t
+SPLIT: SPLIT-4 mkmerge: 4 SPLIT-2 SPLIT-3
+SPLIT: SPLIT-3  mkblob: 3 SPLIT-1
+SPLIT: SPLIT-2  mkblob: 2 SPLIT-1
+SPLIT: SPLIT-1  mkblob: 1
+
+RUN: mkrepo --bare %t.mono
+RUN: git -C %t.mono remote add split/dir %t.split
+RUN: git -C %t.mono fetch split/dir
+
+RUN: rm -rf %t.svn2git
+RUN: rm -rf %t.split2mono
+RUN: %svn2git create %t.svn2git
+RUN: mkdir %t.split2mono
+RUN: %split2mono create %t.split2mono
+RUN: git -C %t.mono apple-llvm mt list-commits dir split/dir/master \
+RUN: | %split2mono -C %t.mono interleave-commits                    \
+RUN:     %t.split2mono %t.svn2git                                   \
+RUN:     0000000000000000000000000000000000000000                   \
+RUN:     0000000000000000000000000000000000000000:dir >%t.out
+RUN: cat %t.out | awk '{print $1}' | xargs git -C %t.mono update-ref master
+RUN: number-commits -p MONO  %t.mono  master >>%t.map
+RUN: cat %t.out | apply-commit-numbers %t.map | check-diff %s OUT %t
+OUT: MONO-4 SPLIT-4:dir
+RUN: git -C %t.mono log master --format="--%%n%%H %%s %%P%%n%%(trailers:only)" \
+RUN:       -m --stat --name-status --reverse \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s MONO %t
+MONO: --
+MONO: MONO-1 mkblob: 1
+MONO: apple-llvm-split-commit: SPLIT-1
+MONO: apple-llvm-split-dir: dir/
+MONO: A dir/1
+MONO: --
+MONO: MONO-2 mkblob: 2 MONO-1
+MONO: apple-llvm-split-commit: SPLIT-2
+MONO: apple-llvm-split-dir: dir/
+MONO: A dir/2
+MONO: --
+MONO: MONO-3 mkblob: 3 MONO-1
+MONO: apple-llvm-split-commit: SPLIT-3
+MONO: apple-llvm-split-dir: dir/
+MONO: A dir/3
+MONO: --
+MONO: MONO-4 mkmerge: 4 MONO-2 MONO-3
+MONO: apple-llvm-split-commit: SPLIT-4
+MONO: apple-llvm-split-dir: dir/
+MONO: A dir/3
+MONO: --
+MONO: MONO-4 mkmerge: 4 MONO-2 MONO-3
+MONO: apple-llvm-split-commit: SPLIT-4
+MONO: apple-llvm-split-dir: dir/
+MONO: A dir/2
