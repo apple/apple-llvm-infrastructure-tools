@@ -32,11 +32,13 @@ $(lit_targets) : check-%: venv requirements Makefile
 $(pytest_targets) : check-%: venv requirements Makefile
 	$(PYTHON_ROOT)pytest $(testdir)/$*/
 
+python_sources := $(shell find $(testdir) $(testdir)../libexec $(testdir)../src -not \( -path $(testdir)/.python_env -prune \) -name "*.py")
+
 check-lint : venv requirements Makefile
-	$(PYTHON_ROOT)flake8 --exclude="*env" --tee flake8_report.pep8.txt $(S) $(testdir)
+	$(PYTHON_ROOT)flake8 --exclude="*env" --tee flake8_report.pep8.txt $(python_sources)
 
 check-types : venv requirements Makefile
-	env MYPYPATH=$(S) $(PYTHON_ROOT)mypy $(S)**/*.py $(testdir)/**/*.py
+	env MYPYPATH="$(S):$(testdir)../libexec/apple-llvm/src" $(PYTHON_ROOT)mypy $(python_sources)
 
 check-split2mono check-svn2git: programs
 
