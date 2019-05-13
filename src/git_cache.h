@@ -15,6 +15,20 @@ struct dir_mask {
   bool test(int i) const { return bits.test(i); }
   void reset(int i) { bits.reset(i); }
   void set(int i, bool value = true) { bits.set(i, value); }
+  void insert(int i) {
+    // TODO: add a unit test.
+    assert(i < max_size);
+    if (bits.none())
+      return;
+    if (i == 0) {
+      bits <<= 1;
+      return;
+    }
+    auto high = bits >> i << i << 1;
+    auto low = bits << max_size - i << max_size - i;
+    bits = high | low;
+    assert(!bits.test(i));
+  }
 };
 
 struct dir_type {
@@ -31,8 +45,9 @@ struct dir_list {
   dir_mask tracked_dirs;
 
   int add_dir(const char *name, bool &is_new, int &d);
-  int lookup_dir(const char *name, const char *end, bool &found);
-  int lookup_dir(const char *name, bool &found) {
+  int lookup_dir(const char *name, const char *end, bool &found) const;
+  bool is_dir(const char *name) const;
+  int lookup_dir(const char *name, bool &found) const {
     return lookup_dir(name, name + strlen(name), found);
   }
   void set_head(int d, sha1_ref head) {
@@ -205,7 +220,7 @@ int dir_list::add_dir(const char *name, bool &is_new, int &d) {
   for (; *end; ++end) {
     if (*end >= 'a' && *end <= 'z')
       continue;
-    if (*end >= 'Z' && *end <= 'Z')
+    if (*end >= 'A' && *end <= 'Z')
       continue;
     if (*end >= '0' && *end <= '9')
       continue;
@@ -223,13 +238,25 @@ int dir_list::add_dir(const char *name, bool &is_new, int &d) {
   bool found = false;
   d = lookup_dir(name, found);
   is_new = !found;
-  if (is_new)
+  if (is_new) {
+    if (size_t(d) != list.size()) {
+      tracked_dirs.insert(d);
+      active_dirs.insert(d);
+    }
     list.insert(list.begin() + d, dir);
+  }
   if (name[0] == '-' && name[1] == 0)
     list[d].is_root = true;
   return 0;
 }
-int dir_list::lookup_dir(const char *name, const char *end, bool &found) {
+
+bool dir_list::is_dir(const char *name) const {
+  bool found = false;
+  (void)lookup_dir(name, name + strlen(name), found);
+  return found;
+}
+
+int dir_list::lookup_dir(const char *name, const char *end, bool &found) const {
   ptrdiff_t count = end - name;
   int d = bisect_first_match(list.begin(), list.end(),
                              [name, count](const dir_type &dir) {

@@ -8,15 +8,21 @@ RUN: env ct=1550000004 mkblob %t.b    2
 RUN: env ct=1550000005 mkblob %t.root 2
 RUN: env ct=1550000006 mkblob %t.root 3
 RUN: env ct=1550000007 mkblob %t.b    3
-RUN: env ct=1550000008 mkblob %t.a    2
-RUN: git -C %t.root log --format=%%s | check-diff %s SPLIT-3 %t
-RUN: git -C %t.a    log --format=%%s | check-diff %s SPLIT-2 %t
-RUN: git -C %t.b    log --format=%%s | check-diff %s SPLIT-3 %t
-SPLIT-2: mkblob: 2
-SPLIT-2: mkblob: 1
-SPLIT-3: mkblob: 3
-SPLIT-3: mkblob: 2
-SPLIT-3: mkblob: 1
+RUN: git -C %t.root rm 2
+RUN: env ct=1550000008 mkcommit %t.root -m "remove: 2"
+RUN: env ct=1550000009 mkblob %t.a    2
+RUN: git -C %t.root log --format=%%s | check-diff %s SPLIT-ROOT %t
+RUN: git -C %t.a    log --format=%%s | check-diff %s SPLIT-A    %t
+RUN: git -C %t.b    log --format=%%s | check-diff %s SPLIT-B    %t
+SPLIT-ROOT: remove: 2
+SPLIT-ROOT: mkblob: 3
+SPLIT-ROOT: mkblob: 2
+SPLIT-ROOT: mkblob: 1
+SPLIT-A: mkblob: 2
+SPLIT-A: mkblob: 1
+SPLIT-B: mkblob: 3
+SPLIT-B: mkblob: 2
+SPLIT-B: mkblob: 1
 
 RUN: mkrepo --bare %t.mono
 RUN: git -C %t.mono remote add split/root %t.root
@@ -45,15 +51,20 @@ RUN: number-commits -p ROOT %t.root master >>%t.map
 RUN: number-commits -p A    %t.a    master >>%t.map
 RUN: number-commits -p B    %t.b    master >>%t.map
 RUN: cat %t.out | apply-commit-numbers %t.map | check-diff %s OUT %t
-OUT: MONO-8 ROOT-3:- A-2:a B-3:b
+OUT: MONO-9 ROOT-4:- A-2:a B-3:b
 RUN: git -C %t.mono log master --format="--%%n%%H%%n%%(trailers:only)" \
 RUN:       --stat --name-status                                        \
 RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s MONO %t
 MONO: --
-MONO: MONO-8
+MONO: MONO-9
 MONO: apple-llvm-split-commit: A-2
 MONO: apple-llvm-split-dir: a/
 MONO: A a/2
+MONO: --
+MONO: MONO-8
+MONO: apple-llvm-split-commit: ROOT-4
+MONO: apple-llvm-split-dir: -
+MONO: D 2
 MONO: --
 MONO: MONO-7
 MONO: apple-llvm-split-commit: B-3

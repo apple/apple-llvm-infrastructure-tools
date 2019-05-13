@@ -35,4 +35,4 @@ run grep -q "${es[@]}" "$CHECKS" ||
     error "no hits for '$PREFIX' in '$CHECKS'"
 run grep    "${es[@]}" "$CHECKS" | run sed -e "s,.*$PREFIX:,," >"$A" || exit 1
 check cat >"$B"
-check diff -u -w "$A" "$B"
+check diff -u -U 10 -w "$A" "$B"

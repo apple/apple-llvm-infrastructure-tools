@@ -452,12 +452,12 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
     tree.sha1 = base_commit;
     if (cache.ls_tree(tree))
       return 1;
-    for (int i = 0; i < tree.num_items; ++i) {
-      if (tree.items[i].type == git_tree::item_type::tree)
-        return error("root dir '-' has a sub-tree in " +
-                     base_commit->to_string());
-      items.push_back(tree.items[i]);
-    }
+    for (int i = 0; i < tree.num_items; ++i)
+      if (dirs.is_dir(tree.items[i].name))
+        return error("root dir '-' conflicts with tracked dir '" +
+                     base_commit->to_string() + "'");
+    items.resize(tree.num_items);
+    std::copy(tree.items, tree.items + tree.num_items, items.begin());
   } else {
     sha1_ref base_tree;
     if (cache.compute_commit_tree(base_commit, base_tree))

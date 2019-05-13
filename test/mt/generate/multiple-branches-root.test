@@ -1,0 +1,380 @@
+RUN: mkrepo %t.x
+RUN: mkrepo %t.y
+RUN: mkrepo %t.r
+
+# Buid commit graphs for branches b1 and b2 in split repos x, y, and root.
+#   x:b1   x1----x3---------x4------.--x7-----------.------x9
+#   y:b1     \     y1-----------y4---\-.-------------\---y7 \
+#   -:b1      \     \ r1-r2-----.-----\-\--r7--r9-r11 \      \
+#   x:b2      x2-----\-\---------\-x5-x6-\--\---\-----x8-----x10
+#   y:b2             y2-\------y3-\------y5--\---\------y6
+#   -:b2                 `r3--r4--r5----r6---r8--r10
+RUN: git -C %t.x checkout -b b1
+RUN: git -C %t.y checkout -b b1
+RUN: git -C %t.r checkout -b b1
+RUN: env ct=1550000001 mkblob   %t.x x1
+RUN: git -C %t.x branch b2
+RUN: env ct=1550000003 mkblob   %t.x x3
+RUN: env ct=1550000004 mkblob   %t.y y1
+RUN: git -C %t.y branch b2
+RUN: env ct=1550000006 mkblob   %t.r r1
+RUN: git -C %t.r branch b2
+RUN: env ct=1550000007 mkblob   %t.r r/2
+RUN: env ct=1550000009 mkblob   %t.x x4
+RUN: env ct=1550000012 mkblob   %t.y y4
+RUN: env ct=1550000016 mkblob   %t.x x7
+RUN: git -C %t.r rm r/2
+RUN: env ct=1550000019 mkcommit %t.r -m "rm: r/2: r7"
+RUN: git -C %t.r rm r1
+RUN: env ct=1550000021 mkcommit %t.r -m "rm:  r1: r9"
+RUN: env ct=1550000023 mkblob   %t.r r11
+RUN: env ct=1550000026 mkblob   %t.y y7
+RUN: env ct=1550000027 mkblob   %t.x x9
+RUN: git -C %t.x checkout b2
+RUN: git -C %t.y checkout b2
+RUN: git -C %t.r checkout b2
+RUN: env ct=1550000002 mkblob   %t.x x2
+RUN: env ct=1550000005 mkblob   %t.y y2
+RUN: env ct=1550000008 mkblob   %t.r r3
+RUN: env ct=1550000010 mkblob   %t.r r/4
+RUN: env ct=1550000011 mkblob   %t.y y3
+RUN: env ct=1550000013 mkmerge  %t.r r5  b1^^^
+RUN: env ct=1550000014 mkblob   %t.x x5
+RUN: env ct=1550000015 mkmerge  %t.x x6  b1^^
+RUN: env ct=1550000017 mkblob   %t.r r6
+RUN: env ct=1550000018 mkmerge  %t.y y5  b1^
+RUN: env ct=1550000020 mkmerge  %t.r r8  b1^^
+RUN: env ct=1550000022 mkmerge  %t.r r10 b1^
+RUN: env ct=1550000024 mkmerge  %t.x x8  b1^
+RUN: env ct=1550000025 mkblob   %t.y y6
+RUN: env ct=1550000028 mkmerge  %t.x x10 b1
+RUN: number-commits -p X %t.x b1 b2 --date-order  >%t.map
+RUN: number-commits -p Y %t.y b1 b2 --date-order >>%t.map
+RUN: number-commits -p R %t.r b1 b2 --date-order >>%t.map
+
+# Add an empty monorepo and fetch split commits.
+RUN: mkrepo --bare %t.mono
+RUN: git -C %t.mono remote add x %t.x
+RUN: git -C %t.mono remote add y %t.y
+RUN: git -C %t.mono remote add r %t.r
+RUN: git -C %t.mono fetch --all
+
+# Check that we built the right (split) graph.
+RUN: git -C %t.mono log --format="%%ct %%H %%s %%P" \
+RUN:    x/b1 y/b1 r/b1 x/b2 y/b2 r/b2               \
+RUN:    --reverse --date-order                      \
+RUN:  | apply-commit-numbers %t.map | check-diff %s SPLIT %t
+SPLIT: 1550000001 X-1   mkblob: x1
+SPLIT: 1550000002 X-2   mkblob: x2  X-1
+SPLIT: 1550000003 X-3   mkblob: x3  X-1
+SPLIT: 1550000004 Y-1   mkblob: y1
+SPLIT: 1550000005 Y-2   mkblob: y2  Y-1
+SPLIT: 1550000006 R-1   mkblob: r1
+SPLIT: 1550000007 R-2   mkblob: r/2 R-1
+SPLIT: 1550000008 R-3   mkblob: r3  R-1
+SPLIT: 1550000009 X-4   mkblob: x4  X-3
+SPLIT: 1550000010 R-4   mkblob: r/4 R-3
+SPLIT: 1550000011 Y-3   mkblob: y3  Y-2
+SPLIT: 1550000012 Y-4   mkblob: y4  Y-1
+SPLIT: 1550000013 R-5  mkmerge: r5  R-4 R-2
+SPLIT: 1550000014 X-5   mkblob: x5  X-2
+SPLIT: 1550000015 X-6  mkmerge: x6  X-5 X-4
+SPLIT: 1550000016 X-7   mkblob: x7  X-4
+SPLIT: 1550000017 R-6   mkblob: r6  R-5
+SPLIT: 1550000018 Y-5  mkmerge: y5  Y-3 Y-4
+SPLIT: 1550000019 R-7  rm: r/2: r7  R-2
+SPLIT: 1550000020 R-8  mkmerge: r8  R-6 R-7
+SPLIT: 1550000021 R-9  rm:  r1: r9  R-7
+SPLIT: 1550000022 R-10 mkmerge: r10 R-8 R-9
+SPLIT: 1550000023 R-11  mkblob: r11 R-9
+SPLIT: 1550000024 X-8  mkmerge: x8  X-6 X-7
+SPLIT: 1550000025 Y-6   mkblob: y6  Y-5
+SPLIT: 1550000026 Y-7   mkblob: y7  Y-4
+SPLIT: 1550000027 X-9   mkblob: x9  X-7
+SPLIT: 1550000028 X-10 mkmerge: x10 X-8 X-9
+
+# Interleave commits.
+RUN: rm -rf %t.svn2git
+RUN: rm -rf %t.split2mono
+RUN: %svn2git create %t.svn2git
+RUN: mkdir %t.split2mono
+RUN: %split2mono create %t.split2mono
+RUN: git -C %t.mono apple-llvm mt list-commits x x/b1             >%t.b1.in
+RUN: git -C %t.mono apple-llvm mt list-commits y y/b1            >>%t.b1.in
+RUN: git -C %t.mono apple-llvm mt list-commits - r/b1            >>%t.b1.in
+RUN: git -C %t.mono apple-llvm mt list-commits x x/b2 --not x/b1  >%t.b2.in
+RUN: git -C %t.mono apple-llvm mt list-commits y y/b2 --not y/b1 >>%t.b2.in
+RUN: git -C %t.mono apple-llvm mt list-commits - r/b2 --not r/b1 >>%t.b2.in
+RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN:     %t.split2mono %t.svn2git                                   \
+RUN:     0000000000000000000000000000000000000000                   \
+RUN:     0000000000000000000000000000000000000000:x                 \
+RUN:     0000000000000000000000000000000000000000:y                 \
+RUN:     0000000000000000000000000000000000000000:-                 \
+RUN:     <%t.b1.in >%t.b1.out
+RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN:     %t.split2mono %t.svn2git                                   \
+RUN:     0000000000000000000000000000000000000000                   \
+RUN:     0000000000000000000000000000000000000000:x                 \
+RUN:     0000000000000000000000000000000000000000:y                 \
+RUN:     0000000000000000000000000000000000000000:-                 \
+RUN:     <%t.b2.in >%t.b2.out
+RUN: cat %t.b1.out | awk '{print $1}' | xargs git -C %t.mono update-ref b1
+RUN: cat %t.b2.out | awk '{print $1}' | xargs git -C %t.mono update-ref b2
+
+# Check the end result of interleaving.
+RUN: number-commits -p MONO %t.mono b1 b2 --date-order >>%t.map
+RUN: cat %t.b1.out | apply-commit-numbers %t.map | check-diff %s OUT-B1 %t
+RUN: cat %t.b2.out | apply-commit-numbers %t.map | check-diff %s OUT-B2 %t
+OUT-B1: MONO-27 R-11:- X-9:x  Y-7:y
+OUT-B2: MONO-28 R-10:- X-10:x Y-6:y
+
+# Check that b1 was generated correctly.
+RUN: git -C %t.mono log --format="--%%n%%H %%s %%P%%n%%(trailers:only)" \
+RUN:       --reverse --stat --name-status b1                            \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s B1 %t
+B1: --
+B1: MONO-1 mkblob: x1
+B1: apple-llvm-split-commit: X-1
+B1: apple-llvm-split-dir: x/
+B1: A x/x1
+B1: --
+B1: MONO-3 mkblob: x3 MONO-1
+B1: apple-llvm-split-commit: X-3
+B1: apple-llvm-split-dir: x/
+B1: A x/x3
+B1: --
+B1: MONO-4 mkblob: y1 MONO-3
+B1: apple-llvm-split-commit: Y-1
+B1: apple-llvm-split-dir: y/
+B1: A y/y1
+B1: --
+B1: MONO-6 mkblob: r1 MONO-4
+B1: apple-llvm-split-commit: R-1
+B1: apple-llvm-split-dir: -
+B1: A r1
+B1: --
+B1: MONO-7 mkblob: r/2 MONO-6
+B1: apple-llvm-split-commit: R-2
+B1: apple-llvm-split-dir: -
+B1: A r/2
+B1: --
+B1: MONO-9 mkblob: x4 MONO-7
+B1: apple-llvm-split-commit: X-4
+B1: apple-llvm-split-dir: x/
+B1: A x/x4
+B1: --
+B1: MONO-12 mkblob: y4 MONO-9
+B1: apple-llvm-split-commit: Y-4
+B1: apple-llvm-split-dir: y/
+B1: A y/y4
+B1: --
+B1: MONO-16 mkblob: x7 MONO-12
+B1: apple-llvm-split-commit: X-7
+B1: apple-llvm-split-dir: x/
+B1: A x/x7
+B1: --
+B1: MONO-19 rm: r/2: r7 MONO-16
+B1: apple-llvm-split-commit: R-7
+B1: apple-llvm-split-dir: -
+B1: D r/2
+B1: --
+B1: MONO-21 rm: r1: r9 MONO-19
+B1: apple-llvm-split-commit: R-9
+B1: apple-llvm-split-dir: -
+B1: D r1
+B1: --
+B1: MONO-23 mkblob: r11 MONO-21
+B1: apple-llvm-split-commit: R-11
+B1: apple-llvm-split-dir: -
+B1: A r11
+B1: --
+B1: MONO-26 mkblob: y7 MONO-23
+B1: apple-llvm-split-commit: Y-7
+B1: apple-llvm-split-dir: y/
+B1: A y/y7
+B1: --
+B1: MONO-27 mkblob: x9 MONO-26
+B1: apple-llvm-split-commit: X-9
+B1: apple-llvm-split-dir: x/
+B1: A x/x9
+
+# Check that b2 was generated correctly.
+RUN: git -C %t.mono log --format="--%%n%%H %%s %%P%%n%%(trailers:only)" \
+RUN:       --reverse -m --stat --name-status b2 --not b1                \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s B2 %t
+B2: --
+B2: MONO-2 mkblob: x2 MONO-1
+B2: apple-llvm-split-commit: X-2
+B2: apple-llvm-split-dir: x/
+B2: A x/x2
+B2: --
+B2: MONO-5 mkblob: y2 MONO-2 MONO-4
+B2: apple-llvm-split-commit: Y-2
+B2: apple-llvm-split-dir: y/
+B2: A y/y1
+B2: A y/y2
+B2: --
+B2: MONO-5 mkblob: y2 MONO-2 MONO-4
+B2: apple-llvm-split-commit: Y-2
+B2: apple-llvm-split-dir: y/
+B2: A x/x2
+B2: D x/x3
+B2: A y/y2
+B2: --
+B2: MONO-8 mkblob: r3 MONO-5 MONO-6
+B2: apple-llvm-split-commit: R-3
+B2: apple-llvm-split-dir: -
+B2: A r1
+B2: A r3
+B2: --
+B2: MONO-8 mkblob: r3 MONO-5 MONO-6
+B2: apple-llvm-split-commit: R-3
+B2: apple-llvm-split-dir: -
+B2: A r3
+B2: A x/x2
+B2: D x/x3
+B2: A y/y2
+B2: --
+B2: MONO-10 mkblob: r/4 MONO-8
+B2: apple-llvm-split-commit: R-4
+B2: apple-llvm-split-dir: -
+B2: A r/4
+B2: --
+B2: MONO-11 mkblob: y3 MONO-10
+B2: apple-llvm-split-commit: Y-3
+B2: apple-llvm-split-dir: y/
+B2: A y/y3
+B2: --
+B2: MONO-13 mkmerge: r5 MONO-11 MONO-7
+B2: apple-llvm-split-commit: R-5
+B2: apple-llvm-split-dir: -
+B2: A r/2
+B2: --
+B2: MONO-13 mkmerge: r5 MONO-11 MONO-7
+B2: apple-llvm-split-commit: R-5
+B2: apple-llvm-split-dir: -
+B2: A r/4
+B2: A r3
+B2: A x/x2
+B2: D x/x3
+B2: A y/y2
+B2: A y/y3
+B2: --
+B2: MONO-14 mkblob: x5 MONO-13
+B2: apple-llvm-split-commit: X-5
+B2: apple-llvm-split-dir: x/
+B2: A x/x5
+B2: --
+B2: MONO-15 mkmerge: x6 MONO-14 MONO-9
+B2: apple-llvm-split-commit: X-6
+B2: apple-llvm-split-dir: x/
+B2: A x/x3
+B2: A x/x4
+B2: --
+B2: MONO-15 mkmerge: x6 MONO-14 MONO-9
+B2: apple-llvm-split-commit: X-6
+B2: apple-llvm-split-dir: x/
+B2: A r/4
+B2: A r3
+B2: A x/x2
+B2: A x/x5
+B2: A y/y2
+B2: A y/y3
+B2: --
+B2: MONO-17 mkblob: r6 MONO-15
+B2: apple-llvm-split-commit: R-6
+B2: apple-llvm-split-dir: -
+B2: A r6
+B2: --
+B2: MONO-18 mkmerge: y5 MONO-17 MONO-12
+B2: apple-llvm-split-commit: Y-5
+B2: apple-llvm-split-dir: y/
+B2: A y/y4
+B2: --
+B2: MONO-18 mkmerge: y5 MONO-17 MONO-12
+B2: apple-llvm-split-commit: Y-5
+B2: apple-llvm-split-dir: y/
+B2: A r/4
+B2: A r3
+B2: A r6
+B2: A x/x2
+B2: A x/x5
+B2: A y/y2
+B2: A y/y3
+B2: --
+B2: MONO-20 mkmerge: r8 MONO-18 MONO-19
+B2: apple-llvm-split-commit: R-8
+B2: apple-llvm-split-dir: -
+B2: D r/2
+B2: --
+B2: MONO-20 mkmerge: r8 MONO-18 MONO-19
+B2: apple-llvm-split-commit: R-8
+B2: apple-llvm-split-dir: -
+B2: A r/4
+B2: A r3
+B2: A r6
+B2: A x/x2
+B2: A x/x5
+B2: D x/x7
+B2: A y/y2
+B2: A y/y3
+B2: --
+B2: MONO-22 mkmerge: r10 MONO-20 MONO-21
+B2: apple-llvm-split-commit: R-10
+B2: apple-llvm-split-dir: -
+B2: D r1
+B2: --
+B2: MONO-22 mkmerge: r10 MONO-20 MONO-21
+B2: apple-llvm-split-commit: R-10
+B2: apple-llvm-split-dir: -
+B2: A r/4
+B2: A r3
+B2: A r6
+B2: A x/x2
+B2: A x/x5
+B2: D x/x7
+B2: A y/y2
+B2: A y/y3
+B2: --
+B2: MONO-24 mkmerge: x8 MONO-22 MONO-16
+B2: apple-llvm-split-commit: X-8
+B2: apple-llvm-split-dir: x/
+B2: A x/x7
+B2: --
+B2: MONO-24 mkmerge: x8 MONO-22 MONO-16
+B2: apple-llvm-split-commit: X-8
+B2: apple-llvm-split-dir: x/
+B2: D r/2
+B2: A r/4
+B2: D r1
+B2: A r3
+B2: A r6
+B2: A x/x2
+B2: A x/x5
+B2: A y/y2
+B2: A y/y3
+B2: --
+B2: MONO-25 mkblob: y6 MONO-24
+B2: apple-llvm-split-commit: Y-6
+B2: apple-llvm-split-dir: y/
+B2: A y/y6
+B2: --
+B2: MONO-28 mkmerge: x10 MONO-25 MONO-27
+B2: apple-llvm-split-commit: X-10
+B2: apple-llvm-split-dir: x/
+B2: A x/x9
+B2: --
+B2: MONO-28 mkmerge: x10 MONO-25 MONO-27
+B2: apple-llvm-split-commit: X-10
+B2: apple-llvm-split-dir: x/
+B2: A r/4
+B2: D r11
+B2: A r3
+B2: A r6
+B2: A x/x2
+B2: A x/x5
+B2: A y/y2
+B2: A y/y3
+B2: A y/y6
+B2: D y/y7
