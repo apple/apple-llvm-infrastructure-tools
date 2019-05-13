@@ -1,3 +1,14 @@
+@NonCPS
+def setDescription() {
+    def item = Jenkins.instance.getItemByFullName(env.JOB_NAME)
+    item.setDescription("""Build, Test and Lint the apple-llvm monorepo tools and docs.
+    DRI: Alex Lorenz and Chris Matthews.
+    """)
+    item.save()
+}
+
+setDescription()
+
 pipeline {
     agent {label 'MonorepoToolsNode'}
     stages {
