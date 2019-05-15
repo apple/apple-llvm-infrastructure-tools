@@ -13,11 +13,8 @@ usage() {
         "   --config-dir=<dir>"                                               \
         "                   Config directory to find <name>.mt-config in"     \
         "   --git-dir=<dir> Git directory to use (default: $DEFAULT_GIT_DIR)" \
-        "   --[no-]setup    Set up and update remotes (default: on)"          \
-        "   --[no-]push     Push to the destination(s) (default: on)"         \
+        "   --[no-]setup    Set up <dir> and update remotes (default: on)"    \
         "   --dry-run       Don't actually generate anything"                 \
-        "   --show-{monorepo,splitref}-destination"                           \
-        "                   Show the monorepo or splitref desitnation repo"   \
         "   --list-actions  List generate actions in order (and exit)"        \
         "   --list-repos    List repos (and exit)"                            \
         "   --list-branches List branches to generate (and exit)"             \
@@ -38,12 +35,6 @@ print_list() {
     local list="$1"
     shift
     local which="$list"
-    case "$list" in
-        --show-monorepo-destination) show_monorepo_destination; return $? ;;
-        --show-splitref-destination) show_splitref_destination; return $? ;;
-        *) true ;;
-    esac
-
     which="${which#--list-}"
     which="${which%%=*}"
     which="${which//-/_}"
@@ -83,34 +74,6 @@ print_dirs_impl() {
     awk_helper mt-config-dirs -v branch="$branch" -v active=$2              \
         -v inactive=$3 -v repeat=$4 -v refs=$5 -v undecl=$undecl            \
         "$MT_CONFIG" "$MT_CONFIG"
-}
-
-show_monorepo_destination() { show_destination monorepo; }
-show_splitref_destination() { show_destination splitref; }
-show_destination() {
-    cat "$MT_CONFIG" |
-    awk -v which="$1" '
-    $1 == "destination" && $2 == which {
-        if (destination) {
-            destination = destination " " $3
-            count = count + 1
-        } else {
-            destination = $3
-            count = 1
-        }
-    }
-    END {
-      if (count == 0) {
-          printf "error: no %s destination specified\n", which >"/dev/stderr"
-          exit 1
-      }
-      if (count > 1) {
-          printf "error: multiple %s destinations specified: %s\n", \
-            which, destination >"/dev/stderr"
-          exit 1
-      }
-      print destination
-    }'
 }
 
 mt_setup() {
@@ -172,16 +135,6 @@ mt_setup() {
         run $hide git fetch --no-tags $name >$gitout ||
         error "failed to sync '$GIT_DIR'"
     done
-
-    log "Syncing progress from remotes"
-    local splitdest monodest
-    splitref="$(show_splitref_destination)" || exit 1
-    monodest="$(show_monorepo_destination)" || exit 1
-
-    run git remote | run grep "$splitref" >/dev/null ||
-        error "splitref destination '$splitref' is not a repo"
-    run git remote | run grep "$monorepo" >/dev/null ||
-        error "monorepo destination '$monorepo' is not a repo"
 }
 
 has_no_spaces() { [ "${1/ /}" = "$1" ]; }
@@ -243,11 +196,10 @@ mt_generate_branch() {
     [ -n "$refdirs" ] ||
         error "generate $branch: no 'dir' declarations"
 
-    local refdir ref dir dirs
+    local refdir ref dir
     for refdir in $refdirs; do
         ref=${refdir%:*}
         dir=${refdir#*:}
-        dirs="${dirs}${dirs:+ }$dir"
         [ "$refdir" = "$ref:$dir" ] ||
             error "generate $branch: invalid 'dir' with colon '$refdir'"
         run --dry git rev-parse $ref^{commit} >/dev/null ||
@@ -263,13 +215,8 @@ mt_generate_branch() {
 
     refdirs="$(print_all_refdirs "$rawbranch")" ||
         error "failed to extract complete refdirs for $rawbranch"
-
-    mt_fetch_branch $branch "$repeat" $dirs
-
     run --dry git apple-llvm mt split2mono-translate-branch $branch $refdirs ||
         error "failed to generate branch '$branch'"
-
-    mt_push_branch $branch "$repeat" $dirs
 }
 
 mt_generate_splitrefs() {
@@ -342,7 +289,7 @@ while [ $# -gt 0 ]; do
                 usage_error "${LIST%=} requires an argument"
             ;;
         --list-*=*) usage_error "unknown option '$1'" ;;
-        --list-*|--show-*) LIST="$1"; shift ;;
+        --list-*) LIST="$1"; shift ;;
         --help|--usage|-h) usage; exit 0 ;;
         -*) usage_error "unknown option '$1'" ;;
         *)

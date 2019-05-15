@@ -3,7 +3,6 @@
 mt-config files consists of declarations of:
 
 - `repo`, for remote repositories;
-- `destination`, for declaring where to publish the generated refs;
 - `declare-dir`, for declaring the full set of split directories;
 - `repeat`, for repeating commits from another generated branch;
 - `dir`, for declaring which remote branches to use for directory content; and
@@ -16,17 +15,6 @@ repo <name> <url>
 ```
 
 where `<name>` is the local name for the remote and `<url>` is its URL.
-
-## `destination`: Declaring a destination remote.
-
-```
-destination ( monorepo | splitref ) <repo>
-```
-
-where `<repo>` is the local name for the remote.  There are separate
-declarations for generated monorepo refs (the main goal) and split repo refs
-(for tracking what has been translated).  These are fetched before generating
-anything (except when `--no-setup`) and pushed after (except when `--no-push`).
 
 ## `declare-dir`: Declaring a directory
 
