@@ -15,6 +15,13 @@ struct dir_mask {
   bool test(int i) const { return bits.test(i); }
   void reset(int i) { bits.reset(i); }
   void set(int i, bool value = true) { bits.set(i, value); }
+
+  /// Container-like insertion.
+  ///
+  /// Shift bits \c i and higher to make room for a new bit, like a sequence
+  /// insertion.  Used in conjunction with dir_list::add_dir.
+  ///
+  /// \post \a test(i) returns false.
   void insert(int i) {
     // TODO: add a unit test.
     assert(i < max_size);
