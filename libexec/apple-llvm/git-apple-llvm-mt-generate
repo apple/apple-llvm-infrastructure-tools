@@ -13,8 +13,11 @@ usage() {
         "   --config-dir=<dir>"                                               \
         "                   Config directory to find <name>.mt-config in"     \
         "   --git-dir=<dir> Git directory to use (default: $DEFAULT_GIT_DIR)" \
-        "   --[no-]setup    Set up <dir> and update remotes (default: on)"    \
+        "   --[no-]setup    Set up and update remotes (default: on)"          \
+        "   --[no-]push     Push to the destination(s) (default: on)"         \
         "   --dry-run       Don't actually generate anything"                 \
+        "   --show-{monorepo,splitref}-destination"                           \
+        "                   Show the monorepo or splitref desitnation repo"   \
         "   --list-actions  List generate actions in order (and exit)"        \
         "   --list-repos    List repos (and exit)"                            \
         "   --list-branches List branches to generate (and exit)"             \
@@ -35,6 +38,12 @@ print_list() {
     local list="$1"
     shift
     local which="$list"
+    case "$list" in
+        --show-monorepo-destination) show_monorepo_destination; return $? ;;
+        --show-splitref-destination) show_splitref_destination; return $? ;;
+        *) true ;;
+    esac
+
     which="${which#--list-}"
     which="${which%%=*}"
     which="${which//-/_}"
@@ -74,6 +83,34 @@ print_dirs_impl() {
     awk_helper mt-config-dirs -v branch="$branch" -v active=$2              \
         -v inactive=$3 -v repeat=$4 -v refs=$5 -v undecl=$undecl            \
         "$MT_CONFIG" "$MT_CONFIG"
+}
+
+show_monorepo_destination() { show_destination monorepo; }
+show_splitref_destination() { show_destination splitref; }
+show_destination() {
+    cat "$MT_CONFIG" |
+    awk -v which="$1" '
+    $1 == "destination" && $2 == which {
+        if (destination) {
+            destination = destination " " $3
+            count = count + 1
+        } else {
+            destination = $3
+            count = 1
+        }
+    }
+    END {
+      if (count == 0) {
+          printf "error: no %s destination specified\n", which >"/dev/stderr"
+          exit 1
+      }
+      if (count > 1) {
+          printf "error: multiple %s destinations specified: %s\n", \
+            which, destination >"/dev/stderr"
+          exit 1
+      }
+      print destination
+    }'
 }
 
 mt_setup() {
@@ -289,7 +326,7 @@ while [ $# -gt 0 ]; do
                 usage_error "${LIST%=} requires an argument"
             ;;
         --list-*=*) usage_error "unknown option '$1'" ;;
-        --list-*) LIST="$1"; shift ;;
+        --list-*|--show-*) LIST="$1"; shift ;;
         --help|--usage|-h) usage; exit 0 ;;
         -*) usage_error "unknown option '$1'" ;;
         *)

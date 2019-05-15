@@ -1,0 +1,7 @@
+repo a-name git://a/url
+repo b-name git://b/url
+repo c-name git://c/url
+repo d-name git://d/url
+
+destination monorepo b-name
+destination splitref d-name
