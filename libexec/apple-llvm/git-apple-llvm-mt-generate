@@ -172,6 +172,16 @@ mt_setup() {
         run $hide git fetch --no-tags $name >$gitout ||
         error "failed to sync '$GIT_DIR'"
     done
+
+    log "Syncing progress from remotes"
+    local splitdest monodest
+    splitref="$(show_splitref_destination)" || exit 1
+    monodest="$(show_monorepo_destination)" || exit 1
+
+    run git remote | run grep "$splitref" >/dev/null ||
+        error "splitref destination '$splitref' is not a repo"
+    run git remote | run grep "$monorepo" >/dev/null ||
+        error "monorepo destination '$monorepo' is not a repo"
 }
 
 has_no_spaces() { [ "${1/ /}" = "$1" ]; }
@@ -233,10 +243,11 @@ mt_generate_branch() {
     [ -n "$refdirs" ] ||
         error "generate $branch: no 'dir' declarations"
 
-    local refdir ref dir
+    local refdir ref dir dirs
     for refdir in $refdirs; do
         ref=${refdir%:*}
         dir=${refdir#*:}
+        dirs="${dirs}${dirs:+ }$dir"
         [ "$refdir" = "$ref:$dir" ] ||
             error "generate $branch: invalid 'dir' with colon '$refdir'"
         run --dry git rev-parse $ref^{commit} >/dev/null ||
@@ -252,8 +263,13 @@ mt_generate_branch() {
 
     refdirs="$(print_all_refdirs "$rawbranch")" ||
         error "failed to extract complete refdirs for $rawbranch"
+
+    mt_fetch_branch $branch "$repeat" $dirs
+
     run --dry git apple-llvm mt split2mono-translate-branch $branch $refdirs ||
         error "failed to generate branch '$branch'"
+
+    mt_push_branch $branch "$repeat" $dirs
 }
 
 mt_generate_splitrefs() {
