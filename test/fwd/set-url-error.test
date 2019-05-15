@@ -1,0 +1,37 @@
+remote a __REPOS__/a.git
+remote b __REPOS__/b.git
+
+push b refs/remotes/a/master:refs/heads/a/master
+
+# Clean up.
+RUN: rm -rf %t
+
+# Make repos and fill with data.
+RUN: mkdir -p %t/repos
+RUN: mkrepo --bare %t/repos/a.git
+RUN: mkrepo --bare %t/repos/b.git
+RUN: git clone %t/repos/a.git %t/a
+RUN: mkblob %t/a master
+RUN: git -C %t/a push origin master
+
+# Set up configs and run.
+RUN: mkdir -p %t/configs %t/working
+RUN: cat %s | sed -e s,__REPOS__,%t/repos, > %t/configs/t.fwd-config
+
+RUN: mkrepo --bare %t/working/fwd.git
+RUN: git apple-llvm fwd --config-dir %t/configs --git-dir %t/working/fwd.git t
+
+RUN: git -C %t/working/fwd.git remote rm a
+RUN: git -C %t/working/fwd.git remote add a %t/repos/b.git
+RUN: not git apple-llvm fwd --config-dir %t/configs --git-dir %t/working/fwd.git t 2>%t/err
+RUN: grep "error: remote 'a' exists with fetch URL" %t/err
+
+RUN: git -C %t/working/fwd.git remote rm a
+RUN: git -C %t/working/fwd.git remote add a %t/repos/a.git
+RUN: git apple-llvm fwd --config-dir %t/configs --git-dir %t/working/fwd.git t
+
+RUN: git -C %t/working/fwd.git remote rm a
+RUN: git -C %t/working/fwd.git remote add a %t/repos/a.git
+RUN: git -C %t/working/fwd.git remote set-url --push a %t/repos/b.git
+RUN: not git apple-llvm fwd --config-dir %t/configs --git-dir %t/working/fwd.git t 2>%t/err
+RUN: grep "error: remote 'a' exists with push URL" %t/err

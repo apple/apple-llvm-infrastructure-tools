@@ -18,6 +18,15 @@ DEFAULT_CONFIG_DIR="$(
     relative_canonicalize_path "$APPLE_LLVM_LIBEXEC_DIR/../../fwd-config")"
 DEFAULT_GIT_DIR=apple-llvm-fwd-repo.git
 
+is_not_same_url() {
+    local url="$1"
+    local existing="$2"
+    if [ "$url" = "$existing" ]; then
+        return 1
+    fi
+    return 0
+}
+
 fwd_setup() {
     GIT_DIR="$(canonicalize_path "$GIT_DIR")"
     FWD_CONFIG="$(canonicalize_path "$CONFIG_DIR/$NAME.fwd-config")"
@@ -39,11 +48,16 @@ fwd_setup() {
         name="${remote%%:*}"
         url="${remote#*:}"
         existing="$(run --dry git remote -v |
-        run --dry awk -v n="$name" '$1==n{print $2}')"
+        run --dry awk -v n="$name" -v e="(fetch)" '$1==n&&$3==e{print $2}')"
+        existing_push="$(run --dry git remote -v |
+        run --dry awk -v n="$name" -v e="(push)" '$1==n&&$3==e{print $2}')"
         if [ -z "$existing" ]; then
             run --dry git remote add "$name" "$url"
-        elif [ ! "$url" = "$existing" ]; then
-            error "remote '$name' exists with URL '$existing';" \
+        elif is_not_same_url $url $existing; then
+            error "remote '$name' exists with fetch URL '$existing';" \
+            "refusing to set-url to '$url'"
+        elif [ -n $existing_push ] && is_not_same_url $url $existing_push; then
+            error "remote '$name' exists with push URL '$existing';" \
             "refusing to set-url to '$url'"
         fi
         log "  - $name $url"

@@ -36,3 +36,24 @@ RUN: not git -C %t/repos/b.git show-ref b2
 RUN: git -C %t/repos/a.git show-ref master | awk '{print $1}' >%t/a.sha1
 RUN: git -C %t/repos/b.git show-ref a/master | awk '{print $1}' >%t/b.sha1
 RUN: diff %t/a.sha1 %t/b.sha1
+
+########################################
+# Ensure forward can run incrementally.
+########################################
+
+# Commit new master commit.
+RUN: git -C %t/a checkout master
+RUN: mkblob %t/a master2
+RUN: git -C %t/a push origin master
+
+# Run fwd again.
+RUN: cd %t/working
+RUN: git apple-llvm fwd --config-dir %t/configs t
+
+# Check the output.
+RUN: git -C %t/repos/b.git show-ref a/master
+RUN: not git -C %t/repos/b.git show-ref refs/heads/master
+RUN: git -C %t/repos/b.git show-ref a/master | awk '{print $1}' >%t/b.sha1
+RUN: not diff %t/a.sha1 %t/b.sha1
+RUN: git -C %t/repos/a.git show-ref master | awk '{print $1}' >%t/a.sha1
+RUN: diff %t/a.sha1 %t/b.sha1
