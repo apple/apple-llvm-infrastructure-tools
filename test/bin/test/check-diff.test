@@ -1,20 +1,76 @@
 RUN: printf "\n" | check-diff %s EMPTY %t
 RUN: printf "\n\n" | not check-diff %s EMPTY %t
-RUN: printf "" | not check-diff %s EMPTY %t
+RUN: printf "" | not check-diff %s EMPTY %t \
+RUN:   | sed -e 's,/expected.*,/expected,' -e 's,/observed.*,/observed,' \
+RUN:   | sed -e 's,%t,T,g' >%t.empty.out
+RUN: cat %t.empty.out | check-diff %s EMPTY-DIFF %t
 EMPTY: 
+EMPTY-DIFF: --- T.EMPTY.d/expected
+EMPTY-DIFF: +++ T.EMPTY.d/observed
+EMPTY-DIFF: @@ -1 +0,0 @@
+EMPTY-DIFF: -
 
-RUN: printf "" | not check-diff %s MISSING %t
+# Add some confidence that check-diff has output by using grep here, in
+# addition to the check-diff-based test.
+RUN: grep 'T.EMPTY.d' %t.empty.out | wc -l | grep 2
+RUN: grep '@@'        %t.empty.out | wc -l | grep 1
+RUN: grep '^+'        %t.empty.out | wc -l | grep 1
+RUN: grep '^-'        %t.empty.out | wc -l | grep 2
 
-RUN: printf "a b\nc"            | check-diff %s ABC %t
-RUN: printf "a b\nc\n"          | check-diff %s ABC %t
-RUN: printf " a   b \nc\n"      | check-diff %s ABC %t
-RUN: printf "c\na b"            | not check-diff %s ABC %t
-RUN: printf "a b"               | not check-diff %s ABC %t
-RUN: printf "c"                 | not check-diff %s ABC %t
-RUN: printf "x\na b\nc"         | not check-diff %s ABC %t
-RUN: printf "a b\nc\nx"         | not check-diff %s ABC %t
+RUN: printf "" | not check-diff %s MISSING %t 2>&1 \
+RUN:   | grep error: | sed -e 's,%s,S,g' \
+RUN:   | sed -e 's, .*/expected.*, expected,' -e 's, .*/observed.*, observed,' \
+RUN:   | check-diff %s MISSING-ERROR %t
+MISSING-ERROR: error: no hits for 'MISSING' in 'S'
+
+RUN: printf "a b\nc"       | check-diff %s ABC %t | check-empty
+RUN: printf "a b\nc\n"     | check-diff %s ABC %t | check-empty
+RUN: printf " a   b \nc\n" | check-diff %s ABC %t | check-empty
+RUN: printf "c\na b\n"     | not check-diff %s ABC %t \
+RUN:   | sed -e 's, .*/expected.*, expected,' -e 's, .*/observed.*, observed,' \
+RUN:   | check-diff %s CAB-DIFF %t
+RUN: printf "a b\n"        | not check-diff %s ABC %t \
+RUN:   | sed -e 's, .*/expected.*, expected,' -e 's, .*/observed.*, observed,' \
+RUN:   | check-diff %s AB-DIFF %t
+RUN: printf "c\n"          | not check-diff %s ABC %t \
+RUN:   | sed -e 's, .*/expected.*, expected,' -e 's, .*/observed.*, observed,' \
+RUN:   | check-diff %s C-DIFF %t
+RUN: printf "x\na b\nc\n"  | not check-diff %s ABC %t \
+RUN:   | sed -e 's, .*/expected.*, expected,' -e 's, .*/observed.*, observed,' \
+RUN:   | check-diff %s XABC-DIFF %t
+RUN: printf "a b\nc\nx\n"  | not check-diff %s ABC %t \
+RUN:   | sed -e 's, .*/expected.*, expected,' -e 's, .*/observed.*, observed,' \
+RUN:   | check-diff %s ABCX-DIFF %t
 ABC: a b
 ABC: c
+CAB-DIFF: --- expected
+CAB-DIFF: +++ observed
+CAB-DIFF: @@ -1,2 +1,2 @@
+CAB-DIFF: -a b
+CAB-DIFF:  c
+CAB-DIFF: +a b
+AB-DIFF: --- expected
+AB-DIFF: +++ observed
+AB-DIFF: @@ -1,2 +1 @@
+AB-DIFF:   a b
+AB-DIFF:  -c
+C-DIFF: --- expected
+C-DIFF: +++ observed
+C-DIFF: @@ -1,2 +1 @@
+C-DIFF:   -a b
+C-DIFF:    c
+XABC-DIFF: --- expected
+XABC-DIFF: +++ observed
+XABC-DIFF: @@ -1,2 +1,3 @@
+XABC-DIFF:+x
+XABC-DIFF: a b
+XABC-DIFF: c
+ABCX-DIFF: --- expected
+ABCX-DIFF: +++ observed
+ABCX-DIFF: @@ -1,2 +1,3 @@
+ABCX-DIFF: a b
+ABCX-DIFF: c
+ABCX-DIFF:+x
 
 RUN: printf "d1\nd2\nd3\nd4\nd5\nd6\nd7\nd8\nd9\nd10\n" \
 RUN:   | check-diff %s DS %t
