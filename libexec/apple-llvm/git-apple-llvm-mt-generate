@@ -15,6 +15,7 @@ usage() {
         "   --git-dir=<dir> Git directory to use (default: $DEFAULT_GIT_DIR)" \
         "   --[no-]setup    Set up and update remotes (default: on)"          \
         "   --[no-]push     Push to the destination(s) (default: on)"         \
+        "   --push-only     Only push previous results"                       \
         "   --dry-run       Don't actually generate anything"                 \
         "   --show-{monorepo,splitref}-destination"                           \
         "                   Show the monorepo or splitref desitnation repo"   \
@@ -113,6 +114,8 @@ show_destination() {
     }'
 }
 
+MTDB_REF=refs/mt/mt-db
+MTDB_SHA1=
 mt_setup() {
     GIT_DIR="$(canonicalize_path "$GIT_DIR")"
     MT_CONFIG="$(canonicalize_path "$MT_CONFIG")"
@@ -171,7 +174,24 @@ mt_setup() {
         log "  - $name"
         run $hide git fetch --no-tags $name >$gitout ||
         error "failed to sync '$GIT_DIR'"
-    done
+    done || return 1
+
+    # Check that the destination repos work.
+    local splitdest monodest
+    splitdest="$(show_splitref_destination)" || exit 1
+    monodest="$(show_monorepo_destination)" || exit 1
+
+    run git remote | run grep "$splitdest" >/dev/null ||
+        error "splitref destination '$splitdest' is not a repo"
+    run git remote | run grep "$monodest" >/dev/null ||
+        error "monorepo destination '$monodest' is not a repo"
+
+    # Fetch the mt-db ref.
+    log "Syncing mt-db from $monodest"
+    MTDB_SHA1=$(run git ls-remote $monodest $MTDB_REF | awk '{print $1}')
+    [ -n "$MTDB_SHA1" ] || return 0
+    run git fetch --force $monodest $MTDB_REF:$MTDB_REF ||
+        error "failed to fetch $MTDB_REF from $monodest"
 }
 
 has_no_spaces() { [ "${1/ /}" = "$1" ]; }
@@ -179,6 +199,8 @@ mt_generate() {
     local action="$1"
     local object="$2"
     local generator="mt_generate_$action"
+    local fetcher="mt_fetch_$action"
+    local pusher="mt_push_$action"
 
     mt_llvm_svn2git_init ||
         error "generate: could not initialize svn2git"
@@ -193,8 +215,11 @@ mt_generate() {
     has_no_spaces "$object" ||
         error "generate: invalid object '$object'"
 
-    log "Generating $action from $object"
-    $generator "$object" || exit 1
+    log "Generating $action for $object"
+    push_only || $fetcher "$object" || exit 1
+    push_only || $generator "$object" || exit 1
+    should_push || return 0
+    $pusher "$object" || exit 1
 }
 
 mt_generate_mapping() {
@@ -217,6 +242,28 @@ mt_generate_mapping() {
     done
 }
 
+mt_fetch_mapping() {
+    # Nothing to do here, since this is handled by mt_setup.
+    true
+}
+
+mt_push_mapping() {
+    local old_mtdb_sha1=$MTDB_SHA1
+    MTDB_SHA1=$(run git show-ref $MTDB_REF | awk '{print $1}')
+    [ ! "$old_mtdb_sha1" = "$MTDB_SHA1" ] || return 0
+
+    local monodest
+    monodest="$(show_monorepo_destination)" || exit 1
+    {
+        # Push to the local mirror.
+        run --dry git push $monodest $MTDB_REF:$MTDB_REF &&
+
+        # Push to the remote using --force-with-lease to check for races.
+        run --dry git -C clones/$monodest.git push origin $MTDB_REF:$MTDB_REF \
+            --force-with-lease=$MTDB_REF:$old_mtdb_sha1
+    } || error "failed to push $MTDB_REF to $monodest"
+}
+
 mt_generate_branch() {
     # Get the branch name and prepend refs/heads/.
     local heads=refs/heads/
@@ -224,7 +271,7 @@ mt_generate_branch() {
     local branch=$rawbranch
     [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
 
-    local refdirs repeatdirs inactivedirs
+    local refdirs repeat
     refdirs="$(print_active_refdirs "$rawbranch")" ||
         error "failed to extract active refdirs for $rawbranch"
     repeat="$(print_repeat "$rawbranch")" ||
@@ -233,10 +280,11 @@ mt_generate_branch() {
     [ -n "$refdirs" ] ||
         error "generate $branch: no 'dir' declarations"
 
-    local refdir ref dir
+    local refdir ref dir dirs
     for refdir in $refdirs; do
         ref=${refdir%:*}
         dir=${refdir#*:}
+        dirs="${dirs}${dirs:+ }$dir"
         [ "$refdir" = "$ref:$dir" ] ||
             error "generate $branch: invalid 'dir' with colon '$refdir'"
         run --dry git rev-parse $ref^{commit} >/dev/null ||
@@ -252,8 +300,98 @@ mt_generate_branch() {
 
     refdirs="$(print_all_refdirs "$rawbranch")" ||
         error "failed to extract complete refdirs for $rawbranch"
+
     run --dry git apple-llvm mt split2mono-translate-branch $branch $refdirs ||
         error "failed to generate branch '$branch'"
+}
+
+mt_fetch_branch() {
+    local branch="$1"
+
+    # Fetch from local mirror.
+    local splitdest monodest
+    monodest="$(show_monorepo_destination)" || exit 1
+    mt_fetch_one_branch "$monodest" "$branch"
+
+    splitdest="$(show_splitref_destination)" || exit 1
+    for refdir in $refdirs; do
+        d=${refdir#*:}
+        mt_fetch_one_branch "$splitdest" "refs/heads/mt/$branch/$d/mt-split"
+    done
+
+    mt_fetch_splitrefs "$branch"
+}
+
+mt_fetch_splitrefs() {
+    local branch="$1"
+    local splitdest refdirs repeat
+    repeat="$(print_repeat "$branch")" ||
+        error "failed to extract any repeat directive for $branch"
+    refdirs="$(print_active_refdirs "$branch")" ||
+        error "failed to extract active refdirs for $branch"
+    splitdest="$(show_splitref_destination)" || exit 1
+    for refdir in $refdirs; do
+        d=${refdir#*:}
+        mt_fetch_one_branch "$splitdest" "refs/heads/mt/$branch/$d/mt-split"
+    done
+}
+
+mt_fetch_one_branch() {
+    local remote="$1"
+    local branch="$2"
+
+    local remote_ref="refs/remotes/$remote/${branch#refs/heads/}"
+    local sha1
+    sha1="$(run git rev-parse "$remote_ref"^{commit} 2>/dev/null)" || return 0
+    run --dry git update-ref "$branch" "$sha1" ||
+        error "failed to sync '$branch' from '$remote'"
+}
+
+mt_push_branch() {
+    local branch="$1"
+    local old_mtdb_sha1=$MTDB_SHA1
+    MTDB_SHA1=$(run git show-ref $MTDB_REF | awk '{print $1}')
+
+    # Return early if nothing has changed.
+    [ ! "$old_mtdb_sha1" = "$MTDB_SHA1" ] ||
+        return
+
+    local old_branch_sha1
+    old_branch_sha1=$(run git show-ref refs/remotes/$branch | awk '{print $1}')
+
+    # Push the primary refs.  Need to push to the local mirror, and then from
+    # there to the actual remote.
+    local monodest
+    monodest="$(show_monorepo_destination)" || exit 1
+    run --dry git push $monodest $MTDB_REF:$MTDB_REF $branch ||
+        error "failed to push $MTDB_REF to local $monodest"
+    run --dry git -C clones/$monodest.git push --atomic origin \
+        $MTDB_REF:$MTDB_REF --force-with-lease=$MTDB_REF:$old_mtdb_sha1 \
+        $branch --force-with-lease=refs/heads/$branch:$old_branch_sha1 ||
+        error "failed to push $MTDB_REF to $monodest"
+
+    mt_push_splitrefs "$branch"
+}
+
+mt_push_splitrefs() {
+    local branch="$1"
+
+    # Push the mt-split refs, which are only needed to optimize the next call.
+    local splitdest refdir d ref refs refspec refspecs
+    splitdest="$(show_splitref_destination)" || exit 1
+    for refdir in $(print_active_refdirs "$branch"); do
+        d=${refdir#*:}
+        ref="refs/heads/mt/$branch/$d/mt-split"
+        run git rev-parse "$ref"^{commit} >/dev/null 2>&1 ||
+            continue
+        refs="$refs${refs:+ }$refs"
+        refspec="$ref:$ref"
+        refspecs="$refspecs${refspecs:+ }$refspec"
+    done
+    run --dry git push $splitdest $refspecs ||
+        error "failed to push $refs to local $splitdest"
+    run --dry git -C clones/$splitdest.git push origin $refspecs ||
+        error "failed to push $refs to $splitdest"
 }
 
 mt_generate_splitrefs() {
@@ -289,8 +427,10 @@ mt_generate_splitrefs() {
 
 CONFIG_DIR="$DEFAULT_CONFIG_DIR"
 GIT_DIR=$DEFAULT_GIT_DIR
-SETUP=1
+SETUP=1 PUSH=1 PUSH_ONLY=0
 should_setup() { [ ! "${SETUP:-0}" = 0 ]; }
+should_push() { [ ! "${PUSH:-0}" = 0 ]; }
+only_push() { [ ! "${PUSH_ONLY:-0}" = 0 ]; }
 NAME=
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -309,6 +449,9 @@ while [ $# -gt 0 ]; do
         --dry-run)  DRY_RUN=1; shift ;;
         --setup)    SETUP=1; shift ;;
         --no-setup) SETUP=0; shift ;;
+        --push)     PUSH=1; shift ;;
+        --no-push)  PUSH=0; shift ;;
+        --push-only)PUSH_ONLY=1; shift ;;
         --list-*-*dirs|--list-*-*dirs=*)
             LIST="$1"
             parse_cmdline_option "--list-*-*dirs" LIST_BRANCH "$@"

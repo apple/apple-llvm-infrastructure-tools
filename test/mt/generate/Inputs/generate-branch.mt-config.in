@@ -1,0 +1,15 @@
+repo a-name file://%t.a
+repo b-name file://%t.b
+repo out/mono file://%t.out.mono
+repo out/split file://%t.out.split
+
+destination splitref out/split
+destination monorepo out/mono
+
+declare-dir a
+declare-dir b
+
+dir master a a-name/master
+dir master b b-name/master
+
+generate 0000 branch master
