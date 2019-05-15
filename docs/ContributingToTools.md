@@ -30,7 +30,11 @@ For test suites that use `pytest`, add the name of the subdirectory to the
 
 - `not`: invert the exit status of a `RUN:` command.
 - `check-empty`: check for empty output.
-- `check-diff`: check for matching output.
+- `check-diff <script> <check-prefix> <temp>`: check for matching output.  This
+  is a lightweight tool similar to `FileCheck`, lacking regex support.
+  Extracts lines containing `<check-prefix>:` from `<script>` and runs `diff`
+  against stdin ignoring whitespace.  `<temp>.<check-prefix>.d` is used as a
+  temp directory.
 - `mkcommit <repo> ...`: wrapper around git-commit.
 - `number-commits <repo> ...`: wrapper around git-rev-list that creates a map.
 - `apply-commit-numbers <map>`: filter input using map from `number-commits`.
