@@ -23,7 +23,7 @@ pytest_dirs := auto-updater
 pytest_targets := $(foreach t,$(pytest_dirs),check-$t)
 
 .PHONY: all clean clean-venv venv requirements
-all: $(lit_targets) $(pytest_targets) check-lint check-types
+all: $(lit_targets) $(pytest_targets) check-lint check-types ;
 
 S := $(testdir)../src/
 D := $(testdir)Built
@@ -34,9 +34,11 @@ include ../src/Programs.mk
 clean: clean-venv clean-programs clean-lit
 	@echo "cleaning..."
 
-.PHONY: clean-lit help $(lit_targets) $(pytest_targets)
+.PHONY: clean-lit help $(lit_targets) $(pytest_targets) check-all
 clean-lit:
 	rm -rf Run.lit
+
+check-all: check-lit check-lint check-types $(pytest_targets)
 
 $(lit_targets) : check-%: venv requirements Makefile
 	$(PYTHON_ROOT)lit -sv $(testdir)/$*/
