@@ -2,22 +2,16 @@
 #
 # Used to run the tests.
 
+this_makefile := $(lastword $(MAKEFILE_LIST))
+testdir := $(dir $(abspath $(this_makefile)))
+
 lit_tests := $(filter-out ./.%,$(shell find . -name "*.test"))
 lit_test_targets := $(sort $(patsubst ./%.test,check-%, \
 														 $(filter %.test,$(lit_tests))))
 lit_testdirs := $(filter-out ./,$(sort \
 	$(shell printf "%s\n" $(sort $(foreach t,$(lit_tests),$(dir $t))) \
-	| awk '{ \
-  print $$1; \
-	i = match($$1, /[^\/]+\/$$/); \
-	while (i) { \
-		$$1 = substr($$1, 1, i-1); \
-		print $$1; \
-	  i = match($$1, /[^\/]+\/$$/); \
-	}}')))
+	| awk -f $(testdir)/bin/extract-targets-from-test-directories.awk)))
 lit_targets := $(patsubst ./%/,check-%,$(lit_testdirs))
-this_makefile := $(lastword $(MAKEFILE_LIST))
-testdir := $(dir $(abspath $(this_makefile)))
 
 pytest_dirs := auto-updater
 pytest_targets := $(foreach t,$(pytest_dirs),check-$t)
