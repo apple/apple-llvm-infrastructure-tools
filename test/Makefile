@@ -6,7 +6,7 @@ this_makefile := $(lastword $(MAKEFILE_LIST))
 testdir := $(dir $(abspath $(this_makefile)))
 
 lit_tests := $(filter-out ./.%,$(shell find . -name "*.test"))
-lit_test_targets := $(sort $(patsubst ./%.test,check-%, \
+lit_test_file_targets := $(sort $(patsubst ./%.test,check-%, \
 														 $(filter %.test,$(lit_tests))))
 lit_testdirs := $(filter-out ./,$(sort \
 	$(shell printf "%s\n" $(sort $(foreach t,$(lit_tests),$(dir $t))) \
@@ -37,7 +37,7 @@ check-all: check-lit check-lint check-types $(pytest_targets)
 $(lit_targets) : check-%: venv requirements Makefile
 	$(PYTHON_ROOT)lit -sv $(testdir)/$*/
 
-$(lit_test_targets) : check-%: venv requirements Makefile
+$(lit_test_file_targets) : check-%: venv requirements Makefile
 	$(PYTHON_ROOT)lit -sv $(testdir)/$*.test
 
 $(pytest_targets) : check-%: venv requirements Makefile
@@ -64,4 +64,4 @@ help:
 		$(this_makefile)))
 
 check-lit check-split2mono check-svn2git \
-	$(filter check-mt%,$(lit_targets) $(lit_test_targets)): programs
+	$(filter check-mt%,$(lit_targets) $(lit_test_file_targets)): programs
