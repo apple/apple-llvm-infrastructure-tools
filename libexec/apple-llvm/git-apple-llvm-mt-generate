@@ -263,10 +263,8 @@ mt_generate_splitrefs() {
     local branch=$rawbranch
     [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
 
-    local refdirs="$(cat "$MT_CONFIG" |
-    awk -v branch=$rawbranch '$1=="dir"&&$2==branch{print $4":"$3}')"
-    local repeat="$(cat "$MT_CONFIG" |
-    awk -v branch=$rawbranch '$1=="repeat"&&$2==branch{print $3}')"
+    local refdirs="$(print_active_refdirs "$branch")"
+    local repeat="$(print_repeat "$branch")"
 
     [ -n "$refdirs" ] ||
         error "generate $branch: no 'dir' declarations"
