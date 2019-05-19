@@ -29,7 +29,6 @@ main() {
 translate_branch() {
     local branch
     local pos=0
-    local repeat=
     local -a refdirs
     local value=
     while [ $# -gt 0 ]; do
@@ -37,10 +36,6 @@ translate_branch() {
             --help)
                 usage
                 exit 0
-                ;;
-            --repeat|--repeat=*)
-                parse_cmdline_option --repeat repeat
-                shift $?
                 ;;
             -*)
                 usage_error "unknown option '$1'"
@@ -60,57 +55,79 @@ translate_branch() {
     branch="${branch#refs/heads/}"
 
     [ ${#refdirs[@]} -gt 0 ] || usage_error "missing <ref>:<dir>"
-    [ -z "$repeat" ] || error "--repeat not implemented"
 
     local current
     current=$(run --hide-errors git rev-parse --verify \
         refs/heads/$branch^{commit}) ||
         current=$ZERO_SHA1
 
-    local d rd ref sha1
-    local -a sha1dirs
-    local -a refsha1dirs
+    local r d rd ref sha1
+    local -a listdirs # refs to list commits of and for which directory
+    local -a repeated # directories getting repeated
+    local -a sha1dirs # command-line for split2mono interleave-commits
+    local repeat suffix
     for rd in "${refdirs[@]}"; do
+        r="${rd%:*}"
         d="${rd##*:}"
-        ref=refs/heads/mt/$branch/$d/mt-split
+        suffix="$d/mt-split"
+        if [ "${r:0:1}" = % ]; then
+            [ -z "$repeat" ] || [ "$repeat" = "${r:1}" ] ||
+                error "mismatched repeat in '$rd' (expected: '$repeat')"
+            sha1dirs=( "${sha1dirs[@]}" "%:$d" )
+            repeated=( "${repeated[@]}" "$d/" )
+
+            [ -z "$repeat" ] || continue
+            repeat="${r:1}"
+            suffix=mt-repeat r="$repeat" d=%
+            rd="$r:$d"
+        fi
+
+        ref=refs/heads/mt/$branch/$suffix
         sha1=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
             sha1=$ZERO_SHA1
         sha1dirs=( "${sha1dirs[@]}" "$sha1:$d" )
-        refsha1dirs=( "${refsha1dirs[@]}" "$ref:$sha1:$d" )
+        listdirs=( "${listdirs[@]}" "$rd" )
     done
 
-    list_new_split_commits "$branch" "${refdirs[*]}" |
-    interleave_commits "$branch" "$repeat" "${sha1dirs[*]}" |
-    update_refs "$branch" "$current" "${refsha1dirs[*]}" ||
+    list_new_commits "$branch" "${listdirs[*]}" "${repeated[*]}" |
+    interleave_commits "$branch" "${sha1dirs[*]}" |
+    update_refs "$branch" "$current" "${sha1dirs[*]}" ||
         error "failure interleaving commits"
 }
 
-list_new_split_commits() {
+list_new_commits() {
     local branch="$1"
     local refdirs="$2"
-    local rd r d head tail format
+    local repeated="$3"
+    local rd r d head tail format tailref headref suffix dirs
     for rd in $refdirs; do
         r="${rd%:*}"
         d="${rd##*:}"
 
-        local tailref="refs/heads/mt/$branch/$d/mt-split"
-        local headref="refs/remotes/${r#refs/remotes/}"
+        if [ "$d" = % ]; then
+            suffix=mt-repeat
+            dirs="-- $repeated"
+        else
+            suffix="$d/mt-split"
+            dirs=
+        fi
+        tailref="refs/heads/mt/$branch/$suffix"
+        headref="$r"
         tail="$(run --hide-errors git rev-parse --verify $tailref^{commit})"
         head="$(run --hide-errors git rev-parse --verify $headref^{commit})" ||
             error "invalid ref '$headref' from '$rd'"
         [ "$tail" = "$head" ] && continue
 
         # TODO: add a testcase for d of '-', which requires '--' here.
-        local nots="$(run git show-ref -- $d/mt-split |
+        local nots="$(run git show-ref -- $suffix |
             grep refs/heads/mt/ | awk '{print $2}')"
-        mt_list_commits "$d" $headref --not $nots
+        mt_list_commits "$d" $headref --not $nots $dirs
     done
 }
 
 interleave_commits() {
     local branch="$1"
-    local repeat="$2"
-    local sha1dirs="$3"
+    local sha1dirs="$2"
 
     ref=refs/heads/${branch#refs/heads/}
     local head
@@ -127,8 +144,8 @@ interleave_commits() {
 update_refs() {
     local branch="${1#refs/heads/}"
     local current="$2"
-    local refsha1dirs="$3"
-    local head new_sha1dirs
+    local old_sha1dirs="$3"
+    local new_sha1dirs head
     read head new_sha1dirs
     [ "${VERBOSE:-0}" = 0 ] || log "translation: $head $new_sha1dirs"
 
@@ -139,22 +156,25 @@ update_refs() {
     {
         log "Updating $branch => $head"
         run printf "update %s %s %s\n" $ref $head $current
-        local nsd old_sha1 new_sha1 rsd sd r d
-        for rsd in $refsha1dirs; do
-            r=${rsd%%:*}
-            d=${rsd##*:}
-            sd=${rsd#*:}
+        local old_sha1 new_sha1 new_sd sd d
+        for sd in $old_sha1dirs; do
+            d=${sd#*:}
             old_sha1=${sd%:*}
-            ref=refs/heads/mt/$branch/$d/mt-split
             new_sha1=
-            for nsd in $new_sha1dirs; do
-                [ "$d" = "${nsd#*:}" ] || continue
-                new_sha1=${nsd%:*}
+            [ ! "$old_sha1" = % ] || continue
+            if [ "$d" = % ]; then
+                ref=refs/heads/mt/$branch/mt-repeat
+            else
+                ref=refs/heads/mt/$branch/$d/mt-split
+            fi
+            for new_sd in $new_sha1dirs; do
+                [ "$d" = "${new_sd#*:}" ] || continue
+                new_sha1=${new_sd%:*}
                 break
             done
             if [ -z "$new_sha1" ]; then
                 printf "poison update-ref\n"
-                error "missing output sha1 for $rd"
+                error "missing output sha1 for '$d'"
             fi
             if [ $new_sha1 = $ZERO_SHA1 -a \
                 ! "$new_sha1" = "$old_sha1" ]; then

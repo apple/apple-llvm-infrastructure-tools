@@ -24,11 +24,26 @@ struct translation_queue {
   int parse_source(const char *&current, const char *end);
 };
 
+struct progress_reporter {
+  const std::vector<fparent_type> &fparents;
+  const std::vector<commit_type> &commits;
+  const long num_first_parents;
+  long num_commits_processed = 0;
+
+  explicit progress_reporter(const std::vector<fparent_type> &fparents,
+                             const std::vector<commit_type> &commits)
+      : fparents(fparents), commits(commits),
+        num_first_parents(fparents.size()) {}
+
+  int report(long count = 0);
+};
+
 struct commit_interleaver {
   sha1_pool sha1s;
   git_cache cache;
 
   sha1_ref head;
+  sha1_ref repeated_head;
   dir_list dirs;
   translation_queue q;
 
@@ -53,6 +68,7 @@ struct commit_interleaver {
                         int &max_srev);
   int interleave();
   int interleave_impl();
+  int fast_forward_initial_repeats(progress_reporter &progress);
   int translate_commit(commit_source &source, const commit_type &base,
                        std::vector<sha1_ref> &new_parents,
                        std::vector<int> &parent_revs,
@@ -96,6 +112,12 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     for (const char *end = current; *end; ++end)
       if (*end == '\n') {
         bool found = false;
+        if (current + 1 == end && *current == '%') {
+          if (dirs.repeated_dirs.bits.none())
+            return error("undeclared '%' in start directive");
+          d = -1;
+          return 0;
+        }
         d = dirs.lookup_dir(current, end, found);
         if (!found)
           return error("undeclared directory '" + std::string(current, end) +
@@ -128,15 +150,20 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     return 0;
   };
 
-  int d = -1;
   sources.emplace_back();
   commit_source &source = sources.back();
-  if (parse_space(current) || parse_dir(current, d) || parse_newline(current))
-    return 1;
+  {
+    int d = -1;
+    if (parse_space(current) || parse_dir(current, d) || parse_newline(current))
+      return 1;
 
-  source.dir_index = d;
-  source.is_root = !strcmp("-", dirs.list[d].name);
-  dirs.list[d].source_index = sources.size() - 1;
+    if (d == -1) {
+      source.is_repeat = true;
+    } else {
+      source.dir_index = d;
+      source.is_root = !strcmp("-", dirs.list[d].name);
+    }
+  }
 
   auto parse_boundary = [](const char *&current, bool &is_boundary) {
     switch (*current) {
@@ -170,8 +197,8 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     return 0;
   };
 
-  size_t num_fparents_before = fparents.size();
-  int source_index = sources.size() - 1;
+  const size_t num_fparents_before = fparents.size();
+  const int source_index = sources.size() - 1;
   while (true) {
     if (!try_parse_string(current, "all\n"))
       break;
@@ -185,7 +212,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     if (fparents.size() == 1 + num_fparents_before)
       continue;
 
-    long long last_ct = fparents.rbegin()[1].ct;
+    const long long last_ct = fparents.rbegin()[1].ct;
     if (fparents.back().ct <= last_ct)
       continue;
 
@@ -220,7 +247,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
 
     // Warm the cache.
     cache.note_commit_tree(commit, tree);
-    if (is_boundary) {
+    if (is_boundary || source.is_repeat) {
       // Grab the metadata, which compute_mono might leverage if this is an
       // upstream git-svn commit.
       if (parse_through_null(current))
@@ -232,6 +259,14 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       if (parse_newline(current))
         return 1;
 
+      if (!is_boundary) {
+        assert(source.is_repeat);
+        commits.emplace_back();
+        commits.back().commit = commit;
+        commits.back().tree = tree;
+        continue;
+      }
+
       if (!source.worker)
         source.worker.reset(new monocommit_worker);
 
@@ -241,6 +276,21 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       if (cache.compute_mono(commit, mono))
         return error("cannot find monorepo commit for boundary parent " +
                      commit->to_string());
+
+      // Mark it as a boundary commit and tell the worker about it.
+      bool was_inserted = false;
+      boundary_commit *bc =
+          source.worker->boundary_index_map.insert(*mono, was_inserted);
+      if (!bc)
+        return error("failure to log a commit as a monorepo commit");
+      bc->index = source.worker->futures.size();
+      source.worker->futures.emplace_back();
+      source.worker->futures.back().commit = mono;
+
+      // No need for rev-heroics if source.is_repeat, since then this is a
+      // monorepo commit already.
+      if (source.is_repeat)
+        continue;
 
       // Get the rev.
       int rev = 0;
@@ -261,19 +311,10 @@ int translation_queue::parse_source(const char *&current, const char *end) {
         // rev from a parent on a first-level branch.
         cache.note_rev(mono, rev);
       }
-
-      // Mark it as a boundary commit and tell the worker about it.
-      bool was_inserted = false;
-      boundary_commit *bc =
-          source.worker->boundary_index_map.insert(*mono, was_inserted);
-      if (!bc)
-        return error("failure to log a commit as a monorepo commit");
-      bc->index = source.worker->futures.size();
-      source.worker->futures.emplace_back();
-      source.worker->futures.back().commit = mono;
       continue;
     }
 
+    assert(!source.is_repeat);
     commits.emplace_back();
     commits.back().commit = commit;
     commits.back().tree = tree;
@@ -353,6 +394,11 @@ int translation_queue::parse_source(const char *&current, const char *end) {
   if (source.commits.count < fparents.size() - num_fparents_before)
     return error("first parents missing from commits");
 
+  // Every commit should be a first parent commit.
+  if (source.is_repeat)
+    if (source.commits.count != fparents.size())
+      return error("unexpected non-first-parent repeat commits in stdin");
+
   // Start looking up the tree data.
   if (source.worker)
     source.worker->start();
@@ -406,6 +452,13 @@ int commit_interleaver::translate_parents(const commit_source &source,
 
   if (first_parent)
     add_parent(first_parent);
+
+  if (source.is_repeat) {
+    assert(first_parent);
+    add_parent(base.commit);
+    return 0;
+  }
+
   for (int i = 0; i < base.num_parents; ++i) {
     // fprintf(stderr, "  - parent = %s\n",
     //         base.parents[i]->to_string().c_str());
@@ -445,43 +498,69 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
                  " is too many parents (max: " + std::to_string(max_parents) +
                  ")");
 
-  // Add the base directory.
-  const int base_d = source.dir_index;
+  // Create mask of directories handled by the base commit.
+  dir_mask base_dirs;
+  assert((source.dir_index == -1) == source.is_repeat);
+  assert(!source.is_root || !source.is_repeat);
   if (source.is_root) {
+    base_dirs.set(source.dir_index);
     git_tree tree;
     tree.sha1 = base_commit;
     if (cache.ls_tree(tree))
       return 1;
+
     for (int i = 0; i < tree.num_items; ++i)
       if (dirs.is_dir(tree.items[i].name))
         return error("root dir '-' conflicts with tracked dir '" +
                      base_commit->to_string() + "'");
     items.resize(tree.num_items);
     std::copy(tree.items, tree.items + tree.num_items, items.begin());
+  } else if (source.is_repeat) {
+    // Check that this is a first parent commit.
+    if (!is_head)
+      return error("unexpected non-first-parent repeat commit " +
+                   base_commit->to_string());
+
+    // Head should have been fast-forwarded to base_commit instead of calling
+    // construct_tree if nothing has happened yet.
+    assert(head);
+
+    git_tree tree;
+    tree.sha1 = base_commit;
+    if (cache.ls_tree(tree))
+      return 1;
+
+    for (int i = 0; i < tree.num_items; ++i) {
+      auto &item = tree.items[i];
+      int d = dirs.find_dir(item.name);
+      if (d == -1)
+        return error("no monorepo root to for directory '" +
+                     std::string(item.name) + "' in " +
+                     base_commit->to_string());
+      if (!dirs.repeated_dirs.test(d))
+        continue;
+      base_dirs.set(d);
+      items.push_back(item);
+    }
+
+    // Confirm commit has relevant dirs to repeat.
+    if (base_dirs.bits.none())
+      return error("base repeat commit " + base_commit->to_string() +
+                   " has no active directories");
   } else {
     sha1_ref base_tree;
     if (cache.compute_commit_tree(base_commit, base_tree))
       return 1;
     items.emplace_back();
     items.back().sha1 = base_tree;
-    items.back().name = dirs.list[base_d].name;
+    items.back().name = dirs.list[source.dir_index].name;
     items.back().type = git_tree::item_type::tree;
+    base_dirs.set(source.dir_index);
   }
-  if (is_head && !dirs.active_dirs.test(base_d))
-    dirs.active_dirs.set(base_d);
+  if (is_head)
+    dirs.active_dirs.bits |= base_dirs.bits;
 
   // Pick parents for all the other directories.
-  auto find_d = [&](const char *name, bool &is_known_dir) {
-    int d = dirs.lookup_dir(name, is_known_dir);
-    if (is_known_dir)
-      return d;
-
-    // Anything unknown is part of the monorepo root.
-    d = dirs.lookup_dir("-", is_known_dir);
-    if (is_known_dir)
-      return d;
-    return -1;
-  };
   int inactive_p = -1;
   auto get_dir_p = [&](int d) -> int & {
     return dirs.active_dirs.test(d) ? parent_for_d[d] : inactive_p;
@@ -505,16 +584,15 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       if (source.is_root && item.type != git_tree::item_type::tree)
         continue;
 
-      bool is_known_dir = false;
-      int d = find_d(item.name, is_known_dir);
-      if (!is_known_dir)
+      int d = dirs.find_dir(item.name);
+      if (d == -1)
         return error("no monorepo root to claim undeclared directory '" +
-                     std::string(dirs.list[d].name) + "' in " +
+                     std::string(item.name) + "' in " +
                      parents[p]->to_string());
       if (!dirs.list[d].is_root)
         if (item.type != git_tree::item_type::tree)
           return error("invalid non-tree for directory '" +
-                       std::string(dirs.list[d].name) + "' in " +
+                       std::string(item.name) + "' in " +
                        parents[p]->to_string());
 
       // The base commit takes priority even if we haven't seen it in a
@@ -523,7 +601,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       // TODO: add a test where the base directory is possibly inactive,
       // because there are non-first-parent commits that get mapped ahead of
       // time.
-      if (d == base_d)
+      if (base_dirs.test(d))
         continue;
 
       int &dir_p = get_dir_p(d);
@@ -599,11 +677,9 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       if (source.is_root && item.type != git_tree::item_type::tree)
         continue;
 
-      bool is_known_dir = false;
-      int d = find_d(item.name, is_known_dir);
-      assert(is_known_dir);
+      int d = dirs.find_dir(item.name);
       assert(d != -1);
-      if (d != base_d)
+      if (!base_dirs.test(d))
         if (p == get_dir_p(d))
           items.push_back(item);
     }
@@ -654,6 +730,55 @@ int commit_interleaver::interleave() {
   return status;
 }
 
+int progress_reporter::report(long count) {
+  num_commits_processed += count;
+  long num_first_parents_processed = num_first_parents - fparents.size();
+  bool is_finished = count == 0;
+  bool is_periodic = !(num_first_parents_processed % 50);
+  if (is_finished == is_periodic)
+    return 0;
+  return fprintf(stderr,
+                 "   %9ld / %ld first-parents mapped (%9ld / %ld commits)\n",
+                 num_first_parents_processed, num_first_parents,
+                 num_commits_processed, commits.size()) < 0
+             ? 1
+             : 0;
+}
+
+int commit_interleaver::fast_forward_initial_repeats(
+    progress_reporter &progress) {
+  auto repeats_index = q.fparents.back().index;
+  auto &repeats = q.sources[repeats_index];
+  assert(repeats.commits.count != 0);
+  if (head) {
+    // If "head" exists but is the parent of the first (new) repeated commit,
+    // we should still fast-forward.
+    auto first = q.commits.begin() + repeats.commits.first;
+    if (first->num_parents)
+      if (first->parents[0] != head)
+        return 0;
+  }
+
+  // Don't generate merge commits if we can just fast-forward.
+  auto first = q.commits.begin() + repeats.commits.first,
+       last = first + repeats.commits.count;
+  while (!q.fparents.empty()) {
+    const auto &fparent = q.fparents.back();
+    if (fparent.index != repeats_index)
+      break;
+
+    assert(first->commit == fparent.commit);
+    head = fparent.commit;
+    q.fparents.pop_back();
+    progress.report(1);
+    ++first;
+  }
+  assert(head);
+  repeats.commits.count = last - first;
+  repeats.commits.first = first - q.commits.begin();
+  return 0;
+}
+
 int commit_interleaver::interleave_impl() {
   // Construct trees and commit them.
   std::vector<sha1_ref> new_parents;
@@ -661,32 +786,18 @@ int commit_interleaver::interleave_impl() {
   std::vector<git_tree::item_type> items;
   git_cache::commit_tree_buffers buffers;
 
-  const long num_first_parents = q.fparents.size();
-  long num_commits_processed = 0;
-  auto report_progress = [&](long count = 0) {
-    num_commits_processed += count;
-    long num_first_parents_processed = num_first_parents - q.fparents.size();
-    bool is_finished = count == 0;
-    bool is_periodic = !(num_first_parents_processed % 50);
-    if (is_finished == is_periodic)
-      return 0;
-    return fprintf(stderr,
-                   "   %9ld / %ld first-parents mapped (%9ld / %ld commits)\n",
-                   num_first_parents_processed, num_first_parents,
-                   num_commits_processed, q.commits.size()) < 0
-               ? 1
-               : 0;
-  };
+  progress_reporter progress(q.fparents, q.commits);
+  if (!q.fparents.empty() && q.sources[q.fparents.back().index].is_repeat)
+    if (fast_forward_initial_repeats(progress))
+      return 1;
   while (!q.fparents.empty()) {
     auto fparent = q.fparents.back();
     q.fparents.pop_back();
     auto &source = q.sources[fparent.index];
-    auto &dir = dirs.list[source.dir_index];
-
     assert(source.commits.count);
     auto first = q.commits.begin() + source.commits.first,
          last = first + source.commits.count;
-    auto original_first = first;
+    const auto original_first = first;
     while (first->commit != fparent.commit) {
       if (translate_commit(source, *first, new_parents, parent_revs, items,
                            buffers))
@@ -695,7 +806,6 @@ int commit_interleaver::interleave_impl() {
       if (++first == last)
         return error("first parent missing from all");
     }
-    dir.head = first->commit;
     if (translate_commit(source, *first, new_parents, parent_revs, items,
                          buffers, &head))
       return 1;
@@ -703,10 +813,10 @@ int commit_interleaver::interleave_impl() {
     ++first;
     source.commits.count = last - first;
     source.commits.first = first - q.commits.begin();
-    if (report_progress(first - original_first))
+    if (progress.report(first - original_first))
       return 1;
   }
-  if (report_progress())
+  if (progress.report())
     return 1;
 
   if (head)
@@ -717,19 +827,27 @@ int commit_interleaver::interleave_impl() {
 
 void commit_interleaver::print_heads(FILE *file) {
   textual_sha1 sha1;
-  if (head)
-    sha1 = textual_sha1(*head);
+  auto set_sha1 = [&](sha1_ref ref) {
+    if (ref)
+      sha1 = textual_sha1(*ref);
+    else
+      memset(sha1.bytes, '0', 40);
+  };
+  set_sha1(head);
   fprintf(file, "%s", sha1.bytes);
+  if (dirs.repeated_dirs.bits.any()) {
+    set_sha1(repeated_head);
+    fprintf(file, " %s:%s", sha1.bytes, "%");
+  }
   for (int d = 0, de = dirs.list.size(); d != de; ++d) {
     if (!dirs.tracked_dirs.test(d))
+      continue;
+    if (dirs.repeated_dirs.test(d))
       continue;
 
     auto &dir = dirs.list[d];
     assert(bool(dir.head) == dirs.active_dirs.test(d));
-    if (dir.head)
-      sha1 = textual_sha1(*dir.head);
-    else
-      memset(sha1.bytes, '0', 40);
+    set_sha1(dir.head);
     fprintf(file, " %s:%s", sha1.bytes, dir.name);
   }
   fprintf(file, "\n");
@@ -759,8 +877,14 @@ int commit_interleaver::translate_commit(
                         buffers) ||
       cache.set_rev(new_commit, rev) || cache.set_mono(base.commit, new_commit))
     return 1;
-  if (head)
-    *head = new_commit;
+  if (!head)
+    return 0;
+
+  *head = new_commit;
+  if (source.is_repeat)
+    repeated_head = base.commit;
+  else
+    dirs.list[source.dir_index].head = base.commit;
   return 0;
 }
 

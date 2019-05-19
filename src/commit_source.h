@@ -79,6 +79,7 @@ struct commit_source {
   index_range commits;
   int dir_index = -1;
   bool is_root = false;
+  bool is_repeat = false;
 
   std::unique_ptr<monocommit_worker> worker;
 };

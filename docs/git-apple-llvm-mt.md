@@ -122,3 +122,77 @@ branch.  It's given:
   directory to move them to, where `<ref>:` on its own indicates it
   should go at root (similar to
   [llvm.org/git/monorepo-root.git](http://git.llvm.org/git/monorepo-root.git)).
+
+
+## Interleaving commits with `split2mono`
+
+The `split2mono` tool's `interleave-commits` command is used by `mt generate`
+to create monorepo branches.
+
+### Command-line
+
+```
+split2mono interleave-commits <split2mono-db> <svn2git-db> \
+    <start-sha1> <dir-start-commit>:<dir>...
+```
+
+- `<repeat-start-commit>`, if any, is the most recent already-included commit
+  to merge in from another monorepo branch.
+- `<start-sha1>` should be used as the parent of the first new monorepo commit.
+    - The special value 0000000000000000000000000000000000000000 indicates the
+      branch hasn't started yet.
+- `<dir>` is a top-level directory in the monorepo.
+    - The special value `-` indicates this is a monorepo-root.
+    - The special value `%` indicates this is the start commit for repeated
+      dirs.
+- `<dir-start-commit>` is the most recent already-included split commit for
+  `<dir>`
+    - The special value `-` indicates that this directory does not have commits
+      to interleave on this branch.
+    - The special value `%` indicates that this directory should be filled by
+      generating merge commits.
+
+### Standard input
+
+The commits to translate should be listed on `stdin`, in the following format:
+
+```
+start <name>
+<first-parent-commits>
+all
+<all-commits>
+done
+```
+
+where:
+
+- `<name>` is usually the name of the source.
+    - The special value `-` indicates it's the source of monorepo root commits.
+    - The special value `%` indicates it's the source of "repeated" commits
+      to be merged in.
+    - Other values are interpreted as top-level directory names.
+- `<first-parent_commits>` is in normal `log` order (reverse chonological by
+  commit timestamp), just containing commit hash and timestamp.
+- `<all-commits>` is in `--reverse` order (chronological by commit timestamp),
+  containing all the metadata that split2mono might need, and including
+  boundary commits.
+
+The format has  tool `git apple-llvm mt list-commits` is the way to generate `stdin`
+for `split2mono interleave-commits`.
+
+### Standard output
+
+The output is in a similar format to the final positional arguments from the
+command-line:
+
+```
+<final-sha1> <dir-final-commit>:<dir>...
+```
+
+- `<final-sha1>` is the final generated commit (the head of the generated
+  branch).
+- `<dir-final-commit>` is the final commit processed for `<dir>`.
+    - If `<dir>` is `-`, then this is the final commit for the monorepo root.
+    - If `<dir>` is `%`, then this is the final commit used to generate merges.
+    - Note that `<dir-final-commit>` should never have the special values of
+      `-` or `%`.

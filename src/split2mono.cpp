@@ -371,14 +371,33 @@ static int main_interleave_commits(const char *cmd, int argc,
     ++current;
     return 0;
   };
+  bool was_repeated_head_specified = false;
   for (int i = 0; i < argc; ++i) {
     const char *arg = argv[i];
     sha1_ref head;
     bool is_tracked = false;
-    if (try_parse_ch(arg, '-'))
+    bool is_repeat = false;
+    if (try_parse_ch(arg, '-')) {
       is_tracked = true;
-    if ((is_tracked && parse_sha1(arg, head)) || try_parse_ch(arg, ':'))
+      if (!try_parse_ch(arg, '%'))
+        is_repeat = true;
+    }
+    if ((is_tracked && !is_repeat && parse_sha1(arg, head)) ||
+        try_parse_ch(arg, ':'))
       return error("invalid <sha1>:... in '" + std::string(argv[i]) + "'");
+
+    if (!try_parse_ch(arg, '%')) {
+      if (*arg)
+        return error("invalid junk after '%' in '" + std::string(argv[i]) +
+                     "'");
+
+      // This is the head for all of the repeated dirs.
+      if (was_repeated_head_specified)
+        return error("repeated head already specified");
+      was_repeated_head_specified = true;
+      interleaver.repeated_head = head;
+      continue;
+    }
 
     int d = -1;
     bool is_new = false;
@@ -389,8 +408,16 @@ static int main_interleave_commits(const char *cmd, int argc,
     if (!is_tracked)
       continue;
     interleaver.dirs.tracked_dirs.set(d);
+    interleaver.dirs.repeated_dirs.set(d, is_repeat);
     interleaver.dirs.set_head(d, head);
   }
+
+  if (was_repeated_head_specified && !interleaver.dirs.repeated_dirs.bits.any())
+    return usage("head specified for repeated dirs, but no dirs", cmd);
+  if (!was_repeated_head_specified && interleaver.dirs.repeated_dirs.bits.any())
+    return usage("repeated dirs specified, but missing head", cmd);
+  if (interleaver.repeated_head)
+    interleaver.dirs.active_dirs.bits |= interleaver.dirs.repeated_dirs.bits;
 
   return interleaver.read_queue_from_stdin() || interleaver.interleave();
 }
