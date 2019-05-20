@@ -430,7 +430,7 @@ GIT_DIR=$DEFAULT_GIT_DIR
 SETUP=1 PUSH=1 PUSH_ONLY=0
 should_setup() { [ ! "${SETUP:-0}" = 0 ]; }
 should_push() { [ ! "${PUSH:-0}" = 0 ]; }
-only_push() { [ ! "${PUSH_ONLY:-0}" = 0 ]; }
+push_only() { [ ! "${PUSH_ONLY:-0}" = 0 ]; }
 NAME=
 while [ $# -gt 0 ]; do
     case "$1" in

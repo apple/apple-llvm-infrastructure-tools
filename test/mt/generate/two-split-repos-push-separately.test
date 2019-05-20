@@ -56,6 +56,9 @@ RUN: not git -C %t.out.split rev-parse --verify mt/master/b/mt-split^{commit}
 B: B-2
 B: B-1
 
+# Add some more commits.  With --push-only we shouldn't see them.
+RUN: env ct=1550000005 mkblob %t.a 5
+RUN: env ct=1550000006 mkblob %t.b 6
 RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs --push-only \
 RUN:     generate-branch
 
