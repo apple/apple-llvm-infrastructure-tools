@@ -153,13 +153,12 @@ mt_setup() {
             log "  - $name"
             clone=clones/$name.git
             if [ -d "$clone" ]; then
-                run $hide git --git-dir $clone remote update >$gitout ||
+                run $hide git -C $clone remote update >$gitout ||
                     error "failed to update remote '$name'"
             else
                 {
                     run $hide mkdir -p $(dirname $clone) >$gitout &&
-                    run $hide git clone --mirror $url $clone >$gitout &&
-                    run $hide git remote add $name $PWD/$clone >$gitout
+                    run $hide git clone --mirror $url $clone >$gitout
                 } ||
                     error "failed to mirror remote '$name'"
             fi &
@@ -172,6 +171,8 @@ mt_setup() {
     print_repos |
     while read name url; do
         log "  - $name"
+        # Ignore errors here, since often the remote will already exist.
+        run --hide-errors git remote add $name $PWD/clones/$name.git >$gitout
         run $hide git fetch --no-tags $name >$gitout ||
         error "failed to sync '$GIT_DIR'"
     done || return 1
