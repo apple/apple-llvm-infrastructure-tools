@@ -17,7 +17,7 @@ pytest_dirs := auto-updater
 pytest_targets := $(foreach t,$(pytest_dirs),check-$t)
 
 .PHONY: all clean clean-venv venv requirements
-all: $(lit_targets) $(pytest_targets) check-lint check-types ;
+all: check-all ;
 
 S := $(testdir)../src/
 D := $(testdir)Built
