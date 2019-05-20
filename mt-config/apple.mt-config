@@ -11,11 +11,11 @@ repo split/llvm/compiler-rt        https://git.llvm.org/git/compiler-rt.git
 repo split/llvm/libcxx             https://git.llvm.org/git/libcxx.git
 repo split/llvm/lldb               https://git.llvm.org/git/lldb.git
 repo split/llvm/llvm               https://git.llvm.org/git/llvm.git
-repo github/apple                  git@github.com:apple/llvm-project-v0.git
-repo mt/github/apple               git@github.com:apple/llvm-project-mt-v0.git
+repo github/apple/v0               git@github.com:apple/llvm-project-v0.git
+repo github/apple/v0-split         git@github.com:apple/llvm-project-v0-split.git
 
-# destination monorepo github/apple
-# destination splitref mt/github/apple
+# destination monorepo github/apple/v0
+# destination splitref github/apple/v0-split
 
 declare-dir -
 declare-dir clang-tools-extra
