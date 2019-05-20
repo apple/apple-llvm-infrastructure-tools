@@ -256,10 +256,11 @@ mt_push_mapping() {
     monodest="$(show_monorepo_destination)" || exit 1
     {
         # Push to the local mirror.
-        run --dry git push $monodest $MTDB_REF:$MTDB_REF &&
+        run --dry git push $monodest $MTDB_REF:$MTDB_REF \
+            --force-with-lease=$MTDB_REF:$old_mtdb_sha1 &&
 
         # Push to the remote using --force-with-lease to check for races.
-        run --dry git -C clones/$monodest.git push origin $MTDB_REF:$MTDB_REF \
+        run --dry git -C clones/$monodest.git push --mirror origin \
             --force-with-lease=$MTDB_REF:$old_mtdb_sha1
     } || error "failed to push $MTDB_REF to $monodest"
 }
@@ -363,12 +364,12 @@ mt_push_branch() {
     # there to the actual remote.
     local monodest
     monodest="$(show_monorepo_destination)" || exit 1
-    run --dry git push $monodest $MTDB_REF:$MTDB_REF $branch ||
+    run --dry git push $monodest $MTDB_REF:$MTDB_REF $branch \
+        --force-with-lease=$MTDB_REF:$old_mtdb_sha1 ||
         error "failed to push $MTDB_REF to local $monodest"
-    run --dry git -C clones/$monodest.git push --atomic origin \
-        $MTDB_REF:$MTDB_REF --force-with-lease=$MTDB_REF:$old_mtdb_sha1 \
-        $branch --force-with-lease=refs/heads/$branch:$old_branch_sha1 ||
-        error "failed to push $MTDB_REF to $monodest"
+    run --dry git -C clones/$monodest.git push --atomic --mirror origin \
+        --force-with-lease=$MTDB_REF:$old_mtdb_sha1 ||
+        error "failed to push $branch and $MTDB_REF to $monodest"
 
     mt_push_splitrefs "$branch"
 }
@@ -390,7 +391,7 @@ mt_push_splitrefs() {
     done
     run --dry git push $splitdest $refspecs ||
         error "failed to push $refs to local $splitdest"
-    run --dry git -C clones/$splitdest.git push origin $refspecs ||
+    run --dry git -C clones/$splitdest.git push --mirror origin ||
         error "failed to push $refs to $splitdest"
 }
 
