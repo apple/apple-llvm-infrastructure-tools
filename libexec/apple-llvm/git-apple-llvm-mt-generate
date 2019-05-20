@@ -165,7 +165,7 @@ mt_setup() {
             fi &
             forks="$forks $!"
         done
-        wait $forks
+        run wait $forks
     } || return 1
 
     log "Combining object databases"
