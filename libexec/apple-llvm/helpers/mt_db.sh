@@ -39,7 +39,9 @@ mt_db_make_ref() {
 
 mt_db_make_worktree() {
     local wt="$(mt_db_worktree)"
-    run git worktree add -q "$wt" "$(mt_db)" ||
+    # Don't use -q here because some bots have an old git-worktree that doesn't
+    # have it.  Instead redirect to /dev/null manually.
+    run git worktree add "$wt" "$(mt_db)" >/dev/null ||
         error "failed to create worktree for $(mt_db) at '$wt'"
     local count
     count=$(run git -C "$wt" rev-list --count HEAD) ||
