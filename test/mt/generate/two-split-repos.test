@@ -58,3 +58,8 @@ RUN: git -C %t.out.split rev-list mt/master/b/mt-split \
 RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s B %t
 B: B-2
 B: B-1
+
+# Add some more commits via a separate repo to confirm enough stuff was pushed.
+RUN: env ct=1550000005 mkblob %t.a 5
+RUN: rm -rf %t-mt-repo2.git
+RUN: %mtgen --git-dir %t-mt-repo2.git --config-dir %t-mt-configs generate-branch

@@ -18,14 +18,20 @@ mt_db_init() {
     fi
 
     local count
-    count=$(run --hide-errors git -C "$wt" rev-list --count HEAD) ||
-        error "internal: failed to verify $wt"
+    count=$(run --hide-errors git rev-list --count $ref) ||
+        error "internal: failed to verify $ref"
     case $count in
         2) true ;;
-        *) error "expected 2 commits in $rev" ;;
+        *) error "expected 2 commits in $ref" ;;
     esac
-    run --hide-errors git -C "$wt" reset --hard "$ref" >/dev/null ||
-        error "internal: failed to reset $wt"
+    if [ -d "$wt" ]; then
+        # Reset to match the ref.
+        run --hide-errors git -C "$wt" reset --hard "$ref" >/dev/null ||
+            error "internal: failed to reset $wt"
+    else
+        # Handle a pre-existing ref with no worktree.
+        mt_db_make_worktree
+    fi
 }
 
 mt_db_make_ref() {
