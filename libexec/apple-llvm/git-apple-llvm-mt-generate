@@ -390,6 +390,7 @@ mt_push_splitrefs() {
         refspec="$ref:$ref"
         refspecs="$refspecs${refspecs:+ }$refspec"
     done
+    [ -n "$refspecs" ] || return 0
     run --dry git push $splitdest $refspecs ||
         error "failed to push $refs to local $splitdest"
     run --dry git -C clones/$splitdest.git push --mirror origin ||
@@ -403,8 +404,8 @@ mt_generate_splitrefs() {
     local branch=$rawbranch
     [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
 
-    local refdirs="$(print_active_refdirs "$branch")"
-    local repeat="$(print_repeat "$branch")"
+    local refdirs="$(print_active_refdirs "$rawbranch")"
+    local repeat="$(print_repeat "$rawbranch")"
 
     [ -n "$refdirs" ] ||
         error "generate $branch: no 'dir' declarations"

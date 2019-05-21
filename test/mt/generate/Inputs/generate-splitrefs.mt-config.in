@@ -1,0 +1,29 @@
+repo a-name file://%t.a
+repo b-name file://%t.b
+repo out/split file://%t.out.split
+repo out/mono file://%t.out.mono
+
+destination splitref out/split
+destination monorepo out/mono
+
+declare-dir a
+declare-dir b
+
+# Need to somehow map these revs so that splitrefs is allowed to use them.
+# FIXME: do the full git-svn dance.
+dir prep a a-name/master
+dir prep b b-name/master
+
+# This is what we actually care about.
+dir master a a-name/master
+dir master b b-name/master
+
+# This should do nothing, but not error.
+generate 0000 splitrefs master
+
+# This is prep to allow us to map splitrefs.
+# FIXME: change to a "mapping" directive.
+generate 0001 branch prep
+
+# Here we go.
+generate 0002 splitrefs master
