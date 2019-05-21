@@ -12,19 +12,20 @@ mt_db_init() {
     MT_DB_SPLIT2MONO_DB="$wt/"split2mono.db
 
     local ref=$(mt_db)
-    if git rev-parse --verify $ref^{commit} >/dev/null 2>&1; then
-        local count
-        count=$(run --hide-errors git -C "$wt" rev-list --count HEAD) ||
-            error "internal: failed to verify $wt"
-        case $count in
-            2) true ;;
-            *) error "expected 2 commits in $rev" ;;
-        esac
-        run --hide-errors git -C "$wt" reset --hard "$ref" >/dev/null ||
-            error "internal: failed to reset $wt"
-        return 0
+    if ! run --hide-errors git rev-parse --verify $ref^{commit} >/dev/null; then
+        mt_db_make_ref && mt_db_make_worktree
+        return $?
     fi
-    mt_db_make_ref && mt_db_make_worktree
+
+    local count
+    count=$(run --hide-errors git -C "$wt" rev-list --count HEAD) ||
+        error "internal: failed to verify $wt"
+    case $count in
+        2) true ;;
+        *) error "expected 2 commits in $rev" ;;
+    esac
+    run --hide-errors git -C "$wt" reset --hard "$ref" >/dev/null ||
+        error "internal: failed to reset $wt"
 }
 
 mt_db_make_ref() {
