@@ -338,11 +338,16 @@ mt_fetch_branch() {
     [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
 
     # Fetch from local mirror.
-    local splitdest monodest
+    local monodest repeat
     monodest="$(show_monorepo_destination)" || exit 1
+    repeat="$(print_repeat "$rawbranch")" ||
+        error "failed to extract any repeat directive for $rawbranch"
     mt_fetch_one_branch "$monodest" "$branch"
+    mt_fetch_one_branch "$monodest" "refs/heads/mt/$rawbranch/mt-repeat"
 
+    local splitdest refdirs
     splitdest="$(show_splitref_destination)" || exit 1
+    refdirs="$(print_active_refdirs "$rawbranch")" || exit 1
     for refdir in $refdirs; do
         d=${refdir#*:}
         mt_fetch_one_branch "$splitdest" "refs/heads/mt/$rawbranch/$d/mt-split"
@@ -353,9 +358,7 @@ mt_fetch_branch() {
 
 mt_fetch_splitrefs() {
     local branch="$1"
-    local splitdest refdirs repeat
-    repeat="$(print_repeat "$branch")" ||
-        error "failed to extract any repeat directive for $branch"
+    local splitdest refdirs
     refdirs="$(print_active_refdirs "$branch")" ||
         error "failed to extract active refdirs for $branch"
     splitdest="$(show_splitref_destination)" || exit 1
@@ -387,9 +390,17 @@ mt_push_branch() {
 
     # Push the primary refs.  Need to push to the local mirror, and then from
     # there to the actual remote.
-    local monodest
+    local monodest repeat
     monodest="$(show_monorepo_destination)" || exit 1
-    run --dry git push $monodest $MTDB_REF:$MTDB_REF $branch \
+    repeat="$(print_repeat "$branch")" ||
+        error "failed to extract any repeat directive for $branch"
+    local repeatref
+    if [ -n "$repeat" ]; then
+        repeatref=refs/heads/mt/$branch/mt-repeat
+        run --hide-errors git rev-parse --verify $repeatref^{commit} ||
+            repeatref=
+    fi
+    run --dry git push $monodest $MTDB_REF:$MTDB_REF $branch $repeatref \
         --force-with-lease=$MTDB_REF:$old_mtdb_sha1 ||
         error "failed to push $MTDB_REF to local $monodest"
     run --dry git -C clones/$monodest.git push --atomic --mirror origin \

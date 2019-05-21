@@ -115,6 +115,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
         if (current + 1 == end && *current == '%') {
           if (dirs.repeated_dirs.bits.none())
             return error("undeclared '%' in start directive");
+          current = end;
           d = -1;
           return 0;
         }
@@ -259,7 +260,10 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       if (parse_newline(current))
         return 1;
 
-      if (!is_boundary) {
+      if (source.is_repeat) {
+        if (is_boundary)
+          continue;
+
         assert(source.is_repeat);
         commits.emplace_back();
         commits.back().commit = commit;
@@ -396,8 +400,11 @@ int translation_queue::parse_source(const char *&current, const char *end) {
 
   // Every commit should be a first parent commit.
   if (source.is_repeat)
-    if (source.commits.count != fparents.size())
-      return error("unexpected non-first-parent repeat commits in stdin");
+    if (source.commits.count != fparents.size() - num_fparents_before)
+      return error("unexpected non-first-parent repeat commits in stdin (" +
+                   std::to_string(source.commits.count) + " commits; " +
+                   std::to_string(fparents.size() - num_fparents_before) +
+                   " fparents)");
 
   // Start looking up the tree data.
   if (source.worker)
@@ -861,7 +868,8 @@ int commit_interleaver::translate_commit(
   new_parents.clear();
   parent_revs.clear();
   items.clear();
-  const char *dir = q.dirs.list[source.dir_index].name;
+  const char *dir =
+      source.is_repeat ? nullptr : q.dirs.list[source.dir_index].name;
   sha1_ref new_tree, new_commit, first_parent_override;
   if (head)
     first_parent_override = *head;

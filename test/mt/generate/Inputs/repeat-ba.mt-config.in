@@ -1,0 +1,18 @@
+repo a file://%t.a
+repo b file://%t.b
+repo out file://%t.out.ba
+repo out-split file://%t.out.ba-split
+
+destination splitref out-split
+destination monorepo out
+
+declare-dir a
+declare-dir b
+
+dir just-b b b/master
+
+repeat add-a just-b
+dir    add-a a a/master
+
+generate 0001 branch just-b
+generate 0002 branch add-a

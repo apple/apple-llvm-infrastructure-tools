@@ -1,0 +1,80 @@
+# Create non-linear histories and confirm that only the first-parents get
+# repeated.
+RUN: mkrepo %t.a
+RUN: mkrepo %t.b
+RUN: env ct=1550000001 mkblob  %t.a a1
+RUN: env ct=1550000002 mkblob  %t.b b2
+RUN: env ct=1550000003 mkblob  %t.b b3
+RUN: git -C %t.b branch b3
+RUN: git -C %t.b reset --hard HEAD^
+RUN: env ct=1550000004 mkblob  %t.b b4
+RUN: env ct=1550000005 mkmerge %t.b b5 b3
+RUN: env ct=1550000006 mkblob  %t.a a6
+RUN: git -C %t.a branch a6
+RUN: git -C %t.a reset --hard HEAD^
+RUN: env ct=1550000007 mkblob  %t.a a7
+RUN: env ct=1550000008 mkmerge %t.a a8 a6
+RUN: number-commits -p A %t.a master  >%t-split.map
+RUN: number-commits -p B %t.b master >>%t-split.map
+RUN: git -C %t.a log master --reverse --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t-split.map | grep -e . | check-diff %s A %t
+RUN: git -C %t.b log master --reverse --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t-split.map | grep -e . | check-diff %s B %t
+A: A-1         mkblob:  a1
+A: A-2 A-1     mkblob:  a6
+A: A-3 A-1     mkblob:  a7
+A: A-4 A-3 A-2 mkmerge: a8
+B: B-1         mkblob:  b2
+B: B-2 B-1     mkblob:  b3
+B: B-3 B-1     mkblob:  b4
+B: B-4 B-3 B-2 mkmerge: b5
+
+RUN: mkrepo --bare %t.out.ab
+RUN: mkrepo --bare %t.out.ab-split
+RUN: mkrepo --bare %t.out.ba
+RUN: mkrepo --bare %t.out.ba-split
+RUN: rm -rf %t-mt-repo-ab.git
+RUN: rm -rf %t-mt-repo-ba.git
+RUN: rm -rf %t-mt-configs
+RUN: mkdir -p %t-mt-configs
+RUN: cat         %S/Inputs/repeat-ab.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/repeat-ab.mt-config
+RUN: cat         %S/Inputs/repeat-ba.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/repeat-ba.mt-config
+RUN: %mtgen --git-dir %t-mt-repo-ab.git --config-dir %t-mt-configs repeat-ab
+RUN: %mtgen --git-dir %t-mt-repo-ba.git --config-dir %t-mt-configs repeat-ba
+
+RUN: cp %t-split.map %t.ab.map
+RUN: cp %t-split.map %t.ba.map
+RUN: number-commits -p JUST-A %t-mt-repo-ab.git just-a        >>%t.ab.map
+RUN: number-commits -p ADD-B  %t-mt-repo-ab.git just-a..add-b >>%t.ab.map
+RUN: number-commits -p JUST-B %t-mt-repo-ba.git just-b        >>%t.ba.map
+RUN: number-commits -p ADD-A  %t-mt-repo-ba.git just-b..add-a >>%t.ba.map
+RUN: git -C %t-mt-repo-ab.git log add-b --reverse --date-order \
+RUN:     --format="%%H %%P %%s"                                \
+RUN:   | apply-commit-numbers %t.ab.map | grep -e . | check-diff %s AB %t
+AB: JUST-A-1                          mkblob:  a1
+AB:  ADD-B-1 JUST-A-1                 mkblob:  b2
+AB:  ADD-B-2  ADD-B-1                 mkblob:  b3
+AB:  ADD-B-3  ADD-B-1                 mkblob:  b4
+AB:  ADD-B-4  ADD-B-3 ADD-B-2         mkmerge: b5
+AB: JUST-A-2 JUST-A-1                 mkblob:  a6
+AB: JUST-A-3 JUST-A-1                 mkblob:  a7
+AB:  ADD-B-5  ADD-B-4 JUST-A-3 Merge: mkblob:  a7
+AB: JUST-A-4 JUST-A-3 JUST-A-2        mkmerge: a8
+AB:  ADD-B-6  ADD-B-5 JUST-A-4 Merge: mkmerge: a8
+
+RUN: git -C %t-mt-repo-ba.git log add-a --reverse --date-order \
+RUN:     --format="%%H %%P %%s"                                \
+RUN:   | apply-commit-numbers %t.ba.map | grep -e . | check-diff %s BA %t
+BA:  ADD-A-1                          mkblob:  a1
+BA: JUST-B-1                          mkblob:  b2
+BA:  ADD-A-2  ADD-A-1 JUST-B-1 Merge: mkblob:  b2
+BA: JUST-B-2 JUST-B-1                 mkblob:  b3
+BA: JUST-B-3 JUST-B-1                 mkblob:  b4
+BA:  ADD-A-3  ADD-A-2 JUST-B-3 Merge: mkblob:  b4
+BA: JUST-B-4 JUST-B-3 JUST-B-2        mkmerge: b5
+BA:  ADD-A-4  ADD-A-3 JUST-B-4 Merge: mkmerge: b5
+BA:  ADD-A-5  ADD-A-1                 mkblob:  a6
+BA:  ADD-A-6  ADD-A-4                 mkblob:  a7
+BA:  ADD-A-7  ADD-A-6  ADD-A-5        mkmerge: a8

@@ -78,7 +78,8 @@ struct git_cache {
                   const std::vector<sha1_ref> &parents, sha1_ref &commit,
                   commit_tree_buffers &buffers);
   int parse_commit_metadata(sha1_ref commit,
-                            git_cache::commit_tree_buffers &buffers);
+                            git_cache::commit_tree_buffers &buffers,
+                            bool is_merge);
 
   struct sha1_pair {
     sha1_ref key;
@@ -657,7 +658,8 @@ int git_cache::mktree(git_tree &tree) {
 }
 
 int git_cache::parse_commit_metadata(sha1_ref commit,
-                                     git_cache::commit_tree_buffers &buffers) {
+                                     git_cache::commit_tree_buffers &buffers,
+                                     bool is_merge) {
   auto &message = buffers.message;
   const char *prefixes[] = {
       "GIT_AUTHOR_NAME=",    "GIT_COMMITTER_NAME=", "GIT_AUTHOR_DATE=",
@@ -677,21 +679,40 @@ int git_cache::parse_commit_metadata(sha1_ref commit,
         return 0;
     return 1;
   };
-  auto parse_suffix = [&skip_until](const char *&current, std::string &s) {
+  auto parse_suffix = [&skip_until](const char *&current, std::string &s,
+                                    const char *replacement = nullptr) {
     const char *start = current;
     if (skip_until(current, '\n'))
       return 1;
-    s.append(start, current);
+    if (replacement)
+      s.append(replacement);
+    else
+      s.append(start, current);
     ++current;
     return 0;
   };
-  if (parse_suffix(metadata, buffers.an) ||
-      parse_suffix(metadata, buffers.cn) ||
+  const char *merge_an = is_merge ? "apple-llvm-mt" : nullptr;
+  const char *merge_ae = is_merge ? "mt @ apple-llvm" : nullptr;
+  if (parse_suffix(metadata, buffers.an, merge_an) ||
+      parse_suffix(metadata, buffers.cn, merge_an) ||
       parse_suffix(metadata, buffers.ad) ||
       parse_suffix(metadata, buffers.cd) ||
-      parse_suffix(metadata, buffers.ae) || parse_suffix(metadata, buffers.ce))
+      parse_suffix(metadata, buffers.ae, merge_ae) ||
+      parse_suffix(metadata, buffers.ce, merge_ae))
     return error("failed to parse commit metadata");
-  message = metadata;
+
+  if (!is_merge) {
+    message = metadata;
+    return 0;
+  }
+
+  // For merge commits, just extract the subject.
+  message = "Merge: ";
+  const char *start = metadata;
+  while (!skip_until(metadata, '\n'))
+    if (*++metadata == '\n')
+      break;
+  message.append(start, metadata);
   return 0;
 }
 
@@ -769,6 +790,10 @@ static int num_newlines_before_trailers(const std::string &message) {
 
 static void append_trailers(const char *dir, sha1_ref base_commit,
                             std::string &message) {
+  // If this is a "repeat" merge, probably we don't need a trailer.
+  if (!dir)
+    return;
+
   for (int i = 0, ie = num_newlines_before_trailers(message); i != ie; ++i)
     message += '\n';
   textual_sha1 sha1(*base_commit);
@@ -785,7 +810,7 @@ static void append_trailers(const char *dir, sha1_ref base_commit,
 int git_cache::commit_tree(sha1_ref base_commit, const char *dir, sha1_ref tree,
                            const std::vector<sha1_ref> &parents,
                            sha1_ref &commit, commit_tree_buffers &buffers) {
-  if (parse_commit_metadata(base_commit, buffers))
+  if (parse_commit_metadata(base_commit, buffers, /*is_merge=*/!dir))
     return error("failed to get metadata for " + base_commit->to_string());
   append_trailers(dir, base_commit, buffers.message);
 

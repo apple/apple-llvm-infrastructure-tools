@@ -54,7 +54,9 @@ check-lint: venv requirements Makefile
 check-types: venv requirements Makefile
 	env MYPYPATH="$(S):$(testdir)../libexec/apple-llvm/src" $(PYTHON_ROOT)mypy $(python_sources)
 
-check-split2mono check-svn2git: programs
+$(filter check-split2mono/%,$(lit_targets) $(lit_test_file_targets)) \
+$(filter check-svn2git/%,$(lit_targets) $(lit_test_file_targets)) \
+	check-split2mono check-svn2git: programs
 
 help:
 	@echo "Supported check targets:"
