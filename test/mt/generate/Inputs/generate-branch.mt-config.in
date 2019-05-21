@@ -9,6 +9,10 @@ destination monorepo out/mono
 declare-dir a
 declare-dir b
 
+# Add some extra dirs that we don't have split repos for.
+declare-dir c
+declare-dir -
+
 dir master a a-name/master
 dir master b b-name/master
 

@@ -37,15 +37,17 @@ translate_branch() {
                 usage
                 exit 0
                 ;;
+            *:*)
+                [ $pos -ne 0 ] || usage_error "invalid branch name '$1'"
+                refdirs=( "${refdirs[@]}" "$1" )
+                shift
+                ;;
             -*)
                 usage_error "unknown option '$1'"
                 ;;
             *)
-                if [ $pos -eq 0 ]; then
-                    branch="$1"
-                else
-                    refdirs=( "${refdirs[@]}" "$1" )
-                fi
+                [ $pos -eq 0 ] || usage_error "unexpected argument '$1'"
+                branch="$1"
                 pos=1
                 shift
                 ;;
@@ -86,6 +88,8 @@ translate_branch() {
         sha1=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
             sha1=$ZERO_SHA1
         sha1dirs=( "${sha1dirs[@]}" "$sha1:$d" )
+
+        [ ! "$r" = - ] || continue
         listdirs=( "${listdirs[@]}" "$rd" )
     done
 
