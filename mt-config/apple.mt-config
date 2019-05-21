@@ -1,4 +1,4 @@
-repo github/llvm                   git@github.com:llvm/llvm-project.git
+repo github/llvm                   https://github.com/llvm/llvm-project.git
 repo split/apple/clang             git@github.com:apple/swift-clang.git
 repo split/apple/clang-tools-extra git@github.com:apple/swift-clang-tools-extra.git
 repo split/apple/compiler-rt       git@github.com:apple/swift-compiler-rt.git
