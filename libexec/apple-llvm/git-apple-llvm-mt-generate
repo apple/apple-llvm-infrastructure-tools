@@ -14,6 +14,7 @@ usage() {
         "                   Config directory to find <name>.mt-config in"     \
         "   --git-dir=<dir> Git directory to use (default: $DEFAULT_GIT_DIR)" \
         "   --[no-]setup    Set up and update remotes (default: on)"          \
+        "   --[no-]clean    Clean local progress (default: off, for now)"     \
         "   --[no-]push     Push to the destination(s) (default: on)"         \
         "   --push-only     Only push previous results"                       \
         "   --dry-run       Don't actually generate anything"                 \
@@ -132,6 +133,28 @@ mt_setup() {
     if [ ! "${VERBOSE:-0}" = 0 ]; then
         gitout=/dev/stdout
         hide=
+    fi
+
+    # Clean up any local progress.
+    if should_clean; then
+        local existing
+        existing="$(git show-ref | grep -e ^refs/mt -e ^refs/heads |
+            awk '{print $2}')" ||
+            error "failed to look up refs to clean"
+        [ -z "$existing" ] || run git update-ref -d $existing ||
+            error "failed to clean local refs: $existing"
+        local prev_existing=
+        while existing="$(git worktree list --porcelain |
+            awk '$1=="worktree"{print substr($0,10); exit 0} END{exit 1}')"; do
+            # Prevent an infinite loop, if somehow we stop making progress.
+            # Probably not actaully reachable, but better to be paranoid.
+            [ ! "$prev_existing" = "$existing" ] ||
+                error "failed to clean worktrees"
+            prev_existing="$existing"
+
+            run git worktree remove --force "$existing" ||
+                error "failed to clean worktree: $existing"
+        done
     fi
 
     log "Setting up and syncing $GIT_DIR"
@@ -308,7 +331,10 @@ mt_generate_branch() {
 }
 
 mt_fetch_branch() {
-    local branch="$1"
+    local rawbranch="$1"
+    local branch="$rawbranch"
+    local heads=refs/heads/
+    [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
 
     # Fetch from local mirror.
     local splitdest monodest
@@ -318,10 +344,10 @@ mt_fetch_branch() {
     splitdest="$(show_splitref_destination)" || exit 1
     for refdir in $refdirs; do
         d=${refdir#*:}
-        mt_fetch_one_branch "$splitdest" "refs/heads/mt/$branch/$d/mt-split"
+        mt_fetch_one_branch "$splitdest" "refs/heads/mt/$rawbranch/$d/mt-split"
     done
 
-    mt_fetch_splitrefs "$branch"
+    mt_fetch_splitrefs "$rawbranch"
 }
 
 mt_fetch_splitrefs() {
@@ -344,7 +370,7 @@ mt_fetch_one_branch() {
 
     local remote_ref="refs/remotes/$remote/${branch#refs/heads/}"
     local sha1
-    sha1="$(run git rev-parse "$remote_ref"^{commit} 2>/dev/null)" || return 0
+    sha1="$(run --hide-errors git rev-parse "$remote_ref"^{commit})" || return 0
     run --dry git update-ref "$branch" "$sha1" ||
         error "failed to sync '$branch' from '$remote'"
 }
@@ -384,7 +410,7 @@ mt_push_splitrefs() {
     for refdir in $(print_active_refdirs "$branch"); do
         d=${refdir#*:}
         ref="refs/heads/mt/$branch/$d/mt-split"
-        run git rev-parse "$ref"^{commit} >/dev/null 2>&1 ||
+        run --hide-errors git rev-parse "$ref"^{commit} >/dev/null ||
             continue
         refs="$refs${refs:+ }$refs"
         refspec="$ref:$ref"
@@ -430,8 +456,11 @@ mt_generate_splitrefs() {
 
 CONFIG_DIR="$DEFAULT_CONFIG_DIR"
 GIT_DIR=$DEFAULT_GIT_DIR
-SETUP=1 PUSH=1 PUSH_ONLY=0
+
+# FIXME: consider setting CLEAN=1 by default.
+SETUP=1 CLEAN=0 PUSH=1 PUSH_ONLY=0
 should_setup() { [ ! "${SETUP:-0}" = 0 ]; }
+should_clean() { [ ! "${CLEAN:-0}" = 0 ]; }
 should_push() { [ ! "${PUSH:-0}" = 0 ]; }
 push_only() { [ ! "${PUSH_ONLY:-0}" = 0 ]; }
 NAME=
@@ -454,6 +483,8 @@ while [ $# -gt 0 ]; do
         --no-setup) SETUP=0; shift ;;
         --push)     PUSH=1; shift ;;
         --no-push)  PUSH=0; shift ;;
+        --clean)    CLEAN=1; shift ;;
+        --no-clean) CLEAN=0; shift ;;
         --push-only)PUSH_ONLY=1; shift ;;
         --list-*-*dirs|--list-*-*dirs=*)
             LIST="$1"
@@ -485,6 +516,10 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
+
+if push_only && should_clean; then
+    usage_error "refusing to --clean when invoked with --push-only"
+fi
 
 [ -n "$MT_CONFIG" ] || usage_error "missing name of mt-config"
 if [ -n "$LIST" ]; then
