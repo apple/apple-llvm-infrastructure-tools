@@ -13,6 +13,7 @@ usage() {
         "   --config-dir=<dir>"                                               \
         "                   Config directory to find <name>.mt-config in"     \
         "   --git-dir=<dir> Git directory to use (default: $DEFAULT_GIT_DIR)" \
+        "   --[no-]verbose  Use verbose output (default: env:VERBOSE)"        \
         "   --[no-]setup    Set up and update remotes (default: on)"          \
         "   --[no-]clean    Clean local progress (default: off, for now)"     \
         "   --[no-]push     Push to the destination(s) (default: on)"         \
@@ -478,6 +479,8 @@ while [ $# -gt 0 ]; do
             shift $?
             [ -n "$GIT_DIR" ] || usage_error "--git-dir cannot be empty"
             ;;
+        --verbose|-v) VERBOSE=1; shift ;;
+        --no-verbose) VERBOSE=0; shift ;;
         --dry-run)  DRY_RUN=1; shift ;;
         --setup)    SETUP=1; shift ;;
         --no-setup) SETUP=0; shift ;;

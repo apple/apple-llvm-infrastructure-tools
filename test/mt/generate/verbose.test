@@ -1,0 +1,42 @@
+RUN: mkrepo %t.a
+RUN: mkrepo %t.b
+RUN: env ct=1550000001 mkblob %t.a 1
+RUN: env ct=1550000002 mkblob %t.b 2
+RUN: env ct=1550000003 mkblob %t.b 3
+RUN: env ct=1550000004 mkblob %t.a 4
+
+RUN: mkrepo --bare %t.out.split
+RUN: mkrepo --bare %t.out.mono
+RUN: rm -rf %t-mt-repo1.git 
+RUN: rm -rf %t-mt-repo2.git 
+RUN: rm -rf %t-mt-configs
+RUN: mkdir -p %t-mt-configs
+RUN: cat         %S/Inputs/generate-splitrefs.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/generate-splitrefs.mt-config
+RUN: %mtgen --git-dir %t-mt-repo1.git --config-dir %t-mt-configs --no-push \
+RUN:    generate-splitrefs >%t-stdout 2>%t-stderr
+RUN: %mtgen --git-dir %t-mt-repo2.git --config-dir %t-mt-configs --no-push \
+RUN:    generate-splitrefs --verbose >%t-stdout-verbose 2>%t-stderr-verbose
+
+# Check verbose output.
+RUN: not grep '# git' %t-stdout
+RUN: not grep '# git' %t-stdout-verbose
+RUN: not grep '# git' %t-stderr
+RUN: grep '# git' %t-stderr-verbose
+
+# Check the output is the same.
+RUN: number-commits -p A    %t.a           master  >%t.map
+RUN: number-commits -p B    %t.b           master >>%t.map
+RUN: git -C %t-mt-repo1.git rev-list mt/master/a/mt-split \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s A %t
+RUN: git -C %t-mt-repo2.git rev-list mt/master/a/mt-split \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s A %t
+A: A-2
+A: A-1
+
+RUN: git -C %t-mt-repo1.git rev-list mt/master/b/mt-split \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s B %t
+RUN: git -C %t-mt-repo2.git rev-list mt/master/b/mt-split \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s B %t
+B: B-2
+B: B-1
