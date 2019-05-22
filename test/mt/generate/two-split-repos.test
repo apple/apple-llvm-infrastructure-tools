@@ -12,7 +12,13 @@ RUN: rm -rf %t-mt-configs
 RUN: mkdir -p %t-mt-configs
 RUN: cat         %S/Inputs/generate-branch.mt-config.in | sed -e 's,%%t,%t,' \
 RUN:   | tee %t-mt-configs/generate-branch.mt-config
-RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs generate-branch
+RUN: env VERBOSE=1                                                \
+RUN:   %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs \
+RUN:      generate-branch 2>&1 | tee %t-generate.out
+
+# Ensure arguments are passed correctly to split2mono.
+RUN: cat %t-generate.out \
+RUN:   | grep -E -e 'interleave-commits .* 0+ -:- 0+:a 0+:b -:c'
 
 # Running again should be fine, even if there's nothing to do.
 RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs generate-branch

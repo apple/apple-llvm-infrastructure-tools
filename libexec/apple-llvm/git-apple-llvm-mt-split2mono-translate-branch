@@ -85,7 +85,9 @@ translate_branch() {
         fi
 
         ref=refs/heads/mt/$branch/$suffix
-        sha1=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
+        sha1=-
+        [ "$r" = - ] ||
+            sha1=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
             sha1=$ZERO_SHA1
         sha1dirs=( "${sha1dirs[@]}" "$sha1:$d" )
 
@@ -165,7 +167,10 @@ update_refs() {
             d=${sd#*:}
             old_sha1=${sd%:*}
             new_sha1=
-            [ ! "$old_sha1" = % ] || continue
+            case "$old_sha1" in
+                -|%) continue ;;
+                *)   true ;;
+            esac
             if [ "$d" = % ]; then
                 ref=refs/heads/mt/$branch/mt-repeat
             else
