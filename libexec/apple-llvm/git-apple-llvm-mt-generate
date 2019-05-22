@@ -13,7 +13,7 @@ usage() {
         "   --config-dir=<dir>"                                               \
         "                   Config directory to find <name>.mt-config in"     \
         "   --git-dir=<dir> Git directory to use (default: $DEFAULT_GIT_DIR)" \
-        "   --[no-]verbose  Use verbose output (default: env:VERBOSE)"        \
+        "   --[no-]verbose  Use verbose output (default: \$VERBOSE)"          \
         "   --[no-]setup    Set up and update remotes (default: on)"          \
         "   --[no-]clean    Clean local progress (default: off, for now)"     \
         "   --[no-]push     Push to the destination(s) (default: on)"         \
