@@ -385,9 +385,6 @@ mt_push_branch() {
     [ ! "$old_mtdb_sha1" = "$MTDB_SHA1" ] ||
         return
 
-    local old_branch_sha1
-    old_branch_sha1=$(run git show-ref refs/remotes/$branch | awk '{print $1}')
-
     # Push the primary refs.  Need to push to the local mirror, and then from
     # there to the actual remote.
     local monodest
