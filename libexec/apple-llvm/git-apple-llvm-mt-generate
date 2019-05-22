@@ -176,16 +176,19 @@ mt_setup() {
 
             log "  - $name"
             clone=clones/$name.git
-            if [ -d "$clone" ]; then
+            {
+                if [ ! -e "$clone" ]; then
+                    run $hide mkdir -p $(dirname $clone) >$gitout &&
+                    run $hide git init --bare $clone >$gitout &&
+                    run $hide git -C $clone remote add --mirror=fetch \
+                        origin $url >$gitout
+                fi || {
+                    rm -rf "$clone"
+                    error "failed to mirror remote '$name'"
+                }
                 run $hide git -C $clone remote update >$gitout ||
                     error "failed to update remote '$name'"
-            else
-                {
-                    run $hide mkdir -p $(dirname $clone) >$gitout &&
-                    run $hide git clone --mirror $url $clone >$gitout
-                } ||
-                    error "failed to mirror remote '$name'"
-            fi &
+            } &
             forks="$forks $!"
         done
         run wait $forks
@@ -285,7 +288,7 @@ mt_push_mapping() {
             --force-with-lease=$MTDB_REF:$old_mtdb_sha1 &&
 
         # Push to the remote using --force-with-lease to check for races.
-        run --dry git -C clones/$monodest.git push --mirror origin \
+        run --dry git -C clones/$monodest.git push origin $MTDB_REF:$MTDB_REF \
             --force-with-lease=$MTDB_REF:$old_mtdb_sha1
     } || error "failed to push $MTDB_REF to $monodest"
 }
@@ -403,7 +406,8 @@ mt_push_branch() {
     run --dry git push $monodest $MTDB_REF:$MTDB_REF $branch $repeatref \
         --force-with-lease=$MTDB_REF:$old_mtdb_sha1 ||
         error "failed to push $MTDB_REF to local $monodest"
-    run --dry git -C clones/$monodest.git push --atomic --mirror origin \
+    run --dry git -C clones/$monodest.git push --atomic origin \
+        $MTDB_REF:$MTDB_REF $branch $repeatref                 \
         --force-with-lease=$MTDB_REF:$old_mtdb_sha1 ||
         error "failed to push $branch and $MTDB_REF to $monodest"
 
@@ -428,7 +432,7 @@ mt_push_splitrefs() {
     [ -n "$refspecs" ] || return 0
     run --dry git push $splitdest $refspecs ||
         error "failed to push $refs to local $splitdest"
-    run --dry git -C clones/$splitdest.git push --mirror origin ||
+    run --dry git -C clones/$splitdest.git push --atomic origin $refspecs ||
         error "failed to push $refs to $splitdest"
 }
 
