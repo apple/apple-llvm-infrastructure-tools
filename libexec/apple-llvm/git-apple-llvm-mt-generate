@@ -91,7 +91,7 @@ print_dirs_impl() {
 show_monorepo_destination() { show_destination monorepo; }
 show_splitref_destination() { show_destination splitref; }
 show_destination() {
-    cat "$MT_CONFIG" |
+    run cat "$MT_CONFIG" |
     awk -v which="$1" '
     $1 == "destination" && $2 == which {
         if (destination) {
@@ -163,7 +163,7 @@ mt_setup() {
     [ -d "$GIT_DIR" ] ||
         run --hide-errors git init --bare "$GIT_DIR" >$gitout ||
         error "failed to initialize '$GIT_DIR'"
-    run cd "$GIT_DIR" || exit 1
+    run cd "$GIT_DIR" || error "failed to cd to $GIT_DIR"
     log "Updating remotes in parallel"
 
     print_repos | {
@@ -383,7 +383,7 @@ mt_push_branch() {
 
     # Return early if nothing has changed.
     [ ! "$old_mtdb_sha1" = "$MTDB_SHA1" ] ||
-        return
+        return 0
 
     # Push the primary refs.  Need to push to the local mirror, and then from
     # there to the actual remote.

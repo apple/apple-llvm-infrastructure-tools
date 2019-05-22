@@ -14,6 +14,9 @@ RUN: cat         %S/Inputs/generate-branch.mt-config.in | sed -e 's,%%t,%t,' \
 RUN:   | tee %t-mt-configs/generate-branch.mt-config
 RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs generate-branch
 
+# Running again should be fine, even if there's nothing to do.
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs generate-branch
+
 RUN: number-commits -p MONO %t-mt-repo.git master  >%t.map
 RUN: number-commits -p A    %t.a           master >>%t.map
 RUN: number-commits -p B    %t.b           master >>%t.map

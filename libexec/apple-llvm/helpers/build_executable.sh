@@ -20,7 +20,7 @@ build_executable() {
     local execpath="$d"/"$name"
     if [ -x "$execpath" ]; then
         echo "$execpath"
-        return
+        return 0
     fi
 
     run --hide-errors mkdir -p "$pd"
