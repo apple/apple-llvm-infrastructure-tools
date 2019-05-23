@@ -167,28 +167,9 @@ mt_setup() {
     log "Updating remotes in parallel"
 
     print_repos | {
-        local forks= sleepnext=0
+        local forks= name= url= clone=
         while read name url; do
-            # Wait a second if the previous iteration needed a fresh clone.
-            sleep $sleepnext
-            [ -d "$clone" ]
-            sleep_next=$?
-
-            log "  - $name"
-            clone=clones/$name.git
-            {
-                if [ ! -e "$clone" ]; then
-                    run $hide mkdir -p $(dirname $clone) >$gitout &&
-                    run $hide git init --bare $clone >$gitout &&
-                    run $hide git -C $clone remote add --mirror=fetch \
-                        origin $url >$gitout
-                fi || {
-                    rm -rf "$clone"
-                    error "failed to mirror remote '$name'"
-                }
-                run $hide git -C $clone remote update >$gitout ||
-                    error "failed to update remote '$name'"
-            } &
+            mt_setup_repo &
             forks="$forks $!"
         done
         run wait $forks
@@ -220,6 +201,74 @@ mt_setup() {
     [ -n "$MTDB_SHA1" ] || return 0
     run git fetch --force $monodest $MTDB_REF:$MTDB_REF ||
         error "failed to fetch $MTDB_REF from $monodest"
+}
+
+mt_check_clone() {
+    [ -e "$clone" ] || return 1
+
+    # If the clone exists but is not configured correctly, we need to remove it
+    # so it can be recreated.  Defer to an impl.
+    mt_check_clone_impl "$@" && return 0
+    run rm -rf "$clone"
+    return 1
+}
+
+mt_check_clone_impl() {
+    # Must be a git directory configured with a single remote, "origin".
+    [ -d "$clone" ] || return 1
+    [ . = "$(run $hide git -C "$clone" rev-parse --git-dir)" ] || return 1
+    [ origin = "$(run $hide git -C "$clone" remote)" ] || return 1
+
+    # Check and try to fix the URL.
+    [ "$url" = "$(run $hide git -C "$clone" remote get-url origin --all)" ] ||
+        run $hide git -C "$clone" remote set-url origin "$url" ||
+        return 1
+
+    # Remove mirror configuration, since this causes problems for pushes of
+    # refspecs with old Git clients.
+    local config="$clone"/config
+    local key=remote.origin.mirror
+    ! run $hide git --file "$config" config $key ||
+        run $hide git --file "$config" config --unset $key ||
+        return 1
+
+    # Mirror when fetching.
+    local fetchspec="+refs/*:refs/*"
+    key=remote.origin.fetch
+    [ "$fetchspec" = "$(run $hide git --file "$config" config $key)" ] ||
+        run $hide git --file "$config" config --replace-all $key "$fetchspec" ||
+        return 1
+
+    # No push configuration.
+    key=remote.origin.push
+    [ -z "$(run $hide git --file "$config" config $key)" ] ||
+        run $hide git --file "$config" config --unset-all $key ||
+        return 1
+
+    # Looks good.
+    return 0
+}
+
+mt_make_clone() {
+    [ -e "$clone" ] && return 1
+
+    run $hide mkdir -p $(dirname $clone) &&
+        run $hide git init --bare $clone  &&
+        run $hide git -C $clone remote add --mirror=fetch origin $url &&
+        return 0
+
+    rm -rf "$clone"
+    return 1
+}
+
+mt_setup_repo() {
+    local clone=clones/$name.git
+    log "  - $name"
+    mt_check_clone >$gitout || mt_make_clone >$gitout ||
+        error "failed to mirror remote '$name'"
+
+    run $hide git -C $clone remote update --prune >$gitout ||
+        error "failed to update remote '$name'"
 }
 
 has_no_spaces() { [ "${1/ /}" = "$1" ]; }
