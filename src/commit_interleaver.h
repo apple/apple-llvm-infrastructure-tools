@@ -249,6 +249,15 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     // Warm the cache.
     cache.note_commit_tree(commit, tree);
     if (is_boundary || source.is_repeat) {
+      // Get the first parent of the first repeat commit, to decide whether to
+      // fast forward.
+      if (!is_boundary)
+        if (commits.size() == size_t(source.commits.first))
+          if (!try_parse_space(current))
+            if (*current)
+              if (parse_sha1(current, source.first_repeat_first_parent))
+                return error("invalid first parent of first repeat commit");
+
       // Grab the metadata, which compute_mono might leverage if this is an
       // upstream git-svn commit.
       if (parse_through_null(current))
@@ -757,14 +766,12 @@ int commit_interleaver::fast_forward_initial_repeats(
   auto repeats_index = q.fparents.back().index;
   auto &repeats = q.sources[repeats_index];
   assert(repeats.commits.count != 0);
-  if (head) {
-    // If "head" exists but is the parent of the first (new) repeated commit,
-    // we should still fast-forward.
-    auto first = q.commits.begin() + repeats.commits.first;
-    if (first->num_parents)
-      if (first->parents[0] != head)
-        return 0;
-  }
+
+  // If this branch has started, double-check that this will actually be a fast
+  // forward.
+  if (head)
+    if (head != repeats.first_repeat_first_parent)
+      return 0;
 
   // Don't generate merge commits if we can just fast-forward.
   auto first = q.commits.begin() + repeats.commits.first,
@@ -783,6 +790,7 @@ int commit_interleaver::fast_forward_initial_repeats(
   assert(head);
   repeats.commits.count = last - first;
   repeats.commits.first = first - q.commits.begin();
+  repeated_head = head;
   return 0;
 }
 

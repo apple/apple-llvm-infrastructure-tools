@@ -111,8 +111,11 @@ list_new_commits() {
         d="${rd##*:}"
 
         if [ "$d" = % ]; then
+            local notself
+            run --hide-errors git rev-parse --verify $branch^{commit} \
+                >/dev/null && notself=$branch
             suffix=mt-repeat
-            extra="--first-parent -- $repeated"
+            extra="--first-parent --not $notself -- $repeated"
         else
             suffix="$d/mt-split"
             extra=

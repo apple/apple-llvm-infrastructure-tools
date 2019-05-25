@@ -1,0 +1,104 @@
+RUN: mkrepo %t-a
+RUN: mkrepo %t-b
+RUN: env ct=1550000001 mkblob %t-b 1
+RUN: env ct=1550000002 mkblob %t-a 2
+RUN: git -C %t-a branch a2
+RUN: git -C %t-a checkout a2
+RUN: env ct=1550000003 mkblob %t-a 3
+RUN: git -C %t-b branch b2
+
+RUN: mkrepo --bare %t-out
+RUN: rm -rf %t-mt-repo.git
+RUN: rm -rf   %t-mt-configs
+RUN: mkdir -p %t-mt-configs
+RUN: cat         %S/Inputs/repeat-ff.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/repeat-ff.mt-config
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs repeat-ff
+RUN: number-commits -p AB  %t-mt-repo.git ab       >%t1.map
+RUN: number-commits -p A2B %t-mt-repo.git ab..a2b >>%t1.map
+RUN: git -C %t-mt-repo.git log a2b2 --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t1.map | grep -e . | check-diff %s T1 %t
+T1: A2B-1 AB-2 mkblob: 3
+T1: AB-2  AB-1 mkblob: 2
+T1: AB-1       mkblob: 1
+
+RUN: git -C %t-a checkout a2
+RUN: env ct=1550000004 mkblob %t-a 4
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs repeat-ff
+RUN: number-commits -p AB  %t-mt-repo.git ab       >%t2.map
+RUN: number-commits -p A2B %t-mt-repo.git ab..a2b >>%t2.map
+RUN: git -C %t-mt-repo.git log a2b2 --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t2.map | grep -e . | check-diff %s T2 %t
+T2: A2B-2 A2B-1 mkblob: 4
+T2: A2B-1 AB-2  mkblob: 3
+T2: AB-2  AB-1  mkblob: 2
+T2: AB-1        mkblob: 1
+
+RUN: git -C %t-a checkout master
+RUN: env ct=1550000005 mkblob  %t-a 5
+RUN: git -C %t-a checkout a2
+RUN: env ct=1550000006 mkmerge %t-a 6 master
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs repeat-ff
+RUN: number-commits -p AB  %t-mt-repo.git ab             >%t3.map
+RUN: number-commits -p A2B %t-mt-repo.git ab..a2b       >>%t3.map
+RUN: git -C %t-mt-repo.git log a2b2 --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t3.map | grep -e . | check-diff %s T3 %t
+T3: A2B-3 A2B-2 AB-3 mkmerge: 6
+T3: AB-3  AB-2       mkblob:  5
+T3: A2B-2 A2B-1      mkblob:  4
+T3: A2B-1 AB-2       mkblob:  3
+T3: AB-2  AB-1       mkblob:  2
+T3: AB-1             mkblob:  1
+
+RUN: git -C %t-b checkout master
+RUN: env ct=1550000007 mkblob  %t-b 7
+RUN: git -C %t-b checkout b2
+RUN: git -C %t-b merge --ff-only master
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs repeat-ff
+RUN: number-commits -p AB  %t-mt-repo.git ab       >%t4.map
+RUN: number-commits -p A2B %t-mt-repo.git ab..a2b >>%t4.map
+RUN: git -C %t-mt-repo.git log a2b2 --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t4.map | grep -e . | check-diff %s T4 %t
+# FIXME: should 7 should come through here somehow?
+T4: A2B-3 A2B-2 AB-3 mkmerge: 6
+T4: AB-3  AB-2       mkblob:  5
+T4: A2B-2 A2B-1      mkblob:  4
+T4: A2B-1 AB-2       mkblob:  3
+T4: AB-2  AB-1       mkblob:  2
+T4: AB-1             mkblob:  1
+
+RUN: git -C %t-b checkout b2
+RUN: env ct=1550000008 mkblob %t-b 8
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs repeat-ff
+RUN: number-commits -p AB   %t-mt-repo.git ab                 >%t5.map
+RUN: number-commits -p A2B  %t-mt-repo.git a2b  --not ab     >>%t5.map
+RUN: number-commits -p A2B2 %t-mt-repo.git a2b2 --not ab a2b >>%t5.map
+RUN: git -C %t-mt-repo.git log a2b2 --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t5.map | grep -e . | check-diff %s T5 %t
+T5: A2B2-1 A2B-3 AB-4 mkblob:  8
+T5: AB-4   AB-3       mkblob:  7
+T5: A2B-3  A2B-2 AB-3 mkmerge: 6
+T5: AB-3   AB-2       mkblob:  5
+T5: A2B-2  A2B-1      mkblob:  4
+T5: A2B-1  AB-2       mkblob:  3
+T5: AB-2   AB-1       mkblob:  2
+T5: AB-1              mkblob:  1
+
+RUN: git -C %t-a checkout a2
+RUN: env ct=1550000009 mkblob %t-a 9
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs repeat-ff
+RUN: number-commits -p AB   %t-mt-repo.git ab                 >%t6.map
+RUN: number-commits -p A2B  %t-mt-repo.git a2b  --not ab     >>%t6.map
+RUN: number-commits -p A2B2 %t-mt-repo.git a2b2 --not ab a2b >>%t6.map
+RUN: git -C %t-mt-repo.git log a2b2 --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t6.map | grep -e . | check-diff %s T6 %t
+T6: A2B2-2 A2B2-1 A2B-4 Merge: mkblob:  9
+T6: A2B-4  A2B-3               mkblob:  9
+T6: A2B2-1 A2B-3  AB-4         mkblob:  8
+T6: AB-4   AB-3                mkblob:  7
+T6: A2B-3  A2B-2  AB-3         mkmerge: 6
+T6: AB-3   AB-2                mkblob:  5
+T6: A2B-2  A2B-1               mkblob:  4
+T6: A2B-1  AB-2                mkblob:  3
+T6: AB-2   AB-1                mkblob:  2
+T6: AB-1                       mkblob:  1

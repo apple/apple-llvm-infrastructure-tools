@@ -491,8 +491,8 @@ while [ $# -gt 0 ]; do
             shift $?
             [ -n "$GIT_DIR" ] || usage_error "--git-dir cannot be empty"
             ;;
-        --verbose|-v) VERBOSE=1; shift ;;
-        --no-verbose) VERBOSE=0; shift ;;
+        --verbose|-v) export VERBOSE=1; shift ;;
+        --no-verbose) export VERBOSE=0; shift ;;
         --dry-run)  DRY_RUN=1; shift ;;
         --setup)    SETUP=1; shift ;;
         --no-setup) SETUP=0; shift ;;

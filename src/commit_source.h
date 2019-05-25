@@ -80,6 +80,7 @@ struct commit_source {
   int dir_index = -1;
   bool is_root = false;
   bool is_repeat = false;
+  sha1_ref first_repeat_first_parent;
 
   std::unique_ptr<monocommit_worker> worker;
 };
