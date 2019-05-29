@@ -891,7 +891,8 @@ int commit_interleaver::translate_commit(
                      parent_revs, items, new_tree) ||
       cache.commit_tree(base.commit, dir, new_tree, new_parents, new_commit,
                         buffers) ||
-      cache.set_rev(new_commit, rev) || cache.set_mono(base.commit, new_commit))
+      cache.set_rev(new_commit, rev) ||
+      (!source.is_repeat && cache.set_mono(base.commit, new_commit)))
     return 1;
   if (!head)
     return 0;

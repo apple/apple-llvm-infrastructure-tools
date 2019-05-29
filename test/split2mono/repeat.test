@@ -79,6 +79,12 @@ RUN:   | apply-commit-numbers %t-ab.map | grep -e . | check-diff %s AB %t
 RUN: git -C %t-ab log add-b --reverse --min-parents=2  \
 RUN:   --format="--%%n%%H%%n%%B"                       \
 RUN:   | apply-commit-numbers %t-ab.map | grep -e . | check-diff %s AB-BODY %t
+RUN: git -C %t-ab rev-list -1 split/a/master \
+RUN:   | xargs %split2mono -C %t-ab lookup %t-ab-db/split2mono \
+RUN:   | apply-commit-numbers %t-ab.map | check-diff %s AB-HEAD %t
+RUN: git -C %t-ab rev-list -1 just-a \
+RUN:   | not xargs %split2mono -C %t-ab lookup %t-ab-db/split2mono
+AB-HEAD: JUST-A-2
 AB: --
 AB: JUST-A-1 mkblob: 1
 AB: apple-llvm-split-commit: A-1
@@ -106,6 +112,12 @@ RUN:   | apply-commit-numbers %t-ba.map | grep -e . | check-diff %s BA %t
 RUN: git -C %t-ba log add-a --reverse --min-parents=2  \
 RUN:   --format="--%%n%%H%%n%%B"                       \
 RUN:   | apply-commit-numbers %t-ba.map | grep -e . | check-diff %s BA-BODY %t
+RUN: git -C %t-ba rev-list -1 split/b/master \
+RUN:   | xargs %split2mono -C %t-ba lookup %t-ba-db/split2mono \
+RUN:   | apply-commit-numbers %t-ba.map | check-diff %s BA-HEAD %t
+RUN: git -C %t-ba rev-list -1 just-b \
+RUN:   | not xargs %split2mono -C %t-ba lookup %t-ba-db/split2mono
+BA-HEAD: JUST-B-2
 BA: --
 BA: ADD-A-1 mkblob: 1
 BA: apple-llvm-split-commit: A-1
