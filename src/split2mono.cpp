@@ -168,7 +168,8 @@ static int main_insert_stdin(const char *cmd, const char *dbdir) {
     if (mono.from_input(rawmono))
       return error("invliad sha1 for <mono>");
     if (commits_query(split).insert_data(db.commits, binary_sha1(mono)))
-      return 1;
+      return error("failed to insert split " + split.to_string() + " to mono " +
+                   mono.to_string());
   }
   if (scanned != EOF)
     return error("sha1 for <split> could not be scanned");

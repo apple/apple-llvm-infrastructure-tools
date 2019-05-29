@@ -245,7 +245,8 @@ int git_cache::lookup_metadata(sha1_ref commit, const char *&metadata) const {
 
 int git_cache::set_mono(sha1_ref split, sha1_ref mono) {
   if (commits_query(*split).insert_data(db.commits, *mono))
-    return 1;
+    return error("failed to map split " + split->to_string() + " to mono " +
+                 mono->to_string());
   note_mono(split, mono);
   return 0;
 }
@@ -338,7 +339,8 @@ int git_cache::set_rev(sha1_ref commit, int rev) {
   svnbaserev dbrev;
   dbrev.set_rev(rev);
   if (svnbase_query(*commit).insert_data(db.svnbase, dbrev))
-    return 1;
+    return error("failed to map commit " + commit->to_string() + " to rev " +
+                 std::to_string(rev));
   note_rev(commit, rev);
   return 0;
 }
