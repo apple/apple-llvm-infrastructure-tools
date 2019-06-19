@@ -4,7 +4,7 @@
 
 import os
 import pytest
-from git_tools import git, git_output, get_current_checkout_directory, GitError
+from git_tools import git, git_output, get_current_checkout_directory, commit_exists, GitError
 
 
 def test_git_invocation(tmp_path):
@@ -36,6 +36,13 @@ def test_git_invocation(tmp_path):
     assert '\n' not in output
     output = git_output('rev-list', 'HEAD', git_dir=repo_dir, strip=False)
     assert '\n' in output
+
+    # Ensure that commit exists works only for commit hashes.
+    hash = output.strip()
+    assert commit_exists(hash)
+    assert not commit_exists('HEAD')
+    assert not commit_exists(hash + 'abc')
+    assert not commit_exists('000000')
 
     # Ensure that we can get the directory of the checkout even when the
     # working directory is a subdirectory.

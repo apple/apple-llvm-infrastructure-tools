@@ -42,7 +42,9 @@ def _git_to_str(args: List[str]):
 
 def invoke(*cmd, git_dir: Optional[str] = None,
            stdin: Optional[str] = None,
-           capture_stdout: bool = False, strip: bool = True, ignore_error: bool = False,
+           stdout=None,
+           stderr=subprocess.PIPE,
+           strip: bool = True, ignore_error: bool = False,
            timeout: Optional[int] = None):
     """ Invokes a git subprocess with the passed string arguments and return
         the stdout of the git command as a string if text otherwise a file
@@ -54,28 +56,28 @@ def invoke(*cmd, git_dir: Optional[str] = None,
         all_args = list(cmd)
     log.debug('$ %s', _git_to_str(all_args))
     p = subprocess.Popen(['git'] + all_args,
-                         stdout=subprocess.PIPE if capture_stdout else None,
-                         stderr=subprocess.PIPE,
+                         stdout=stdout,
+                         stderr=stderr,
                          stdin=subprocess.PIPE if stdin else None,
                          universal_newlines=True)
-    stdout, stderr = p.communicate(input=stdin, timeout=timeout)
+    out, err = p.communicate(input=stdin, timeout=timeout)
     if p.returncode == 0:
-        if stdout:
+        if out:
             if strip:
-                stdout = stdout.rstrip()
-            for line in stdout.splitlines():
+                out = out.rstrip()
+            for line in out.splitlines():
                 log.debug('STDOUT: %s', line)
-        if stderr:
-            for line in stderr.rstrip().splitlines():
-                log.warning('STDERR: %s', line)
-        return stdout
+        if err:
+            for line in err.rstrip().splitlines():
+                log.debug('STDERR: %s', line)
+        return out
     log.debug('EXIT STATUS: %d', p.returncode)
-    if stderr:
-        for line in stderr.rstrip().splitlines():
+    if err:
+        for line in err.rstrip().splitlines():
             log.debug('STDERR: %s', line)
     if ignore_error:
         return None
-    raise GitError(all_args, p.returncode, stdout, stderr)
+    raise GitError(all_args, p.returncode, out, err)
 
 
 def git(*cmd, **kwargs):
@@ -87,9 +89,15 @@ def git_output(*cmd, **kwargs):
     """ Invokes a git subprocess with the passed string arguments and return
         the stdout of the git command.
     """
-    return invoke(*cmd, **kwargs, capture_stdout=True)
+    return invoke(*cmd, **kwargs, stdout=subprocess.PIPE)
 
 
 def get_current_checkout_directory() -> Optional[str]:
     """ Return the path to the current git checkout, or None otherwise. """
     return git_output('rev-parse', '--show-toplevel', ignore_error=True)
+
+
+def commit_exists(hash: str) -> bool:
+    """ Return true if the specified commit exists """
+    result = git_output('rev-parse', hash, ignore_error=True)
+    return result and result == hash
