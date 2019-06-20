@@ -99,3 +99,22 @@ def test_merge_commit_graph(split_clang_head_in_monorepo: str,
     else:
         with pytest.raises(ImpossibleMergeError):
             doit()
+
+
+def test_merge_conflict(split_clang_head_in_monorepo: str,
+                        merge_strategy: MergeStrategy):
+    push_clang_commit = commit_file('file1', 'top of branch is here')
+    branch_name = f'rebase-fail/split/clang/{merge_strategy}'
+    git('checkout', '-b', branch_name, split_clang_head_in_monorepo)
+    commit_file('file1', 'rebase this without conflict')
+
+    graph = CommitGraph([push_clang_commit], [split_clang_head_in_monorepo])
+    with pytest.raises(ImpossibleMergeError) as err:
+        merge_commit_graph_with_top_of_branch(graph,
+                                              'clang',
+                                              branch_name,
+                                              merge_strategy)
+    if merge_strategy == MergeStrategy.Rebase:
+        assert err.value.operation == 'rebase'
+    elif merge_strategy == MergeStrategy.RebaseOrMerge:
+        assert err.value.operation == 'merge'

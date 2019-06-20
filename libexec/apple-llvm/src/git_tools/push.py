@@ -375,12 +375,14 @@ class MergeStrategy(Enum):
     FastForwardOnly = 1
     RebaseOrMerge = 2
     Rebase = 3
+    MergeOnly = 4
 
 
 class ImpossibleMergeError(Exception):
     """ The error that's reported when merging. """
 
-    def __init__(self, git_error: Optional[GitError]):
+    def __init__(self, operation: str, git_error: Optional[GitError]):
+        self.operation = operation
         self.git_error = git_error
 
 
@@ -412,21 +414,37 @@ def merge_commit_graph_with_top_of_branch(commit_graph: CommitGraph,
                 git_dir=split_worktree_path)
         except GitError as err:
             if strategy == MergeStrategy.FastForwardOnly:
-                raise ImpossibleMergeError(err)
+                raise ImpossibleMergeError('fast forward', err)
         if strategy != MergeStrategy.FastForwardOnly:
             # Try rebasing.
-            if not commit_graph.has_merges:
-                git('rebase', '--onto', branch_name, branch_name,
-                    commit_graph.source_commit_hash, git_dir=split_worktree_path)
+            if strategy != MergeStrategy.MergeOnly and not commit_graph.has_merges:
+                try:
+                    git('rebase', '--onto', branch_name, branch_name,
+                        commit_graph.source_commit_hash, git_dir=split_worktree_path)
+                except GitError as err:
+                    if strategy == MergeStrategy.Rebase:
+                        raise ImpossibleMergeError('rebase', err)
+                    click.echo('rebase failed, trying merge...')
+                    git('rebase', '--abort', git_dir=split_worktree_path)
+                    git('worktree', 'remove',
+                        '-f', split_worktree_path, ignore_error=True)
+                    cleanups.pop_all()
+                    return merge_commit_graph_with_top_of_branch(commit_graph,
+                                                                 split_dir,
+                                                                 destination_branch,
+                                                                 MergeStrategy.MergeOnly)
             elif strategy == MergeStrategy.Rebase:
-                raise ImpossibleMergeError(GitError(['rebase'], 1,
-                                                    stdout='',
-                                                    stderr='unable to rebase history with merges'))
+                raise ImpossibleMergeError('rebase', GitError(['rebase'], 1,
+                                                              stdout='',
+                                                              stderr='unable to rebase history with merges'))
             else:
-                assert strategy == MergeStrategy.RebaseOrMerge
+                assert strategy == MergeStrategy.RebaseOrMerge or strategy == MergeStrategy.MergeOnly
                 # Fallback to merge.
-                git('merge', commit_graph.source_commit_hash,
-                    git_dir=split_worktree_path)
+                try:
+                    git('merge', commit_graph.source_commit_hash,
+                        git_dir=split_worktree_path)
+                except GitError as err:
+                    raise ImpossibleMergeError('merge', err)
         result = git_output('rev-parse', 'HEAD', git_dir=split_worktree_path)
     return result
 
@@ -578,10 +596,9 @@ def git_apple_llvm_push(refspec, dry_run, verbose, merge_strategy, push_limit):
                                                                        split_dir,
                                                                        'origin/' + remote.destination_branch,
                                                                        merge_strategy)
-        except ImpossibleMergeError:
-            kind = 'fast forward' if merge_strategy == MergeStrategy.FastForwardOnly else 'merge'
-            fatal(
-                f'unable to {kind} commits in {split_dir}. Please rebase your monorepo commits first.')
+        except ImpossibleMergeError as err:
+            fatal(f'unable to {err.operation} commits in {split_dir_to_str(split_dir)}.'
+                  f'Please rebase your monorepo commits first.')
 
     # Once everything is ready, push!
     for split_dir in split_repos_of_interest:
