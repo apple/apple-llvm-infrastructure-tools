@@ -259,7 +259,7 @@ def find_base_split_commit(split_dir, base_commit) -> Optional[str]:
     if not mono_base_commit:
         return None
     SPLIT_COMMIT_TRAILER = 'apple-llvm-split-commit:'
-    for line in git_output('rev-list', '-n', '1', '--format=%(trailers:only)',
+    for line in git_output('rev-list', '-n', '1', '--format=%B',
                            mono_base_commit).splitlines():
         if line.startswith(SPLIT_COMMIT_TRAILER):
             return line[len(SPLIT_COMMIT_TRAILER):].strip()

@@ -9,7 +9,7 @@ from git_tools import git, git_output
 def test_monorepo_simple_test_harness(cd_to_monorepo):
     internal_commits = git_output('rev-list', 'internal/master').splitlines()
     assert len(internal_commits) == 16
-    trailers = git_output('show', '--format=%(trailers:only)', internal_commits[0])
+    trailers = git_output('show', '--format=%B', internal_commits[0])
     assert 'apple-llvm-split-commit:' in trailers
     assert 'apple-llvm-split-dir: -/' in trailers
 

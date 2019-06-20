@@ -127,7 +127,8 @@ def create_monorepo(commits: List[CommitBlueprint]):
     # Create the downstream monorepo.
     is_first = True
     for commit in commits:
-        trailers = f'\napple-llvm-split-commit: {commit.split_commit_hash}\napple-llvm-split-dir: {commit.split_dir}/'
+        hs = commit.split_commit_hash
+        trailers = f'\n---\napple-llvm-split-commit: {hs}\napple-llvm-split-dir: {commit.split_dir}/'
         if isinstance(commit, BlobCommitBlueprint) and commit.is_internal:
             assert commit.parent and commit.parent.monorepo_commit_hash is not None
             if is_first:
