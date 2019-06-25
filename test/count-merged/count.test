@@ -1,0 +1,23 @@
+RUN: mkrepo %t
+RUN: env ct=1550000001 mkblob  %t 1
+RUN: env ct=1550000002 mkblob  %t 2
+RUN: git -C %t checkout -b topic
+RUN: env ct=1550000003 mkblob  %t 3
+RUN: git -C %t checkout master
+RUN: env ct=1550000004 mkblob  %t 4
+RUN: env ct=1550000005 mkmerge %t 5 topic
+RUN: env ct=1550000004 mkblob  %t 6
+RUN: number-commits -p C %t master --date-order >%t.map
+
+RUN: git -C %t apple-llvm count-merged \
+RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
+RUN: git -C %t apple-llvm count-merged HEAD \
+RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
+RUN: mkdir %t/abc
+RUN: git -C %t/abc apple-llvm count-merged \
+RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
+CHECK: C-6 0
+CHECK: C-5 1
+CHECK: C-4 0
+CHECK: C-2 0
+CHECK: C-1 0

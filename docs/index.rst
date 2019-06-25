@@ -14,6 +14,7 @@ An overview of infrastructure and tools for Apple's fork of llvm-project
    git-apple-llvm
    git-apple-llvm-fwd
    git-apple-llvm-mt
+   git-apple-llvm-count-merged
    mt-config
 
 Indices and tables

@@ -1,0 +1,19 @@
+#!/bin/bash
+
+SUBDIRECTORY_OK=1
+. "$(dirname "$0")"/helpers/init.sh
+
+usage() { echo "usage: $(print_cmdname) <rev-list-args>"; }
+
+has_ref=0
+for arg in "$@"; do
+    case "$arg" in
+        -*) continue ;;
+        *) has_ref=1; break ;;
+    esac
+done
+
+extra=
+[ $has_ref -eq 1 ] || extra=HEAD
+
+run git rev-list --parents "$@" $extra | awk_helper count-merged
