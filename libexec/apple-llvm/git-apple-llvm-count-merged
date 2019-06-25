@@ -3,17 +3,35 @@
 SUBDIRECTORY_OK=1
 . "$(dirname "$0")"/helpers/init.sh
 
-usage() { echo "usage: $(print_cmdname) <rev-list-args>"; }
+usage() {
+    printf "%s\n"                                                             \
+        "usage: $(print_cmdname) [options] [refs...]"                         \
+        ""                                                                    \
+        "   --min <n>   Only print commits that merge at least n commits."    \
+        "   --not, -<n>, refs..."                                             \
+        "               As in \`git rev-list\`, except if there are no refs"  \
+        "               specified HEAD is default."
+}
 
-has_ref=0
-for arg in "$@"; do
-    case "$arg" in
-        -*) continue ;;
-        *) has_ref=1; break ;;
+ARGS=()
+append_arg() {
+    ARGS=( "${ARGS[@]}" "$1" )
+}
+
+MIN=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --min|--min=*)
+            parse_cmdline_option --min MIN "$@"
+            shift $?
+            ;;
+        --not|-[0-9]*) append_arg "$1"; shift ;;
+        -*) usage_error "unrecognized option: '$1'" ;;
+        *) has_ref=1; append_arg "$1"; shift ;;
     esac
 done
+has_ref=0
+[ $has_ref -eq 1 ] || ARGS=( "HEAD" "${ARGS[@]}" )
 
-extra=
-[ $has_ref -eq 1 ] || extra=HEAD
-
-run git rev-list --parents "$@" $extra | awk_helper count-merged
+run git rev-list --parents "${ARGS[@]}" |
+awk_helper count-merged -v min="$MIN"

@@ -47,5 +47,6 @@ firsts[$1] || !merged_into[$1] {
 
 END {
   for (i = 1; i <= count; i = i + 1)
-    print order[i], num_merged[i]
+    if (num_merged[i] >= min)
+      print order[i], num_merged[i]
 }
