@@ -18,10 +18,10 @@ RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
 RUN: mkdir %t/abc
 RUN: git -C %t/abc apple-llvm count-merged \
 RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
-CHECK: C-7 2
-CHECK: C-6 0
-CHECK: C-5 1
-CHECK: C-1 0
+CHECK: C-7 2 mkmerge: 7
+CHECK: C-6 0  mkblob: 6
+CHECK: C-5 1 mkmerge: 5
+CHECK: C-1 0  mkblob: 1
 
 RUN: git -C %t apple-llvm count-merged --min=1 \
 RUN:   | apply-commit-numbers %t.map | check-diff %s MIN-1 %t
@@ -29,6 +29,18 @@ RUN: git -C %t apple-llvm count-merged --min=2 \
 RUN:   | apply-commit-numbers %t.map | check-diff %s MIN-2 %t
 RUN: git -C %t apple-llvm count-merged --min=3 \
 RUN:   | check-empty
-MIN-1: C-7 2
-MIN-1: C-5 1
-MIN-2: C-7 2
+MIN-1: C-7 2 mkmerge: 7
+MIN-1: C-5 1 mkmerge: 5
+MIN-2: C-7 2 mkmerge: 7
+
+RUN: git -C %t apple-llvm count-merged --min=2 --width=0 | tr ' ' '.' \
+RUN:   | apply-commit-numbers %t.map | check-diff %s DOTS-1 %t
+RUN: git -C %t apple-llvm count-merged --min=2 --width=1 | tr ' ' '.' \
+RUN:   | apply-commit-numbers %t.map | check-diff %s DOTS-1 %t
+RUN: git -C %t apple-llvm count-merged --min=2 --width=2 | tr ' ' '.' \
+RUN:   | apply-commit-numbers %t.map | check-diff %s DOTS-2 %t
+RUN: git -C %t apple-llvm count-merged --min=2 --width=5 | tr ' ' '.' \
+RUN:   | apply-commit-numbers %t.map | check-diff %s DOTS-5 %t
+DOTS-1: C-7.2.mkmerge:.7
+DOTS-2: C-7..2.mkmerge:.7
+DOTS-5: C-7.....2.mkmerge:.7
