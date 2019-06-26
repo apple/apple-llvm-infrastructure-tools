@@ -66,7 +66,12 @@ END {
     format = "%s %" width "d %s\n"
   else
     format = "%s %s %s\n"
-  for (i = 1; i <= count; i = i + 1)
+  for (x = 1; x <= count; x = x + 1) {
+    if (reverse)
+      i = count - x + 1
+    else
+      i = x
     if (num_merged[i] >= min)
       printf format, order[i], num_merged[i], subjects[i]
+  }
 }

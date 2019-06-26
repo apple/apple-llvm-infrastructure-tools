@@ -9,6 +9,7 @@ usage() {
         ""                                                                    \
         "   --min <n>   Only print commits that merge at least n commits."    \
         "   --width <w> Format merged counts with '%<w>d'."                    \
+        "   --reverse   Reverse the order of output."                          \
         "   --not, -<n>, refs..."                                             \
         "               As in \`git rev-list\`, except if there are no refs"  \
         "               specified HEAD is default."
@@ -21,11 +22,16 @@ append_arg() {
 
 MIN=0
 WIDTH=0
+REVERSE=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --min|--min=*)
             parse_cmdline_option --min MIN "$@"
             shift $?
+            ;;
+        --reverse)
+            REVERSE=$(( 1 - $REVERSE ))
+            shift 1
             ;;
         --width|--width=*)
             parse_cmdline_option --width WIDTH "$@"
@@ -40,4 +46,7 @@ has_ref=0
 [ $has_ref -eq 1 ] || ARGS=( "HEAD" "${ARGS[@]}" )
 
 run git rev-list --format="subject %s" --parents "${ARGS[@]}" |
-awk_helper count-merged -v min="$MIN" -v width="$WIDTH"
+awk_helper count-merged     \
+    -v min="$MIN"           \
+    -v width="$WIDTH"       \
+    -v reverse="$REVERSE"

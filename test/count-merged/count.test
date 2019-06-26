@@ -23,6 +23,13 @@ CHECK: C-6 0  mkblob: 6
 CHECK: C-5 1 mkmerge: 5
 CHECK: C-1 0  mkblob: 1
 
+RUN: git -C %t apple-llvm count-merged --reverse \
+RUN:   | apply-commit-numbers %t.map | check-diff %s REVERSE %t
+REVERSE: C-1 0  mkblob: 1
+REVERSE: C-5 1 mkmerge: 5
+REVERSE: C-6 0  mkblob: 6
+REVERSE: C-7 2 mkmerge: 7
+
 RUN: git -C %t apple-llvm count-merged --min=1 \
 RUN:   | apply-commit-numbers %t.map | check-diff %s MIN-1 %t
 RUN: git -C %t apple-llvm count-merged --min=2 \
