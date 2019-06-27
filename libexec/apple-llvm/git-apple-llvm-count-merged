@@ -10,6 +10,7 @@ usage() {
         "   --min <n>   Only print commits that merge at least n commits."    \
         "   --width <w> Format merged counts with '%<w>d'."                    \
         "   --reverse   Reverse the order of output."                          \
+        "   -u, --uniq  Unique the output by subject."                         \
         "   --not, -<n>, refs..."                                             \
         "               As in \`git rev-list\`, except if there are no refs"  \
         "               specified HEAD is default."
@@ -23,6 +24,7 @@ append_arg() {
 MIN=0
 WIDTH=0
 REVERSE=0
+UNIQUE=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --min|--min=*)
@@ -31,6 +33,10 @@ while [ $# -gt 0 ]; do
             ;;
         --reverse)
             REVERSE=$(( 1 - $REVERSE ))
+            shift 1
+            ;;
+        --uniq|-u)
+            UNIQUE=$(( 1 - $UNIQUE ))
             shift 1
             ;;
         --width|--width=*)
@@ -49,4 +55,5 @@ run git rev-list --format="subject %s" --parents "${ARGS[@]}" |
 awk_helper count-merged     \
     -v min="$MIN"           \
     -v width="$WIDTH"       \
+    -v unique="$UNIQUE"     \
     -v reverse="$REVERSE"

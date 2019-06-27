@@ -66,6 +66,28 @@ END {
     format = "%s %" width "d %s\n"
   else
     format = "%s %s %s\n"
+  if (unique) {
+    # Merge repeated subjects.
+    for (x = 1; x <= count; x = x + 1) {
+      # Keep the commit hash that will be output first.
+      if (reverse)
+        i = count - x + 1
+      else
+        i = x
+
+      subject = subjects[i]
+      j = order_by_subject[subject]
+      if (!j) {
+        order_by_subject[subject] = i
+        continue
+      }
+
+      num_merged[j] += num_merged[i]
+      num_merged[i] = -1
+    }
+  }
+  if (min < 0)
+    min = 0
   for (x = 1; x <= count; x = x + 1) {
     if (reverse)
       i = count - x + 1
