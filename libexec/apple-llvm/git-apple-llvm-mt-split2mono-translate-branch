@@ -105,20 +105,20 @@ list_new_commits() {
     local branch="$1"
     local refdirs="$2"
     local repeated="$3"
-    local rd r d head tail format tailref headref suffix extra
+    local rd r d head tail format tailref headref suffix extra nots
     for rd in $refdirs; do
         r="${rd%:*}"
         d="${rd##*:}"
 
+        extra= nots=
         if [ "$d" = % ]; then
-            local notself
             run --hide-errors git rev-parse --verify $branch^{commit} \
-                >/dev/null && notself=$branch
+                >/dev/null &&
+                nots=$branch
             suffix=mt-repeat
-            extra="--first-parent --not $notself -- $repeated"
+            extra="--first-parent -- $repeated"
         else
             suffix="$d/mt-split"
-            extra=
         fi
         tailref="refs/heads/mt/$branch/$suffix"
         headref="$r"
@@ -128,7 +128,7 @@ list_new_commits() {
         [ "$tail" = "$head" ] && continue
 
         # TODO: add a testcase for d of '-', which requires '--' here.
-        local nots="$(run git show-ref -- $suffix |
+        nots="$nots${nots:+ }$(run git show-ref -- $suffix |
             grep refs/heads/mt/ | awk '{print $2}')"
         mt_list_commits "$d" $headref --not $nots $extra ||
             error "failed to list new commits for $rd"

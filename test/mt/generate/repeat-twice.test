@@ -1,0 +1,65 @@
+RUN: mkrepo %t.a
+RUN: mkrepo %t.b
+RUN: env ct=1550000001 mkblob %t.a 1
+RUN: env ct=1550000002 mkblob %t.b 2
+
+RUN: mkrepo --bare %t.out.ab
+RUN: mkrepo --bare %t.out.ab-split
+RUN: mkrepo --bare %t.out.ba
+RUN: mkrepo --bare %t.out.ba-split
+RUN: rm -rf %t-mt-repo-ab.git
+RUN: rm -rf %t-mt-repo-ba.git
+RUN: rm -rf %t-mt-configs
+RUN: mkdir -p %t-mt-configs
+RUN: cat         %S/Inputs/repeat-ab.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/repeat-ab.mt-config
+RUN: cat         %S/Inputs/repeat-ba.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/repeat-ba.mt-config
+RUN: %mtgen --git-dir %t-mt-repo-ab.git --config-dir %t-mt-configs repeat-ab
+RUN: %mtgen --git-dir %t-mt-repo-ba.git --config-dir %t-mt-configs repeat-ba
+
+# Add more commits and run again.
+RUN: env ct=1550000003 mkblob %t.b 3
+RUN: env ct=1550000004 mkblob %t.a 4
+RUN: %mtgen --git-dir %t-mt-repo-ab.git --config-dir %t-mt-configs repeat-ab
+RUN: %mtgen --git-dir %t-mt-repo-ba.git --config-dir %t-mt-configs repeat-ba
+
+RUN: number-commits -p JUST-A %t-mt-repo-ab.git just-a         >%t.ab.map
+RUN: number-commits -p ADD-B  %t-mt-repo-ab.git just-a..add-b >>%t.ab.map
+RUN: number-commits -p A      %t.a              master        >>%t.ab.map
+RUN: number-commits -p B      %t.b              master        >>%t.ab.map
+RUN: number-commits -p JUST-B %t-mt-repo-ba.git just-b         >%t.ba.map
+RUN: number-commits -p ADD-A  %t-mt-repo-ba.git just-b..add-a >>%t.ba.map
+RUN: number-commits -p A      %t.a              master        >>%t.ba.map
+RUN: number-commits -p B      %t.b              master        >>%t.ba.map
+RUN: git -C %t-mt-repo-ab.git log add-b --reverse --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t.ab.map | grep -e . | check-diff %s AB %t
+AB: JUST-A-1                   mkblob: 1
+AB:  ADD-B-1 JUST-A-1          mkblob: 2
+AB:  ADD-B-2  ADD-B-1          mkblob: 3
+AB: JUST-A-2 JUST-A-1          mkblob: 4
+AB:  ADD-B-3  ADD-B-2 JUST-A-2 Merge: mkblob: 4
+RUN: git -C %t-mt-repo-ba.git log add-a --reverse --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t.ba.map | grep -e . | check-diff %s BA %t
+BA:  ADD-A-1                   mkblob: 1
+BA: JUST-B-1                   mkblob: 2
+BA:  ADD-A-2  ADD-A-1 JUST-B-1 Merge: mkblob: 2
+BA: JUST-B-2 JUST-B-1          mkblob: 3
+BA:  ADD-A-3  ADD-A-2 JUST-B-2 Merge: mkblob: 3
+BA:  ADD-A-4  ADD-A-3          mkblob: 4
+
+# Check that mt-repeat is correct, and published in the right places.
+RUN: not git -C %t.out.ab-split rev-parse --verify mt/add-b/mt-repeat^{commit}
+RUN: git -C %t-mt-repo-ab.git/clones/out.git rev-list mt/add-b/mt-repeat \
+RUN:   | apply-commit-numbers %t.ab.map | grep -e . | check-diff %s AB-REPEAT %t
+RUN: git -C %t.out.ab rev-list mt/add-b/mt-repeat^{commit} \
+RUN:   | apply-commit-numbers %t.ab.map | grep -e . | check-diff %s AB-REPEAT %t
+AB-REPEAT: JUST-A-2
+AB-REPEAT: JUST-A-1
+RUN: not git -C %t.out.ba-split rev-parse --verify mt/add-a/mt-repeat^{commit}
+RUN: git -C %t-mt-repo-ba.git/clones/out.git rev-list mt/add-a/mt-repeat \
+RUN:   | apply-commit-numbers %t.ba.map | grep -e . | check-diff %s BA-REPEAT %t
+RUN: git -C %t.out.ba rev-list mt/add-a/mt-repeat^{commit} \
+RUN:   | apply-commit-numbers %t.ba.map | grep -e . | check-diff %s BA-REPEAT %t
+BA-REPEAT: JUST-B-2
+BA-REPEAT: JUST-B-1
