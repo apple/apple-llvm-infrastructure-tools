@@ -59,6 +59,30 @@ dir apple/master compiler-rt       split/apple/compiler-rt/upstream-with-swift
 dir apple/master libcxx            split/apple/libcxx/upstream-with-swift
 dir apple/master llvm              split/apple/llvm/upstream-with-swift
 
+# Generate apple/stable/20160127 from swift-3.0-branch, skipping LLDB.
+generate 0001050 branch               apple/stable/20160127
+dir apple/stable/20160127 clang       split/apple/clang/swift-3.0-branch
+dir apple/stable/20160127 compiler-rt split/apple/compiler-rt/swift-3.0-branch
+dir apple/stable/20160127 llvm        split/apple/llvm/swift-3.0-branch
+
+## Branches that get merged into split/apple/llvm/stable:
+## - llvm.org/master
+## - llvm.org/release_50
+## - Rebranch from swift-4.1-branch @ 98499e0a26a (merge: 90530f77e86 b5c7bf32a98)
+##   - llvm.org/release_40
+##   - Reset to swift-4.0-branch @ e44c29ad5d9 (merge: 90170720606 7e421db87c2)
+##     - Big merge @ 28a6aad59011f (merge: c72f953e523 f54fa770214)
+##       - swift-3.0-branch (DONE)
+##     - swift-3.1-branch
+##   - swift-4.0-branch
+## - swift-4.1-branch
+## - swift-4.2-branch
+## - swift-5.0-branch
+## - swift-5.1-branch
+##
+## Need to check split/apple/{clang,compiler-rt,...} before setting up merges,
+## since count-merged turn up other relevant branches along the way.
+
 # Hold off on history that contains old release branches for now.  May do some
 # archival work before adding them.
 #
