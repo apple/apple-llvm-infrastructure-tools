@@ -65,6 +65,12 @@ dir apple/stable/20160127 clang       split/apple/clang/swift-3.0-branch
 dir apple/stable/20160127 compiler-rt split/apple/compiler-rt/swift-3.0-branch
 dir apple/stable/20160127 llvm        split/apple/llvm/swift-3.0-branch
 
+# Generate apple/stable/20160817 from swift-3.1-branch, skipping LLDB.
+generate 0001100 branch               apple/stable/20160817
+dir apple/stable/20160817 clang       split/apple/clang/swift-3.1-branch
+dir apple/stable/20160817 compiler-rt split/apple/compiler-rt/swift-3.1-branch
+dir apple/stable/20160817 llvm        split/apple/llvm/swift-3.1-branch
+
 ## Branches that get merged into split/apple/llvm/stable:
 ##
 ## + llvm.org/master
@@ -86,7 +92,7 @@ dir apple/stable/20160127 llvm        split/apple/llvm/swift-3.0-branch
 ##                     compiler-rt @ 84918069c5bd9 (merge: 09e1213c0 f2cfa77cc)
 ##         - Big merge on 2016-05-01 @ dffa09ffd8a55 (merge: 752e1430fc3 a4b7bbbf184)
 ##           - Big (clang) merge on 2016-02-07 @ 4ca3c7fa283ca (merge: 2b184a4cde 35aeed5957)
-##     - swift-3.1-branch
+##       + swift-3.1-branch
 ##   - swift-4.0-branch
 ## - swift-4.1-branch
 ## - swift-4.2-branch
