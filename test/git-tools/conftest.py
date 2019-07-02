@@ -6,7 +6,7 @@
 import os
 import pytest
 import json
-from git_tools import git, git_output
+from git_apple_llvm.git_tools import git, git_output
 import monorepo_test_harness
 
 

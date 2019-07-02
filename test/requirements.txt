@@ -3,4 +3,3 @@ GitPython==2.1.11
 lit
 flake8
 mypy
--r ../requirements.txt

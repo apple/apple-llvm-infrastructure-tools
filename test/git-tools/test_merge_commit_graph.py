@@ -3,9 +3,10 @@
 """
 
 import pytest
-from git_tools import git, git_output
+from git_apple_llvm.git_tools import git, git_output
 from monorepo_test_harness import commit_file
-from git_tools.push import CommitGraph, merge_commit_graph_with_top_of_branch, MergeStrategy, ImpossibleMergeError
+from git_apple_llvm.git_tools.push import CommitGraph, merge_commit_graph_with_top_of_branch
+from git_apple_llvm.git_tools.push import MergeStrategy, ImpossibleMergeError
 
 
 @pytest.fixture(scope='function')

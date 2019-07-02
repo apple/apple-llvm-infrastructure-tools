@@ -1,1 +1,3 @@
-src/git_tools/push.py
+#!/usr/bin/env python3
+from git_apple_llvm.git_tools.push import git_apple_llvm_push
+git_apple_llvm_push()

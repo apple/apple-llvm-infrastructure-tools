@@ -3,7 +3,7 @@
 """
 
 from pathlib import PosixPath
-from git_tools import git, git_output
+from git_apple_llvm.git_tools import git, git_output
 
 
 def test_monorepo_simple_test_harness(cd_to_monorepo):

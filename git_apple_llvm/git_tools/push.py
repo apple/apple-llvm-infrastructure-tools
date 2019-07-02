@@ -11,14 +11,7 @@ import json
 from typing import Optional, List, Dict, Set
 from enum import Enum
 from contextlib import ExitStack
-
-
-# Make libexec/apple-llvm/src available for importing.
-sys.path.insert(0, os.path.dirname(os.path.dirname(
-    os.path.realpath(os.path.abspath(__file__)))))
-
-
-from git_tools import git, git_output, get_current_checkout_directory, commit_exists, GitError
+from git_apple_llvm.git_tools import git, git_output, get_current_checkout_directory, commit_exists, GitError
 
 
 # Global log.

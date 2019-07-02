@@ -3,8 +3,8 @@
 """
 
 from click.testing import CliRunner
-from git_tools.push import git_apple_llvm_push
-from git_tools import git_output
+from git_apple_llvm.git_tools.push import git_apple_llvm_push
+from git_apple_llvm.git_tools import git_output
 from monorepo_test_harness import commit_file
 
 

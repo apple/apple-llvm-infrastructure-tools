@@ -4,7 +4,7 @@
 
 import os
 import pytest
-from git_tools import git, git_output, get_current_checkout_directory, commit_exists, GitError
+from git_apple_llvm.git_tools import git, git_output, get_current_checkout_directory, commit_exists, GitError
 
 
 def test_git_invocation(tmp_path):

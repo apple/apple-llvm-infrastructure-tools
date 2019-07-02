@@ -40,19 +40,19 @@ $(lit_targets) : check-%: venv requirements Makefile
 $(lit_test_file_targets) : check-%: venv requirements Makefile
 	$(PYTHON_ROOT)lit -sv $(testdir)/$*.test
 
-$(pytest_targets) : check-%: venv requirements Makefile
-	env PYTHONPATH="$(testdir)../libexec/apple-llvm/src" $(PYTHON_ROOT)pytest --log-level=debug $(testdir)/$*/
+$(pytest_targets) : check-%: venv git_apple_llvm_package requirements Makefile
+	$(PYTHON_ROOT)pytest --log-level=debug $(testdir)/$*/
 
 check-lit: venv requirements Makefile
 	$(PYTHON_ROOT)lit -sv $(testdir)/*/
 
 python_sources := $(shell find $(testdir) $(testdir)../libexec $(testdir)../src -not \( -path $(testdir)/.python_env -prune \) -name "*.py")
 
-check-lint: venv requirements Makefile
+check-lint: venv git_apple_llvm_package requirements Makefile
 	$(PYTHON_ROOT)flake8 --exclude="*env" --tee flake8_report.pep8.txt $(python_sources)
 
-check-types: venv requirements Makefile
-	env MYPYPATH="$(S):$(testdir)../libexec/apple-llvm/src" $(PYTHON_ROOT)mypy $(python_sources) --ignore-missing-imports
+check-types: venv git_apple_llvm_package requirements Makefile
+	env MYPYPATH="$(S)" $(PYTHON_ROOT)mypy $(python_sources) --ignore-missing-imports
 
 $(filter check-split2mono/%,$(lit_targets) $(lit_test_file_targets)) \
 $(filter check-svn2git/%,$(lit_targets) $(lit_test_file_targets)) \
