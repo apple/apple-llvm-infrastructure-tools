@@ -25,13 +25,13 @@ install:
 	@echo ""
 	@echo "Installing package contents"
 	@echo "################################################################################"
-	PIP install $(verbose_arg) .
+	$(PIP) install $(verbose_arg) .
 	@echo ""
 	@echo "################################################################################"
 	@echo "installation succeeded: 'git apple-llvm' is now available!"
 
 uninstall:
 	@echo "Uninstalling 'git-apple-llvm'"
-	PIP uninstall $(verbose_arg) git_apple_llvm
+	$(PIP) uninstall $(verbose_arg) git_apple_llvm
 
 .PHONY: help install uninstall
