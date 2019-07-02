@@ -15,6 +15,8 @@ RUN: git -C %t apple-llvm count-merged \
 RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
 RUN: git -C %t apple-llvm count-merged HEAD \
 RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
+RUN: git -C %t apple-llvm count-merged master \
+RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
 RUN: mkdir %t/abc
 RUN: git -C %t/abc apple-llvm count-merged \
 RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
@@ -22,6 +24,18 @@ CHECK: C-7 2 mkmerge: 7
 CHECK: C-6 0  mkblob: 6
 CHECK: C-5 1 mkmerge: 5
 CHECK: C-1 0  mkblob: 1
+
+# Check that HEAD is not added when there is an explicit branch.
+RUN: git -C %t checkout topic2
+RUN: git -C %t apple-llvm count-merged \
+RUN:   | apply-commit-numbers %t.map | check-diff %s TOPIC2 %t
+RUN: git -C %t apple-llvm count-merged master \
+RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK %t
+RUN: git -C %t checkout master
+RUN: git -C %t apple-llvm count-merged topic2 \
+RUN:   | apply-commit-numbers %t.map | check-diff %s TOPIC2 %t
+TOPIC2: C-2 0  mkblob: 2
+TOPIC2: C-1 0  mkblob: 1
 
 RUN: git -C %t apple-llvm count-merged --reverse \
 RUN:   | apply-commit-numbers %t.map | check-diff %s REVERSE %t

@@ -25,6 +25,7 @@ MIN=0
 WIDTH=0
 REVERSE=0
 UNIQUE=0
+has_ref=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --min|--min=*)
@@ -48,7 +49,6 @@ while [ $# -gt 0 ]; do
         *) has_ref=1; append_arg "$1"; shift ;;
     esac
 done
-has_ref=0
 [ $has_ref -eq 1 ] || ARGS=( "HEAD" "${ARGS[@]}" )
 
 run git rev-list --format="subject %s" --parents "${ARGS[@]}" |
