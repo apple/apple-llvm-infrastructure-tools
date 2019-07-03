@@ -89,6 +89,30 @@ dir apple/stable/20180103 clang       split/apple/clang/swift-4.2-branch
 dir apple/stable/20180103 compiler-rt split/apple/compiler-rt/swift-4.2-branch
 dir apple/stable/20180103 llvm        split/apple/llvm/swift-4.2-branch
 
+# Generate apple/stable/20180719 from Git hashes.  This was the original branch
+# point for swift-5.0-branch, before it was recut.
+generate 00013000 branch              apple/stable/20180719
+dir apple/stable/20180719 clang       f18c4d7678bd9e5a49989120bbf20b8bf2b4db00
+dir apple/stable/20180719 compiler-rt 8a20b67d99c91f2f1fa7b4ca0b53de0eba921100
+dir apple/stable/20180719 llvm        d1dbd274b66270ff3cb21c34c8ca31bb9ea29cc3
+
+# Generate apple/stable/20180912 from swift-5.0-branch, skipping LLDB.  Note
+# that the libcxx and clang-tools-extra directories gained changes here.
+generate 00013500 branch                    apple/stable/20180912
+dir apple/stable/20180912 clang             split/apple/clang/swift-5.0-branch
+dir apple/stable/20180912 clang-tools-extra split/apple/clang-tools-extra/swift-5.0-branch
+dir apple/stable/20180912 compiler-rt       split/apple/compiler-rt/swift-5.0-branch
+dir apple/stable/20180912 libcxx            split/apple/libcxx/swift-5.0-branch
+dir apple/stable/20180912 llvm              split/apple/llvm/swift-5.0-branch
+
+# Generate apple/stable/20190104 from swift-5.1-branch, skipping LLDB.
+generate 00014000 branch                    apple/stable/20190104
+dir apple/stable/20190104 clang             split/apple/clang/swift-5.1-branch
+dir apple/stable/20190104 clang-tools-extra split/apple/clang-tools-extra/swift-5.1-branch
+dir apple/stable/20190104 compiler-rt       split/apple/compiler-rt/swift-5.1-branch
+dir apple/stable/20190104 libcxx            split/apple/libcxx/swift-5.1-branch
+dir apple/stable/20190104 llvm              split/apple/llvm/swift-5.1-branch
+
 ## Branches that get merged into split/apple/llvm/stable (where "+" indicates
 ## it has already been modelled):
 ##
@@ -101,12 +125,12 @@ dir apple/stable/20180103 llvm        split/apple/llvm/swift-4.2-branch
 ## + swift-4.0-branch
 ## + swift-4.1-branch
 ## + swift-4.2-branch
-## - swift-5.0-branch
-##   - recut:
-##     - llvm:        23138fc92b5eb35fe (Merge: 8709e78d60e d1dbd274b66)
-##     - clang:       75a3ee7a15a87fe6d (Merge: 3cf79c0149 f18c4d7678)
-##     - compiler-rt: fb8f1bc650f803c71 (Merge: 188f26e2e 8a20b67d9)
-## - swift-5.1-branch
+## + swift-5.0-branch
+##   + recut:
+##     * llvm:        23138fc92b5eb35fe (Merge: 8709e78d60e d1dbd274b66)
+##     * clang:       75a3ee7a15a87fe6d (Merge: 3cf79c0149 f18c4d7678)
+##     * compiler-rt: fb8f1bc650f803c71 (Merge: 188f26e2e 8a20b67d9)
+## + swift-5.1-branch
 ## - Rebranch from swift-4.1-branch @ 98499e0a26a (merge: 90530f77e86 b5c7bf32a98)
 ##                            clang @ 337d4326293 (merge: fb514a5ca1 42fb83c55f)
 ##                      compiler-rt @ e0e24585ee1 (merge: 8c454e876 3850e97bd)
