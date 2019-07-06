@@ -59,53 +59,89 @@ dir apple/master compiler-rt       split/apple/compiler-rt/upstream-with-swift
 dir apple/master libcxx            split/apple/libcxx/upstream-with-swift
 dir apple/master llvm              split/apple/llvm/upstream-with-swift
 
-# Generate apple/stable/20160127 from swift-3.0-branch, skipping LLDB.
+# Generate apple/stable/20160127 from swift-3.0-branch, skipping LLDB, and then
+# add LLDB to generate swift/swift-3.0-branch.
 generate branch apple/stable/20160127
 dir apple/stable/20160127 clang       split/apple/clang/swift-3.0-branch
 dir apple/stable/20160127 compiler-rt split/apple/compiler-rt/swift-3.0-branch
 dir apple/stable/20160127 llvm        split/apple/llvm/swift-3.0-branch
 
-# Generate apple/stable/20160817 from swift-3.1-branch, skipping LLDB.
+generate branch swift/swift-3.0-branch
+repeat swift/swift-3.0-branch      apple/stable/20160127
+dir    swift/swift-3.0-branch lldb split/apple/lldb/swift-3.0-branch
+
+# Generate apple/stable/20160817 from swift-3.1-branch, skipping LLDB at first.
 generate branch apple/stable/20160817
 dir apple/stable/20160817 clang       split/apple/clang/swift-3.1-branch
 dir apple/stable/20160817 compiler-rt split/apple/compiler-rt/swift-3.1-branch
 dir apple/stable/20160817 llvm        split/apple/llvm/swift-3.1-branch
 
-# Generate apple/stable/20170116 from swift-4.0-branch, skipping LLDB.
+generate branch swift/swift-3.1-branch
+repeat swift/swift-3.1-branch      apple/stable/20160817
+dir    swift/swift-3.1-branch lldb split/apple/lldb/swift-3.1-branch
+
+# Generate apple/stable/20170116 from swift-4.0-branch, skipping LLDB at first.
 generate branch apple/stable/20170116
 dir apple/stable/20170116 clang       split/apple/clang/swift-4.0-branch
 dir apple/stable/20170116 compiler-rt split/apple/compiler-rt/swift-4.0-branch
 dir apple/stable/20170116 llvm        split/apple/llvm/swift-4.0-branch
 
-# Generate apple/stable/20170719 from swift-4.1-branch, skipping LLDB.
+generate branch swift/swift-4.0-branch
+repeat swift/swift-4.0-branch      apple/stable/20170116
+dir    swift/swift-4.0-branch lldb split/apple/lldb/swift-4.0-branch
+
+# Generate apple/stable/20170719 from swift-4.1-branch, skipping LLDB at first.
 generate branch apple/stable/20170719
 dir apple/stable/20170719 clang       split/apple/clang/swift-4.1-branch
 dir apple/stable/20170719 compiler-rt split/apple/compiler-rt/swift-4.1-branch
 dir apple/stable/20170719 llvm        split/apple/llvm/swift-4.1-branch
 
-# Generate apple/stable/20180103 from swift-4.2-branch, skipping LLDB.
+# Generate the first part of swift/swift-4.1-branch, which merges in as a
+# second parent when the history gets "fixed".  Use '{no-pass}' to avoid
+# generating merges for clang/llvm/compiler-rt commits that should show up in
+# the next directive.
+generate branch archive/before-lldb-fix/swift/swift-4.1-branch
+repeat archive/before-lldb-fix/swift/swift-4.1-branch      apple/stable/20170719{no-pass}
+dir    archive/before-lldb-fix/swift/swift-4.1-branch lldb split/apple/lldb/archive/start/fixed/swift-4.1-branch
+
+# Finally generate swift/swift-4.1-branch with the rest of LLDB's history for
+# that branch.
+generate branch swift/swift-4.1-branch
+repeat swift/swift-4.1-branch      apple/stable/20170719
+dir    swift/swift-4.1-branch lldb split/apple/lldb/swift-4.1-branch
+
+# Generate apple/stable/20180103 from swift-4.2-branch, skipping LLDB at first.
 generate branch apple/stable/20180103
 dir apple/stable/20180103 clang       split/apple/clang/swift-4.2-branch
 dir apple/stable/20180103 compiler-rt split/apple/compiler-rt/swift-4.2-branch
 dir apple/stable/20180103 llvm        split/apple/llvm/swift-4.2-branch
 
-# Generate apple/stable/20180719 from Git hashes.  This was the original branch
-# point for swift-5.0-branch, before it was recut.
+generate branch swift/swift-4.2-branch
+repeat swift/swift-4.2-branch      apple/stable/20180103
+dir    swift/swift-4.2-branch lldb split/apple/lldb/swift-4.2-branch
+
+# Generate apple/stable/20180719 from the archive.  This was the original
+# branch point for swift-5.0-branch, before it was recut, and the original
+# branch got hung-off the second parent.  No matching LLDB branch.
 generate branch apple/stable/20180719
-dir apple/stable/20180719 clang       f18c4d7678bd9e5a49989120bbf20b8bf2b4db00
-dir apple/stable/20180719 compiler-rt 8a20b67d99c91f2f1fa7b4ca0b53de0eba921100
-dir apple/stable/20180719 llvm        d1dbd274b66270ff3cb21c34c8ca31bb9ea29cc3
+dir apple/stable/20180719 clang       split/apple/clang/archive/original/swift-5.0-branch
+dir apple/stable/20180719 compiler-rt split/apple/compiler-rt/archive/original/swift-5.0-branch
+dir apple/stable/20180719 llvm        split/apple/llvm/archive/original/swift-5.0-branch
 
-# Generate apple/stable/20180912 from swift-5.0-branch, skipping LLDB.  Note
-# that the libcxx and clang-tools-extra directories gained changes here.
-generate branch apple/stable/20180912
-dir apple/stable/20180912 clang             split/apple/clang/swift-5.0-branch
-dir apple/stable/20180912 clang-tools-extra split/apple/clang-tools-extra/swift-5.0-branch
-dir apple/stable/20180912 compiler-rt       split/apple/compiler-rt/swift-5.0-branch
-dir apple/stable/20180912 libcxx            split/apple/libcxx/swift-5.0-branch
-dir apple/stable/20180912 llvm              split/apple/llvm/swift-5.0-branch
+# Generate apple/stable/20180912 from swift-5.0-branch, skipping LLDB at first.
+# Note that the libcxx and clang-tools-extra directories gained changes here.
+generate branch apple/stable/20180801
+dir apple/stable/20180801 clang             split/apple/clang/swift-5.0-branch
+dir apple/stable/20180801 clang-tools-extra split/apple/clang-tools-extra/swift-5.0-branch
+dir apple/stable/20180801 compiler-rt       split/apple/compiler-rt/swift-5.0-branch
+dir apple/stable/20180801 libcxx            split/apple/libcxx/swift-5.0-branch
+dir apple/stable/20180801 llvm              split/apple/llvm/swift-5.0-branch
 
-# Generate apple/stable/20190104 from swift-5.1-branch, skipping LLDB.
+generate branch swift/swift-5.0-branch
+repeat swift/swift-5.0-branch      apple/stable/20180801
+dir    swift/swift-5.0-branch lldb split/apple/lldb/swift-5.0-branch
+
+# Generate apple/stable/20190104 from swift-5.1-branch, skipping LLDB at first.
 generate branch apple/stable/20190104
 dir apple/stable/20190104 clang             split/apple/clang/swift-5.1-branch
 dir apple/stable/20190104 clang-tools-extra split/apple/clang-tools-extra/swift-5.1-branch
@@ -113,60 +149,39 @@ dir apple/stable/20190104 compiler-rt       split/apple/compiler-rt/swift-5.1-br
 dir apple/stable/20190104 libcxx            split/apple/libcxx/swift-5.1-branch
 dir apple/stable/20190104 llvm              split/apple/llvm/swift-5.1-branch
 
-# Branches that get merged into split/apple/llvm/stable (where "+" indicates
-# it has already been modelled):
+generate branch swift/swift-5.1-branch
+repeat swift/swift-5.1-branch      apple/stable/20190104
+dir    swift/swift-5.1-branch lldb split/apple/lldb/swift-5.1-branch
+
+# Generate swift/master from each split repo's stable branch, intended to be
+# paired with swift's master branch.
 #
-# + llvm.org/master
-# + llvm.org/release_40
-# + llvm.org/release_50
-# + llvm.org/release_60
-# + swift-3.0-branch
-# + swift-3.1-branch
-# + swift-4.0-branch
-# + swift-4.1-branch
-# + swift-4.2-branch
-# + swift-5.0-branch
-#   + recut:
-#     * llvm:        23138fc92b5eb35fe (Merge: 8709e78d60e d1dbd274b66)
-#     * clang:       75a3ee7a15a87fe6d (Merge: 3cf79c0149 f18c4d7678)
-#     * compiler-rt: fb8f1bc650f803c71 (Merge: 188f26e2e 8a20b67d9)
-# + swift-5.1-branch
+# Note: There are merges where the main history hangs off the second parent for
+# clang/llvm/compiler-rt (notably, the rebranches for 3.1, 4.0, and 4.1), but
+# it's hard to generate a meaningful history for those pieces because LLDB's
+# branching strategy differs from the rest.  For now (in this version of the
+# monorepo generation) don't try, but for future reference: these side
+# histories have branches in the split repos at
+# archive/start/stable/swift-3.1-branch, archive/start/stable/swift-4.0-branch,
+# and archive/start/stable/swift-4.1-branch.
+generate branch swift/master
+dir swift/master lldb              split/apple/lldb/stable
+dir swift/master clang             split/apple/clang/stable
+dir swift/master clang-tools-extra split/apple/clang-tools-extra/stable
+dir swift/master compiler-rt       split/apple/compiler-rt/stable
+dir swift/master libcxx            split/apple/libcxx/stable
+dir swift/master llvm              split/apple/llvm/stable
+
+# Generate swift/master-next from LLDB's upstream-with-swift branch and the
+# pre-existing apple/master branch.  This should give a similar result to
+# interleaving each repo's upstream-with-swift branch.
 #
-# Remaining changes should be interleaved with LLDB somehow, for the history of
-# swift/master.
+# Note: apple/master does not depend on the swift repo in any way, whereas
+# swift/master-next does and is intended to be paired with swift's master-next
+# branch.
 #
-# - Big merge on 2016-05-13 @ b1fd2b2454d0a (merge: 91862b46393 01d6b63f130)
-#                           / 01d6b63f130a8 (merge: e4d0faa5ada dffa09ffd8a)
-#                     clang @ 5e7555149d88c (merge: 0de3943358 9f0d189820)
-#               compiler-rt @ 84918069c5bd9 (merge: 09e1213c0 f2cfa77cc)
-#   => swift/archive/merges/20160513 ?
-# - Big merge on 2016-09-11 @ 28a6aad59011f (merge: c72f953e523 f54fa770214)
-#                     clang @ 9d19febb08f90 (merge: c6bd0c829e 0e6c928036)
-#               compiler-rt @ 70a977cee7fa8 (merge: cf2b6928e 3c88697f3)
-#   => swift/archive/merges/20160911 ?
-# - Reset to swift-4.0-branch @ e44c29ad5d9 (merge: 90170720606 7e421db87c2)
-#                       clang @ 82800d229a0 (merge: 9ad62cf61e 80a3776e67)
-#                 compiler-rt @ 02dc93fe25a (merge: e613c7d90 dd440e713)
-#   => swift/archive/merges/20170118 ?
-# - Rebranch from swift-4.1-branch @ 98499e0a26a (merge: 90530f77e86 b5c7bf32a98)
-#                            clang @ 337d4326293 (merge: fb514a5ca1 42fb83c55f)
-#                      compiler-rt @ e0e24585ee1 (merge: 8c454e876 3850e97bd)
-#   => swift/archive/merges/20170803 ?
-#
-# generate branch swift/5.1-branch
-# repeat swift/5.1-branch  apple/stable/20190117
-# dir    swift/5.1-branch  lldb split/apple/lldb/swift-5.1-branch
-#
-# generate branch swift/master
-# dir swift/master clang             split/apple/clang/stable
-# dir swift/master clang-tools-extra split/apple/clang-tools-extra/stable
-# dir swift/master compiler-rt       split/apple/compiler-rt/stable
-# dir swift/master libcxx            split/apple/libcxx/stable
-# dir swift/master llvm              split/apple/llvm/stable
-# dir swift/master lldb              split/apple/lldb/stable
-#
-# # Layer LLDB's upstream-with-swift branch on top of apple/master to create
-# # swift/master-next, which depends on the 'swift' repo.
-# generate branch swift/master-next
-# repeat swift/master-next apple/master
-# dir    swift/master-next lldb split/apple/lldb/upstream-with-swift
+# Note: this is done *last* because LLDB's upstream-with-swift branch is a
+# global merge sink for its other branches.
+generate branch swift/master-next
+repeat swift/master-next      apple/master
+dir    swift/master-next lldb split/apple/lldb/upstream-with-swift
