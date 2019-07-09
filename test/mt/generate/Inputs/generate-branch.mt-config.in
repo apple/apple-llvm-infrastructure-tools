@@ -16,4 +16,4 @@ declare-dir -
 dir master a a-name/master
 dir master b b-name/master
 
-generate 0000 branch master
+generate branch master

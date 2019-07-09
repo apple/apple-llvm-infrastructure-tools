@@ -19,11 +19,11 @@ dir master a a-name/master
 dir master b b-name/master
 
 # This should do nothing, but not error.
-generate 0000 splitrefs master
+generate splitrefs master
 
 # This is prep to allow us to map splitrefs.
 # FIXME: change to a "mapping" directive.
-generate 0001 branch prep
+generate branch prep
 
 # Here we go.
-generate 0002 splitrefs master
+generate splitrefs master

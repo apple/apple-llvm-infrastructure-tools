@@ -14,5 +14,5 @@ dir just-a a a/master
 repeat add-b just-a
 dir    add-b b b/master
 
-generate 0001 branch just-a
-generate 0002 branch add-b
+generate branch just-a
+generate branch add-b

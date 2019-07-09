@@ -37,11 +37,11 @@ declare-dir pstl
 
 # Map all the monorepo commits from llvm.org so they can be found (quickly) by
 # revision number.
-generate 00000000 mapping github/llvm.org
+generate mapping github/llvm.org
 
 # As an optimization, track which refs in the split repos have already been
 # mapped.
-generate 00000001 splitrefs github/llvm.org/master
+generate splitrefs github/llvm.org/master
 dir github/llvm.org/master clang             split/llvm.org/clang/master
 dir github/llvm.org/master clang-tools-extra split/llvm.org/clang-tools-extra/master
 dir github/llvm.org/master compiler-rt       split/llvm.org/compiler-rt/master
@@ -52,7 +52,7 @@ dir github/llvm.org/master lldb              split/llvm.org/lldb/master
 # Generate apple/master from */upstream-with-swift, skipping LLDB since its
 # branch depends on the 'swift' repo.  See swift/master-next for LLDB's
 # upstream-with-swift branch.
-generate 00010000 branch           apple/master
+generate branch apple/master
 dir apple/master clang             split/apple/clang/upstream-with-swift
 dir apple/master clang-tools-extra split/apple/clang-tools-extra/upstream-with-swift
 dir apple/master compiler-rt       split/apple/compiler-rt/upstream-with-swift
@@ -60,45 +60,45 @@ dir apple/master libcxx            split/apple/libcxx/upstream-with-swift
 dir apple/master llvm              split/apple/llvm/upstream-with-swift
 
 # Generate apple/stable/20160127 from swift-3.0-branch, skipping LLDB.
-generate 00010500 branch              apple/stable/20160127
+generate branch apple/stable/20160127
 dir apple/stable/20160127 clang       split/apple/clang/swift-3.0-branch
 dir apple/stable/20160127 compiler-rt split/apple/compiler-rt/swift-3.0-branch
 dir apple/stable/20160127 llvm        split/apple/llvm/swift-3.0-branch
 
 # Generate apple/stable/20160817 from swift-3.1-branch, skipping LLDB.
-generate 00011000 branch              apple/stable/20160817
+generate branch apple/stable/20160817
 dir apple/stable/20160817 clang       split/apple/clang/swift-3.1-branch
 dir apple/stable/20160817 compiler-rt split/apple/compiler-rt/swift-3.1-branch
 dir apple/stable/20160817 llvm        split/apple/llvm/swift-3.1-branch
 
 # Generate apple/stable/20170116 from swift-4.0-branch, skipping LLDB.
-generate 00011500 branch              apple/stable/20170116
+generate branch apple/stable/20170116
 dir apple/stable/20170116 clang       split/apple/clang/swift-4.0-branch
 dir apple/stable/20170116 compiler-rt split/apple/compiler-rt/swift-4.0-branch
 dir apple/stable/20170116 llvm        split/apple/llvm/swift-4.0-branch
 
 # Generate apple/stable/20170719 from swift-4.1-branch, skipping LLDB.
-generate 00012000 branch              apple/stable/20170719
+generate branch apple/stable/20170719
 dir apple/stable/20170719 clang       split/apple/clang/swift-4.1-branch
 dir apple/stable/20170719 compiler-rt split/apple/compiler-rt/swift-4.1-branch
 dir apple/stable/20170719 llvm        split/apple/llvm/swift-4.1-branch
 
 # Generate apple/stable/20180103 from swift-4.2-branch, skipping LLDB.
-generate 00012500 branch              apple/stable/20180103
+generate branch apple/stable/20180103
 dir apple/stable/20180103 clang       split/apple/clang/swift-4.2-branch
 dir apple/stable/20180103 compiler-rt split/apple/compiler-rt/swift-4.2-branch
 dir apple/stable/20180103 llvm        split/apple/llvm/swift-4.2-branch
 
 # Generate apple/stable/20180719 from Git hashes.  This was the original branch
 # point for swift-5.0-branch, before it was recut.
-generate 00013000 branch              apple/stable/20180719
+generate branch apple/stable/20180719
 dir apple/stable/20180719 clang       f18c4d7678bd9e5a49989120bbf20b8bf2b4db00
 dir apple/stable/20180719 compiler-rt 8a20b67d99c91f2f1fa7b4ca0b53de0eba921100
 dir apple/stable/20180719 llvm        d1dbd274b66270ff3cb21c34c8ca31bb9ea29cc3
 
 # Generate apple/stable/20180912 from swift-5.0-branch, skipping LLDB.  Note
 # that the libcxx and clang-tools-extra directories gained changes here.
-generate 00013500 branch                    apple/stable/20180912
+generate branch apple/stable/20180912
 dir apple/stable/20180912 clang             split/apple/clang/swift-5.0-branch
 dir apple/stable/20180912 clang-tools-extra split/apple/clang-tools-extra/swift-5.0-branch
 dir apple/stable/20180912 compiler-rt       split/apple/compiler-rt/swift-5.0-branch
@@ -106,7 +106,7 @@ dir apple/stable/20180912 libcxx            split/apple/libcxx/swift-5.0-branch
 dir apple/stable/20180912 llvm              split/apple/llvm/swift-5.0-branch
 
 # Generate apple/stable/20190104 from swift-5.1-branch, skipping LLDB.
-generate 00014000 branch                    apple/stable/20190104
+generate branch apple/stable/20190104
 dir apple/stable/20190104 clang             split/apple/clang/swift-5.1-branch
 dir apple/stable/20190104 clang-tools-extra split/apple/clang-tools-extra/swift-5.1-branch
 dir apple/stable/20190104 compiler-rt       split/apple/compiler-rt/swift-5.1-branch
@@ -153,11 +153,11 @@ dir apple/stable/20190104 llvm              split/apple/llvm/swift-5.1-branch
 #                      compiler-rt @ e0e24585ee1 (merge: 8c454e876 3850e97bd)
 #   => swift/archive/merges/20170803 ?
 #
-# generate 00003000 branch swift/5.1-branch
+# generate branch swift/5.1-branch
 # repeat swift/5.1-branch  apple/stable/20190117
 # dir    swift/5.1-branch  lldb split/apple/lldb/swift-5.1-branch
 #
-# generate 00004000 branch           swift/master
+# generate branch swift/master
 # dir swift/master clang             split/apple/clang/stable
 # dir swift/master clang-tools-extra split/apple/clang-tools-extra/stable
 # dir swift/master compiler-rt       split/apple/compiler-rt/stable
@@ -167,6 +167,6 @@ dir apple/stable/20190104 llvm              split/apple/llvm/swift-5.1-branch
 #
 # # Layer LLDB's upstream-with-swift branch on top of apple/master to create
 # # swift/master-next, which depends on the 'swift' repo.
-# generate 00005000 branch swift/master-next
+# generate branch swift/master-next
 # repeat swift/master-next apple/master
 # dir    swift/master-next lldb split/apple/lldb/upstream-with-swift
