@@ -8,13 +8,13 @@ destination monorepo out
 declare-dir a
 declare-dir b
 
-generate 0001 branch ab
+generate branch ab
 dir ab a a/master
 dir ab b b/master
 
-generate 0002 branch a2b
+generate branch a2b
 dir a2b a a/a2
 
-generate 0003 branch a2b2
+generate branch a2b2
 repeat a2b2 a2b
 dir    a2b2 b b/b2

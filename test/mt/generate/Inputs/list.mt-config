@@ -15,7 +15,7 @@ dir b3 z a-name/z
 repeat b1 b2
 repeat b3 b1
 
-generate 0000 mapping a-name/master
-generate 0100 branch b1
-generate 0020 branch b2
-generate 3000 branch b3
+generate mapping a-name/master
+generate branch b2
+generate branch b1
+generate branch b3

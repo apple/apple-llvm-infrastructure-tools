@@ -55,7 +55,7 @@ print_list() {
     print_"$which" "$@"
 }
 print_actions() {
-    cat "$MT_CONFIG" | sort | awk '$1 == "generate" {print $3, $4}'
+    cat "$MT_CONFIG" | awk '$1 == "generate" {print $2, $3}'
 }
 print_repos() { cat "$MT_CONFIG" | awk '$1 == "repo" {print $2, $3}'; }
 print_branches() { print_actions | awk '$1 == "branch" {print $2}' | sort; }
