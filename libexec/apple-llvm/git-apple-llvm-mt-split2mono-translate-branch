@@ -11,7 +11,9 @@ usage() {
         ""                                                                  \
         "   <branch>      the branch to interleave"                         \
         "   <ref>         a ref to interleave commits from"                 \
-        "                   '%<ref>' to repeat commits from <upstream>"     \
+        "                   '%<ref>[{no-pass}]' to repeat commits"          \
+        "                     from <upstream> (optionally, without passing" \
+        "                     other refs)"                                  \
         "                   '-' if there is no relevant split repo"         \
         "   <dir>         the name of the top-level tree to put <ref> into" \
         "                   '-' for root (splat contents)"
@@ -68,6 +70,7 @@ translate_branch() {
     local -a repeated # directories getting repeated
     local -a sha1dirs # command-line for split2mono interleave-commits
     local repeat suffix
+    local nopass
     for rd in "${refdirs[@]}"; do
         r="${rd%:*}"
         d="${rd##*:}"
@@ -81,7 +84,8 @@ translate_branch() {
             [ -z "$repeat" ] || continue
             repeat="${r:1}"
             suffix=mt-repeat r="$repeat" d=%
-            rd="$r:$d"
+            rd="${r%\{no-pass\}}:$d"
+            [ "$rd" = "$r:$d" ] || nopass=1
         fi
 
         ref=refs/heads/mt/$branch/$suffix
@@ -95,7 +99,21 @@ translate_branch() {
         listdirs=( "${listdirs[@]}" "$rd" )
     done
 
-    list_new_commits "$branch" "${listdirs[*]}" "${repeated[*]}" |
+    # Figure out the latest commit date coming in.
+    local until ct
+    if [ -n "$nopass" ]; then
+        until=0
+        for rd in "${refdirs[@]}"; do
+            [ "${rd:0:1}" = % ] && continue
+            [ "${rd:0:1}" = - ] && continue
+            r="${rd%:*}"
+            ct=$(run git log --format=%ct -1 "$r") ||
+                error "failed to extract committer date from ref '$r'"
+            [ $until -ge $ct ] || until=$ct
+        done
+    fi
+
+    list_new_commits "$branch" "${listdirs[*]}" "${repeated[*]}" $until |
     interleave_commits "$branch" "${sha1dirs[*]}" |
     update_refs "$branch" "$current" "${sha1dirs[*]}" ||
         error "failure interleaving commits"
@@ -105,6 +123,7 @@ list_new_commits() {
     local branch="$1"
     local refdirs="$2"
     local repeated="$3"
+    local until=$4
     local rd r d head tail format tailref headref suffix extra nots
     for rd in $refdirs; do
         r="${rd%:*}"
@@ -116,7 +135,7 @@ list_new_commits() {
                 >/dev/null &&
                 nots=$branch
             suffix=mt-repeat
-            extra="--first-parent -- $repeated"
+            extra="--first-parent${until:+ --until=}$until -- $repeated"
         else
             suffix="$d/mt-split"
         fi

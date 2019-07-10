@@ -1,0 +1,20 @@
+repo a file://a
+repo b file://b
+repo out file://out
+repo out-split file://out-split
+
+destination splitref out-split
+destination monorepo out
+
+declare-dir a
+declare-dir b
+
+# Add a directory that isn't used (yet).
+declare-dir c
+
+generate branch just-a
+dir just-a a a/master
+
+generate branch add-b
+repeat add-b just-a{no-pass}
+dir    add-b b b/master

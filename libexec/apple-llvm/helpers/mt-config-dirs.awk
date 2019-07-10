@@ -16,12 +16,20 @@ NR == FNR                                   { next }
   }
 }
 !repeated                                   { nextfile }
+
+function trim_repeated(s) {
+  nopass = index(s, "{no-pass}")
+  if (nopass)
+    return substr(s, 1, nopass - 1)
+  return s
+}
+
 FNR == 1 {
   # Gather all the directories repeated on this branch.
-  active_repeats[repeated] = 1
-  current = repeated
+  current = trim_repeated(repeated)
+  active_repeats[current] = 1
   while (current in repeats) {
-    current = repeats[current]
+    current = trim_repeated(repeats[current])
     if (current in active_repeats) {
       print "error: loop in repeat directives involving '" current "'" \
             >"/dev/stderr"
