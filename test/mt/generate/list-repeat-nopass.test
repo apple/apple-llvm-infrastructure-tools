@@ -1,0 +1,16 @@
+RUN: %mtgen list-repeat-nopass --list-repeat add-b | check-diff %s REPEAT %t
+REPEAT: just-a{no-pass}
+
+RUN: %mtgen list-repeat-nopass --list-repeat-dirs add-b \
+RUN:   | check-diff %s REPEAT-DIRS %t
+REPEAT-DIRS: a
+
+RUN: %mtgen list-repeat-nopass --list-active-dirs add-b \
+RUN:   | check-diff %s ACTIVE-DIRS %t
+ACTIVE-DIRS: b
+
+RUN: %mtgen list-repeat-nopass --list-all-refdirs add-b \
+RUN:   | check-diff %s ALL-REFDIRS %t
+ALL-REFDIRS: %just-a{no-pass}:a
+ALL-REFDIRS: b/master:b
+ALL-REFDIRS: -:c

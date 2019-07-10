@@ -372,6 +372,7 @@ mt_generate_branch() {
     done
     if [ -n "$repeat" ]; then
         [ "${repeat:0:${#heads}}" = $heads ] || repeat=$heads$repeat
+        repeat="${repeat%\{*\}}"
         run --dry git rev-parse $repeat^{commit} >/dev/null ||
             error "generate $branch: invalid repeat ref '$ref'"
     fi
