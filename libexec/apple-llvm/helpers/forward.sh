@@ -20,6 +20,14 @@ forward() {
             usage
             exit 0
             ;;
+        --version)
+           if [ -f "$APPLE_LLVM_LIBEXEC_DIR/helpers/version" ]; then
+               cat $APPLE_LLVM_LIBEXEC_DIR/helpers/version
+           else
+               printf "git-apple-llvm unknown version\n"
+           fi
+           exit 0
+           ;;
         --complete)
            printf "%s\n" $(forward_list)
            exit 0

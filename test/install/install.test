@@ -16,6 +16,11 @@ RUN: ls %t/prefix/libexec/apple-llvm
 RUN: echo "import git_apple_llvm.git_tools" > %t/src.py
 RUN: %t/venv/bin/python %t/src.py
 
+# Check that the version is set.
+RUN: git apple-llvm --version > %t/orig_v
+RUN: %t/prefix/bin/git-apple-llvm --version > %t/installed_v
+RUN: not diff %t/orig_v %t/installed_v
+
 # Run the uninstaller.
 RUN: make -C %S/../.. uninstall PREFIX=%t/prefix PIP=%t/venv/bin/pip
 

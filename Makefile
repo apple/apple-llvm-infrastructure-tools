@@ -41,6 +41,7 @@ install:
 	$(INSTALL) bin/git-apple-llvm $(DESTDIR)$(PREFIX)/bin/
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/libexec/apple-llvm
 	tar cf - libexec/apple-llvm | (cd $(DESTDIR)$(PREFIX); tar xf -)
+	echo "${shell utils/get-git-revision.sh}" > $(DESTDIR)$(PREFIX)/libexec/apple-llvm/helpers/version
 	@echo ""
 	@echo "################################################################################"
 	@echo "installation succeeded: 'git apple-llvm' is now available!"
