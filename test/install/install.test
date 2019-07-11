@@ -1,0 +1,31 @@
+RUN: rm -rf %t/venv
+RUN: mkdir -p %t/prefix
+RUN: python3 -m venv %t/venv
+RUN: rm -rf %t/prefix
+RUN: mkdir -p %t/prefix
+RUN: mkdir -p %t/prefix/bin
+RUN: mkdir -p %t/prefix/libexec
+
+RUN: make -C %S/../.. install PREFIX=%t/prefix PIP=%t/venv/bin/pip
+
+# Check that the files are there.
+RUN: ls %t/prefix/bin/git-apple-llvm
+RUN: ls %t/prefix/libexec/apple-llvm
+
+# Check that the python package is there.
+RUN: echo "import git_apple_llvm.git_tools" > %t/src.py
+RUN: %t/venv/bin/python %t/src.py
+
+# Run the uninstaller.
+RUN: make -C %S/../.. uninstall PREFIX=%t/prefix PIP=%t/venv/bin/pip
+
+# The files should be removed.
+RUN: not ls %t/prefix/bin/git-apple-llvm
+RUN: not ls %t/prefix/libexec/apple-llvm
+
+# The python package should be gone as well.
+RUN: not %t/venv/bin/python %t/src.py
+
+# Cleanup the venv. It must not interefere with any greps for python files.
+RUN: rm -rf %t/venv
+RUN: rm -rf %t/src.py
