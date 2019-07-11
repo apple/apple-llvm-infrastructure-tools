@@ -44,7 +44,7 @@ install:
 	echo "${shell utils/get-git-revision.sh}" > $(DESTDIR)$(PREFIX)/libexec/apple-llvm/helpers/version
 	@echo ""
 	@echo "################################################################################"
-	@echo "installation succeeded: 'git apple-llvm' is now available!"
+	@echo "Installation succeeded: 'git apple-llvm' is now available!"
 
 uninstall:
 	@echo "Uninstalling 'git-apple-llvm'"
