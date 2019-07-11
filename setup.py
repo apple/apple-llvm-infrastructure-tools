@@ -10,19 +10,6 @@ from setuptools.command.install import install
 
 here = os.path.abspath(os.path.dirname(__file__))
 
-# The main script is installed into bin.
-MAIN_SCRIPT = 'bin/git-apple-llvm'
-LIBEXEC_DIR = 'libexec/apple-llvm'
-
-# The bash scripts and compiled dependencies are installed into libexec.
-# FIXME: Build the C++ binaries and install them as well.
-libexec_data = []
-data_dirs = set([LIBEXEC_DIR, os.path.join(LIBEXEC_DIR, 'helpers')])
-for r, _, files in os.walk('libexec/apple-llvm'):
-    if r not in data_dirs:
-        continue
-    libexec_data.append((r, [os.path.join(r, f) for f in files]))
-
 # The source packages are now located in libexec apple-llvm.
 packages = find_packages('git_apple_llvm', exclude=[
                          "tests", "*.tests", "*.tests.*", "tests.*"])
@@ -57,11 +44,6 @@ class InfoCommand(Command):
         pass
 
     def run(self):
-        print('Files for git-apple-llvm:')
-        for data in libexec_data:
-            print('  ', data[0])
-            for file in data[1]:
-                print('    ', file)
         print('Packages for git-apple-llvm:')
         for package in packages:
             print('  ', package)
@@ -75,10 +57,6 @@ setup(
     author='Apple',
     python_requires='>=3.7.0',
     packages=packages,
-    scripts=[
-        MAIN_SCRIPT
-    ],
-    data_files=libexec_data,
     install_requires=['click'],
     cmdclass={
         'info': InfoCommand,
