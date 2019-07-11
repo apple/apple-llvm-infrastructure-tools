@@ -24,6 +24,7 @@ help:
 
 install:
 	@echo "Installing 'git-apple-llvm'"
+	@echo "  ${shell utils/get-git-revision.sh}"
 	@echo "################################################################################"
 	@echo "The following parameters are set:"
 	@echo "  PIP = ${PIP}"
