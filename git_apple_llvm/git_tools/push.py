@@ -500,6 +500,8 @@ def git_apple_llvm_push(refspec, dry_run, verbose, merge_strategy, push_limit):
     log.info('Branches we care about %s', remote_monorepo_branches)
 
     refs = refspec.split(':')
+    if len(refs) < 2:
+        fatal(f'Git refspec "{refspec}" is invalid')
     source_ref = refs[0]
     dest_ref = refs[1]
     remote_dest_ref = f'{remote}/{dest_ref}'

@@ -22,6 +22,13 @@ def test_push_invalid_dest_ref(cd_to_monorepo):
     assert result.exit_code == 1
 
 
+def test_push_invalid_single_ref_name(cd_to_monorepo):
+    result = CliRunner().invoke(git_apple_llvm_push, ['foo'],
+                                mix_stderr=True)
+    assert 'refspec "foo" is invalid' in result.output
+    assert result.exit_code == 1
+
+
 def test_push_unsupported_def_ref(cd_to_monorepo_clone):
     result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:llvm/master'],
                                 mix_stderr=True)
