@@ -25,7 +25,7 @@ CHECK: JUST-A-1                   mkblob: 1
 CHECK:  ADD-B-1 JUST-A-1          mkblob: 2
 CHECK: JUST-A-2 JUST-A-1          mkblob: 3
 CHECK:  ADD-B-2  ADD-B-1 JUST-A-2 Merge: mkblob: 3
-CHECK:  ADD-B-3 ADD-B-2           mkblob: 4
+CHECK:  ADD-B-3  ADD-B-2          mkblob: 4
 
 # Confirm that just-a has an extra commit that wasn't repeated.
 RUN: git -C %t-mt-repo.git rev-list just-a --parents --reverse \
