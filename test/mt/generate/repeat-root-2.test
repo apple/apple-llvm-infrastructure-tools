@@ -1,0 +1,42 @@
+RUN: mkrepo %t.root
+RUN: mkrepo %t.x
+RUN: mkrepo %t.y
+RUN: env ct=1550000001 mkblob %t.x    x1
+RUN: env ct=1550000002 mkblob %t.root r2
+RUN: env ct=1550000003 mkblob %t.y    y3
+RUN: git -C %t.x branch   -m b1
+RUN: git -C %t.x checkout -b b2
+RUN: env ct=1550000004 mkblob %t.x    x4
+RUN: env ct=1550000005 mkblob %t.root r5
+RUN: env ct=1550000006 mkblob %t.y    y6
+RUN: git -C %t.x checkout    b1
+RUN: env ct=1550000007 mkblob %t.x    x7
+
+RUN: mkrepo --bare %t.out
+RUN: mkrepo --bare %t.out-split
+RUN: rm -rf %t-mt-repo.git
+RUN: rm -rf %t-mt-configs
+RUN: mkdir -p %t-mt-configs
+RUN: cat %S/Inputs/repeat-root-2.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/repeat-root-2.mt-config
+RUN: %mtgen --verbose --git-dir %t-mt-repo.git --config-dir %t-mt-configs \
+RUN:     repeat-root-2
+
+RUN: number-commits -p B1 %t-mt-repo.git b1      >%t.map
+RUN: number-commits -p B2 %t-mt-repo.git b1..b2 >>%t.map
+RUN: number-commits -p X1 %t.x           b1     >>%t.map
+RUN: number-commits -p X2 %t.x           b1..b2 >>%t.map
+RUN: number-commits -p Y  %t.y           master >>%t.map
+RUN: number-commits -p R  %t.root        master >>%t.map
+RUN: git -C %t-mt-repo.git log b1 --topo-order --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s CHECK-B1 %t
+CHECK-B1: B1-4 B1-3 mkblob: x7
+CHECK-B1: B1-3 B1-2 mkblob: r5
+CHECK-B1: B1-2 B1-1 mkblob: r2
+CHECK-B1: B1-1      mkblob: x1
+RUN: git -C %t-mt-repo.git log b1..b2 --topo-order --format="%%H %%P %%s" \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s CHECK-B2 %t
+CHECK-B2: B2-4 B2-3             mkblob: y6
+CHECK-B2: B2-3 B2-2 B1-3 Merge: mkblob: r5
+CHECK-B2: B2-2 B2-1 B1-1        mkblob: x4
+CHECK-B2: B2-1 B1-2             mkblob: y3
