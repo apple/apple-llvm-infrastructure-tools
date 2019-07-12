@@ -20,7 +20,9 @@ These guides are there to let you know how to use `git apple-llvm` to help your 
 .. toctree::
    :maxdepth: 2
 
+   monorepo-transition
    Getting started with git apple-llvm <git-apple-llvm>
+   working-on-github-apple-llvm-project
 
 Tools Documentation
 ===================
