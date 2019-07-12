@@ -54,6 +54,7 @@ dir github/llvm.org/master lldb              split/llvm.org/lldb/master
 # branch depends on the 'swift' repo.  See swift/master-next for LLDB's
 # upstream-with-swift branch.
 generate branch apple/master
+dir apple/master -                 split/apple/root/apple/master
 dir apple/master clang             split/apple/clang/upstream-with-swift
 dir apple/master clang-tools-extra split/apple/clang-tools-extra/upstream-with-swift
 dir apple/master compiler-rt       split/apple/compiler-rt/upstream-with-swift
