@@ -5,6 +5,7 @@ repo split/apple/compiler-rt           git@github.com:apple/swift-compiler-rt.gi
 repo split/apple/libcxx                git@github.com:apple/swift-libcxx.git
 repo split/apple/lldb                  git@github.com:apple/swift-lldb.git
 repo split/apple/llvm                  git@github.com:apple/swift-llvm.git
+repo split/apple/root                  git@github.com:apple/llvm-monorepo-root.git
 repo split/llvm.org/clang              https://git.llvm.org/git/clang.git
 repo split/llvm.org/clang-tools-extra  https://git.llvm.org/git/clang-tools-extra.git
 repo split/llvm.org/compiler-rt        https://git.llvm.org/git/compiler-rt.git
