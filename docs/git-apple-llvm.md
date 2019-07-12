@@ -1,4 +1,4 @@
-# git-apple-llvm: Tools for working downstream with the LLVM project
+# git-apple-llvm: Getting started with git apple-llvm
 
 ## Deploying `git-apple-llvm`
 
