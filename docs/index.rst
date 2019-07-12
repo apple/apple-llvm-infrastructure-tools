@@ -80,10 +80,3 @@ This section has the information that will let you know how you can get started!
    :maxdepth: 2
 
    ContributingToTools
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
