@@ -1,0 +1,21 @@
+repo root file://%t.root
+repo x file://%t.x
+repo y file://%t.y
+repo out file://%t.out
+repo out-split file://%t.out-split
+
+destination splitref out-split
+destination monorepo out
+
+declare-dir -
+declare-dir x
+declare-dir y
+
+generate branch b1
+dir b1 - root/master
+dir b1 x x/b1
+
+generate branch b2
+repeat b2 b1
+dir    b2 x x/b2
+dir    b2 y y/master

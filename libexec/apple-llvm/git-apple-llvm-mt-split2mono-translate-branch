@@ -68,18 +68,29 @@ translate_branch() {
     local r d rd ref sha1
     local -a listdirs # refs to list commits of and for which directory
     local -a repeated # directories getting repeated
+    local repeated_root # the root is getting repeated
     local -a sha1dirs # command-line for split2mono interleave-commits
     local repeat suffix
     local nopass
+    local declared # all declared directories, except '-'
     for rd in "${refdirs[@]}"; do
         r="${rd%:*}"
         d="${rd##*:}"
         suffix="$d/mt-split"
+
+        # Gather all the declared directories for list_new_commits.
+        [ "$d" = - ] || declared="$declared${declared:+ }$d"
+
         if [ "${r:0:1}" = % ]; then
             [ -z "$repeat" ] || [ "$repeat" = "${r:1}" ] ||
                 error "mismatched repeat in '$rd' (expected: '$repeat')"
             sha1dirs=( "${sha1dirs[@]}" "%:$d" )
-            repeated=( "${repeated[@]}" "$d/" )
+
+            if [ "$d" = - ]; then
+                repeated_root=1
+            else
+                repeated=( "${repeated[@]}" "$d/" )
+            fi
 
             [ -z "$repeat" ] || continue
             repeat="${r:1}"
@@ -125,17 +136,20 @@ list_new_commits() {
     local repeated="$3"
     local until=$4
     local rd r d head tail format tailref headref suffix extra nots
+    local add_repeated_root extra_repeated
     for rd in $refdirs; do
         r="${rd%:*}"
         d="${rd##*:}"
 
-        extra= nots=
+        extra= nots= add_repeated_root=
         if [ "$d" = % ]; then
             run --hide-errors git rev-parse --verify $branch^{commit} \
                 >/dev/null &&
                 nots=$branch
             suffix=mt-repeat
-            extra="--first-parent${until:+ --until=}$until -- $repeated"
+            extra="--first-parent${until:+ --until=}$until --"
+            extra="$extra${repeated:+ }$repeated"
+            add_repeated_root=$repeated_root
         else
             suffix="$d/mt-split"
         fi
@@ -149,6 +163,24 @@ list_new_commits() {
         # TODO: add a testcase for d of '-', which requires '--' here.
         nots="$nots${nots:+ }$(run git show-ref -- $suffix |
             grep refs/heads/mt/ | awk '{print $2}')"
+
+        if [ -n "$add_repeated_root" ]; then
+            # List all the top-level paths touched in the root, so we can
+            # select those commits to repeat.
+            local begin= decl=
+            begin="BEGIN {"
+            for decl in $declared; do
+                begin="$begin ignore[\"$decl\"] = 1;"
+            done
+            begin="$begin }"
+            # This is missing the existing "extra" flags, but it's okay if we
+            # get an over-approximation of changed paths here.
+            extra_repeated="$(run git log --format= --name-only $headref \
+                --not $nots | sed -e 's,/.*,,' | sort -u |
+                run awk "$begin"' ignore[$0] { next } { print }')"
+            extra="$extra${extra_repeated:+ }$extra_repeated"
+        fi
+
         mt_list_commits "$d" $headref --not $nots $extra ||
             error "failed to list new commits for $rd"
     done
