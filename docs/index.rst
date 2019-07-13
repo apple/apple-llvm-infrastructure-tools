@@ -3,8 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-An overview of infrastructure and tools for Apple's fork of llvm-project
-========================================================================
+An overview of infrastructure and tools for Apple fork of llvm-project
+======================================================================
 
 This is a collection of tools for maintaining LLVM-project related
 infrastructure, including CI, automerging, monorepo transition, and others.
