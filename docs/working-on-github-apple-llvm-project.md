@@ -5,7 +5,11 @@ while working on the Swift compiler.
 
 ## Using llvm-project monorepo alongside Swift
 
-FIXME: How to run update-checkout?
+You can use Swift's `update-checkout` script to get the monorepo!
+
+```
+./swift/utils/update-checkout --scheme master-llvm-monorepo --clone-with-ssh --symlink-llvm-monorepo
+```
 
 ## Workflow tips for LLDB engineers working with swift-lldb
 
