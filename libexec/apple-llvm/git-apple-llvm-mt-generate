@@ -516,8 +516,7 @@ mt_generate_splitrefs() {
             error "generate $branch: invalid dir '$dir' for ref '$ref'"
     done
 
-    run --dry git apple-llvm mt split2mono-update-splitrefs \
-        $branch $refdirs ||
+    run --dry git apple-llvm mt update-splitrefs $branch $refdirs ||
         error "failed to update splitrefs for '$branch'"
 }
 
