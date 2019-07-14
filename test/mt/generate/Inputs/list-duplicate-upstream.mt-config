@@ -1,4 +1,5 @@
 upstream upconfig
+upstream other
 
 repo a-name git://a/url
 repo b-name git://b/url

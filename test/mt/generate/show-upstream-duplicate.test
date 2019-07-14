@@ -1,0 +1,7 @@
+RUN: not %mtgen list-duplicate-upstream --show-upstream \
+RUN:  | check-diff %s CHECK %t
+RUN: not %mtgen list-duplicate-upstream-2 --show-upstream \
+RUN:  | check-diff %s CHECK %t
+CHECK: error: second upstream declaration not supported
+CHECK: note: 1st upstream: upconfig
+CHECK: note: 2nd upstream: other
