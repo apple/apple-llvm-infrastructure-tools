@@ -1,0 +1,12 @@
+upstream list
+
+repo a2-name git://a2/url
+repo b2-name git://b2/url
+
+declare-dir u
+
+generate branch b4
+dir    b4 x a2-name/x
+dir    b4 u b2-name/u
+dir    b4 z a-name/z2
+repeat b4 b2

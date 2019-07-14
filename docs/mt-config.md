@@ -2,12 +2,34 @@
 
 mt-config files consists of declarations of:
 
+- `upstream`, for an upstream mt-config;
 - `repo`, for remote repositories;
 - `destination`, for declaring where to publish the generated refs;
 - `declare-dir`, for declaring the full set of split directories;
 - `repeat`, for repeating commits from another generated branch;
 - `dir`, for declaring which remote branches to use for directory content; and
 - `generate`, for declaring what to generate.
+
+## `upstream`: Declaring an upstream mt-config
+
+```
+upstream <name>
+```
+
+where `<name>` is the name of the mt-config.  The filename is expected to be
+`<name>.mt-config`, adjacent to the config being processed.
+
+`upstream` allows generated monorepos to cascade, ensuring that a downstream
+shares all the refs for an intermediate upstream.  For example, one could
+imagine the following declaration in `internal.mt-config`:
+
+```
+upstream apple
+```
+
+This would cause `internal.mt-config` to be built on top of `apple.mt-config`,
+ensuring that commits mapped by `apple.mt-config` had identical hashes in
+`internal.mt-config`.
 
 ## `repo`: Declaring a repository
 

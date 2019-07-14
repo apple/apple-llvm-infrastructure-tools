@@ -1,3 +1,16 @@
 RUN: %mtgen list --list-repos | check-diff %s REPOS %t
 REPOS: a-name git://a/url
 REPOS: b-name git://b/url
+
+RUN: %mtgen list-down1 --list-repos | check-diff %s DOWN1 %t
+DOWN1: a-name  git://a/url
+DOWN1: b-name  git://b/url
+DOWN1: a2-name git://a2/url
+DOWN1: b2-name git://b2/url
+
+RUN: %mtgen list-down2 --list-repos | check-diff %s DOWN2 %t
+DOWN2: a-name  git://a/url
+DOWN2: b-name  git://b/url
+DOWN2: a2-name git://a2/url
+DOWN2: b2-name git://b2/url
+DOWN2: a3-name git://a3/url

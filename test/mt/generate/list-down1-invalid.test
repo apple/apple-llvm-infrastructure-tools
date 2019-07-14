@@ -1,0 +1,15 @@
+RUN: not %mtgen list-down1-mapping --validate-mt-config 2>&1 \
+RUN:   | check-diff %s MAPPING %t
+MAPPING: error: cannot have upstream 'list' and mapping 'b-name/master'
+
+RUN: not %mtgen list-down1-redeclare-dir --validate-mt-config 2>&1 \
+RUN:   | check-diff %s REDECLARE-DIR %t
+REDECLARE-DIR: error: re-declared directory 'z'
+
+RUN: not %mtgen list-down1-redeclare-repo --validate-mt-config 2>&1 \
+RUN:   | check-diff %s REDECLARE-REPO %t
+REDECLARE-REPO: error: duplicate repo name 'a-name'
+
+RUN: not %mtgen list-down1-regenerate-branch --validate-mt-config 2>&1 \
+RUN:   | check-diff %s REGENERATE-BRANCH %t
+REGENERATE-BRANCH: error: duplicate branch 'b2'
