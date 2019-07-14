@@ -384,7 +384,7 @@ mt_generate_branch() {
     refdirs="$(print_all_refdirs "$rawbranch")" ||
         error "failed to extract complete refdirs for $rawbranch"
 
-    run --dry git apple-llvm mt split2mono-translate-branch $branch $refdirs ||
+    run --dry git apple-llvm mt translate-branch $branch $refdirs ||
         error "failed to generate branch '$branch'"
 }
 
