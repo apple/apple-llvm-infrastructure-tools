@@ -34,7 +34,7 @@ RUN: rm -rf %t.svn2git
 RUN: rm -rf %t.split2mono
 RUN: %svn2git create %t.svn2git
 RUN: mkdir %t.split2mono
-RUN: %split2mono create %t.split2mono
+RUN: %split2mono create %t.split2mono db
 RUN: git -C %t.mono apple-llvm mt list-commits - split/root/master >%t.in
 RUN: git -C %t.mono apple-llvm mt list-commits a split/a/master   >>%t.in
 RUN: git -C %t.mono apple-llvm mt list-commits b split/b/master   >>%t.in

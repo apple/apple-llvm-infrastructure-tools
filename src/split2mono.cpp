@@ -69,7 +69,7 @@ static int usage(const std::string &msg, const char *cmd) {
   if (const char *slash = strrchr(cmd, '/'))
     cmd = slash + 1;
   fprintf(stderr,
-          "usage: %s create             <dbdir>\n"
+          "usage: %s create             <dbdir> <name>\n"
           "       %s lookup             <dbdir> <split>\n"
           "       %s lookup-svnbase     <dbdir> <sha1>\n"
           "       %s upstream           <dbdir> <upstream-dbdir>\n"
@@ -209,11 +209,50 @@ static int main_insert_svnbase(const char *cmd, int argc, const char *argv[]) {
 }
 
 static int main_create(const char *cmd, int argc, const char *argv[]) {
-  if (argc != 1)
+  if (argc != 2)
     return usage("create: wrong number of positional arguments", cmd);
+  const char *dbdir = argv[0];
+  const char *name = argv[1];
+  bool is_valid = *name;
+  for (const char *ch = name; *ch && is_valid; ++ch) {
+    if (*ch >= '0' || *ch <= '9')
+      continue;
+    if (*ch >= 'a' || *ch <= 'z')
+      continue;
+    if (*ch >= 'A' || *ch <= 'Z')
+      continue;
+    switch (*ch) {
+    case '-':
+    case '+':
+    case '_':
+    case '.':
+      // Can't be the first or last characters.
+      is_valid &= ch != name && ch[1];
+      continue;
+
+    default:
+      // Not valid.
+      is_valid = false;
+      continue;
+    }
+  }
+  if (!is_valid)
+    return usage("create: invalid <name>; expected "
+                 "[0-9a-zA-Z][0-9a-zA-Z-+._]*[0-9a-zA-Z]?",
+                 cmd);
+
   split2monodb db;
-  if (db.opendb(argv[0]))
+  db.name = name;
+  if (db.opendb(dbdir))
     return usage("create: failed to open <dbdir>", cmd);
+
+  // Write out the name.
+  FILE *ufile = fdopen(db.upstreamsfd, "w");
+  if (!ufile)
+    return error("could not reopen stream for upstreams");
+  if (fprintf(ufile, "name: %s\n", db.name.c_str()) < 0)
+    return error("could not write repo name");
+
   return 0;
 }
 
@@ -224,18 +263,23 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   upstream.is_read_only = true;
   if (main.opendb(argv[0]) || main.parse_upstreams())
     return usage("could not open <dbdir>", cmd);
-  if (upstream.opendb(argv[0]) || upstream.parse_upstreams())
+  if (upstream.opendb(argv[1]) || upstream.parse_upstreams())
     return usage("could not open <dbdir>", cmd);
+
+  // Refuse to self-reference.
+  if (main.name == upstream.name)
+    return error("refusing to record self as upstream");
 
   // Linear search for this upstream.
   auto existing_entry = main.upstreams.find(upstream.name);
 
   // Pretend we've already merged this upstream, but it had no commits or
   // upstreams at the time.
+  bool is_new = false;
   if (existing_entry == main.upstreams.end()) {
+    is_new = true;
     upstream_entry ue;
     ue.name = upstream.name;
-    ue.commits_size = ue.num_upstreams = 0;
     existing_entry = main.upstreams.emplace(upstream.name, std::move(ue)).first;
   }
 
@@ -251,7 +295,8 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   // Nothing to do if nothing has changed (or the upstream is empty).
   if (existing_entry->second.num_upstreams == (long)upstream.upstreams.size() &&
       existing_entry->second.commits_size == upstream.commits_size_on_open() &&
-      existing_entry->second.svnbase_size == upstream.svnbase_size_on_open())
+      existing_entry->second.svnbase_size == upstream.svnbase_size_on_open() &&
+      !is_new)
     return 0;
 
   // Merge the upstream's upstreams (just in memory, for now).
@@ -285,8 +330,9 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
     return error("error closing commits or index after writing");
 
   // Merge upstreams.
-  existing_entry->second.commits_size = upstream.commits_size_on_open();
   existing_entry->second.num_upstreams = upstream.upstreams.size();
+  existing_entry->second.commits_size = upstream.commits_size_on_open();
+  existing_entry->second.svnbase_size = upstream.svnbase_size_on_open();
   int upstreamsfd = openat(main.dbfd, "upstreams", O_WRONLY | O_TRUNC);
   if (upstreamsfd == -1)
     return error("could not reopen upstreams to write merged file");
@@ -296,9 +342,11 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   if (fprintf(ufile, "name: %s\n", main.name.c_str()) < 0)
     return error("could not write repo name");
   for (auto &ue : main.upstreams)
-    if (fprintf(ufile, "upstream: %s %ld %ld %ld\n", ue.second.name.c_str(),
-                ue.second.num_upstreams, ue.second.commits_size,
-                ue.second.svnbase_size) < 0)
+    if (fprintf(ufile,
+                "upstream: %s num-upstreams=%ld commits-size=%ld "
+                "svnbase-size=%ld\n",
+                ue.second.name.c_str(), ue.second.num_upstreams,
+                ue.second.commits_size, ue.second.svnbase_size) < 0)
       return error("could not write upstream");
   if (fclose(ufile))
     return error("problem closing new upstream");

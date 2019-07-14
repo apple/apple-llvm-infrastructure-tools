@@ -20,8 +20,8 @@ RUN: mkdir -p %t-ab-db/split2mono
 RUN: mkdir -p %t-ba-db/split2mono
 RUN: %svn2git create %t-ab-db/svn2git
 RUN: %svn2git create %t-ba-db/svn2git
-RUN: %split2mono create %t-ab-db/split2mono
-RUN: %split2mono create %t-ba-db/split2mono
+RUN: %split2mono create %t-ab-db/split2mono ab
+RUN: %split2mono create %t-ba-db/split2mono ba
 
 # Create the single-directory branch for each direction.
 RUN: git -C %t-ab apple-llvm mt list-commits a split/a/master >%t-ab-a.in

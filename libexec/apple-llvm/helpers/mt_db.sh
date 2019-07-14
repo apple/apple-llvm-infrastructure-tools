@@ -49,17 +49,18 @@ mt_db_make_ref() {
 
 mt_db_make_worktree() {
     local wt="$(mt_db_worktree)"
+    local ref="$(mt_db)"
     # Don't use -q here because some bots have an old git-worktree that doesn't
     # have it.  Instead redirect to /dev/null manually.
-    run git worktree add "$wt" "$(mt_db)" >/dev/null ||
-        error "failed to create worktree for $(mt_db) at '$wt'"
+    run git worktree add "$wt" "$ref" >/dev/null ||
+        error "failed to create worktree for $ref at '$wt'"
     local count
     count=$(run git -C "$wt" rev-list --count HEAD) ||
-        error "failed to get number of commits in $(mt_db)"
+        error "failed to get number of commits in $ref"
     case $count in
         1) true ;;
         2) return 0 ;;
-        *) error "expected 1 or 2 commits in $(mt_db)" ;;
+        *) error "expected 1 or 2 commits in $ref" ;;
     esac
 
     local svn2git split2mono
@@ -68,11 +69,19 @@ mt_db_make_worktree() {
     split2mono="$(build_executable split2mono)" ||
         error "could not build split2mono"
 
+    # Extract the name from the local ref.
+    local localref
+    localref="$(run git symbolic-ref "$ref")" ||
+        error "$ref is not a symbolic ref"
+    local name
+    eval 'name="${localref#'"$ref"'.}"'
+    [ ! "$name" = "$ref" ] || error "could not extract name"
+
     # Only one commit.  Make some databases.
     {
         run mkdir "$MT_DB_SPLIT2MONO_DB" &&
             run "$svn2git" create "$MT_DB_SVN2GIT_DB" &&
-            run "$split2mono" create "$MT_DB_SPLIT2MONO_DB"
+            run "$split2mono" create "$MT_DB_SPLIT2MONO_DB" "$name"
     } || error "could not create initial db for '$ref'"
 
     {

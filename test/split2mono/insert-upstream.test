@@ -1,0 +1,74 @@
+RUN: rm -rf %t-up.db %t-down.db
+RUN: mkdir %t-up.db %t-down.db
+RUN: %split2mono create %t-up.db up
+RUN: %split2mono insert %t-up.db 0123456789abcdef0123456789abcdef01234567 \
+RUN:                             9876543210abcdef0123456789abcdef01234567
+RUN: %split2mono create %t-down.db down
+RUN: not %split2mono upstream %t-down.db %t-down.db
+RUN: not %split2mono upstream %t-up.db   %t-up.db
+RUN: %split2mono upstream %t-down.db %t-up.db
+
+RUN: cat %t-up.db/upstreams | check-diff %s UP-UPSTREAMS %t
+UP-UPSTREAMS: name: up
+RUN: cat %t-down.db/upstreams | check-diff %s DOWN-UPSTREAMS %t
+DOWN-UPSTREAMS: name: down
+DOWN-UPSTREAMS: upstream: up num-upstreams=0 commits-size=1 svnbase-size=0
+
+RUN: %split2mono lookup %t-up.db   0123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP %t
+RUN: %split2mono lookup %t-down.db 0123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP %t
+LOOKUP: 9876543210abcdef0123456789abcdef01234567
+
+RUN: %split2mono dump %t-up.db   | grep -v entry: | grep -v index | grep . \
+RUN:   | check-diff %s DUMP %t
+RUN: %split2mono dump %t-down.db | grep -v entry: | grep -v index | grep . \
+RUN:   | check-diff %s DUMP %t
+DUMP: commits table
+DUMP:   00000000: split=0123456789abcdef0123456789abcdef01234567 mono=9876543210abcdef0123456789abcdef01234567
+DUMP: svnbase table
+DUMP:   <empty>
+
+RUN: %split2mono insert %t-down.db 2123456789abcdef0123456789abcdef01234567 \
+RUN:                               2876543210abcdef0123456789abcdef01234567
+RUN: %split2mono lookup %t-down.db 2123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP-2 %t
+LOOKUP-2: 2876543210abcdef0123456789abcdef01234567
+RUN: %split2mono dump %t-down.db | grep -v entry: | grep -v index | grep . \
+RUN:   | check-diff %s DUMP-2 %t
+DUMP-2: commits table
+DUMP-2:   00000000: split=0123456789abcdef0123456789abcdef01234567 mono=9876543210abcdef0123456789abcdef01234567
+DUMP-2:   00000001: split=2123456789abcdef0123456789abcdef01234567 mono=2876543210abcdef0123456789abcdef01234567
+DUMP-2: svnbase table
+DUMP-2:   <empty>
+
+RUN: %split2mono insert %t-up.db 3123456789abcdef0123456789abcdef01234567 \
+RUN:                             3876543210abcdef0123456789abcdef01234567
+RUN: %split2mono insert-svnbase %t-up.db 3123456789abcdef0123456789abcdef01234567 \
+RUN:                                     123
+RUN: %split2mono upstream %t-down.db %t-up.db
+RUN: cat %t-down.db/upstreams | check-diff %s UPSTREAMS-SVNBASE %t
+UPSTREAMS-SVNBASE: name: down
+UPSTREAMS-SVNBASE: upstream: up num-upstreams=0 commits-size=2 svnbase-size=1
+RUN: %split2mono lookup %t-down.db 0123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP %t
+RUN: %split2mono lookup %t-down.db 2123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP-2 %t
+RUN: %split2mono lookup %t-down.db 3123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP-3 %t
+LOOKUP-3: 3876543210abcdef0123456789abcdef01234567
+RUN: %split2mono dump %t-up.db | grep -v entry: | grep -v index | grep . \
+RUN:   | check-diff %s DUMP-3-UP %t
+RUN: %split2mono dump %t-down.db | grep -v entry: | grep -v index | grep . \
+RUN:   | check-diff %s DUMP-3-DOWN %t
+DUMP-3-UP: commits table
+DUMP-3-UP:   00000000: split=0123456789abcdef0123456789abcdef01234567 mono=9876543210abcdef0123456789abcdef01234567
+DUMP-3-UP:   00000001: split=3123456789abcdef0123456789abcdef01234567 mono=3876543210abcdef0123456789abcdef01234567
+DUMP-3-UP: svnbase table
+DUMP-3-UP:   00000000: sha1=3123456789abcdef0123456789abcdef01234567 rev=123
+DUMP-3-DOWN: commits table
+DUMP-3-DOWN:   00000000: split=0123456789abcdef0123456789abcdef01234567 mono=9876543210abcdef0123456789abcdef01234567
+DUMP-3-DOWN:   00000001: split=2123456789abcdef0123456789abcdef01234567 mono=2876543210abcdef0123456789abcdef01234567
+DUMP-3-DOWN:   00000002: split=3123456789abcdef0123456789abcdef01234567 mono=3876543210abcdef0123456789abcdef01234567
+DUMP-3-DOWN: svnbase table
+DUMP-3-DOWN:   00000000: sha1=3123456789abcdef0123456789abcdef01234567 rev=123

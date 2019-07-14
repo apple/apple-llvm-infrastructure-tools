@@ -1,6 +1,6 @@
 RUN: rm -rf %t.db
 RUN: mkdir %t.db
-RUN: %split2mono create %t.db
+RUN: %split2mono create %t.db db
 
 RUN: not %split2mono lookup %t.db 0000000000000000000000000000000000000000 \
 RUN:   | check-empty
