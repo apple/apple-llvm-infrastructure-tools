@@ -1,0 +1,4 @@
+upstream list
+
+# Illegal to have two or more upstreams.
+upstream mapping

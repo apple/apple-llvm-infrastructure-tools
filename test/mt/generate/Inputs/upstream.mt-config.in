@@ -1,0 +1,15 @@
+# upstream.mt-config
+repo up/a file://%t-up.a
+repo up/b file://%t-up.b
+repo up/mono file://%t-up.mono
+repo up/split file://%t-up.split
+
+destination splitref up/split
+destination monorepo up/mono
+
+declare-dir a
+declare-dir b
+
+generate branch master
+dir master a up/a/master
+dir master b up/b/master
