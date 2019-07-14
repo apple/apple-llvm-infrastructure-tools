@@ -6,9 +6,9 @@ helper mt_split2mono
 
 usage() {
     printf "%s\n" \
-        "usage: $(print_cmdname) <branch> <ref>:<dir>..." \
-        "" \
-        "  update <branch> refs ending in /mt-split based on the given" \
+        "usage: $(print_cmdname) [options] <branch> <ref>:<dir>..."         \
+        ""                                                                  \
+        "  update <branch> refs ending in /mt-split based on the given"     \
         "  <ref>:<dir> info"
 }
 
