@@ -1,0 +1,82 @@
+RUN: rm -rf %t-left1.db %t-left2.db %t-right1.db %t-right2.db %t-both1.db \
+RUN:        %t-both2.db %t-left.db %t-right.db %t-root.db
+RUN: mkdir  %t-left1.db %t-left2.db %t-right1.db %t-right2.db %t-both1.db \
+RUN:        %t-both2.db %t-left.db %t-right.db %t-root.db
+
+RUN: %split2mono create %t-left1.db  left1
+RUN: %split2mono create %t-left2.db  left2
+RUN: %split2mono create %t-right1.db right1
+RUN: %split2mono create %t-right2.db right2
+RUN: %split2mono create %t-left.db   left
+RUN: %split2mono create %t-right.db  right
+RUN: %split2mono create %t-both1.db  both1
+RUN: %split2mono create %t-both2.db  both2
+RUN: %split2mono create %t-root.db   root
+
+RUN: cat %t-left1.db/upstreams  | check-diff %s LEFT1  %t
+RUN: cat %t-left2.db/upstreams  | check-diff %s LEFT2  %t
+RUN: cat %t-right1.db/upstreams | check-diff %s RIGHT1 %t
+RUN: cat %t-right2.db/upstreams | check-diff %s RIGHT2 %t
+LEFT1:  name: left1
+LEFT2:  name: left2
+RIGHT1: name: right1
+RIGHT2: name: right2
+
+RUN: %split2mono upstream %t-left.db  %t-left1.db
+RUN: %split2mono upstream %t-both1.db %t-left1.db
+RUN: %split2mono upstream %t-both1.db %t-right1.db
+RUN: %split2mono upstream %t-right.db %t-right1.db
+RUN: %split2mono upstream %t-root.db  %t-left.db
+RUN: %split2mono upstream %t-root.db  %t-right.db
+RUN: %split2mono upstream %t-root.db  %t-both1.db
+RUN: not %split2mono upstream %t-left1.db %t-root.db
+RUN: not %split2mono upstream %t-left.db  %t-root.db
+
+RUN: cat %t-left.db/upstreams  | check-diff %s LEFT-1  %t
+RUN: cat %t-right.db/upstreams | check-diff %s RIGHT-1 %t
+RUN: cat %t-both1.db/upstreams | check-diff %s BOTH1   %t
+RUN: cat %t-root.db/upstreams  | check-diff %s ROOT-1  %t
+BOTH1:   name: both1
+LEFT-1:  name: left
+RIGHT-1: name: right
+ROOT-1:  name: root
+ROOT-1:  upstream: both1  num-upstreams=2 commits-size=0 svnbase-size=0
+ROOT-1:  upstream: left   num-upstreams=1 commits-size=0 svnbase-size=0
+BOTH1:   upstream: left1  num-upstreams=0 commits-size=0 svnbase-size=0
+LEFT-1:  upstream: left1  num-upstreams=0 commits-size=0 svnbase-size=0
+ROOT-1:  upstream: left1  num-upstreams=0 commits-size=0 svnbase-size=0
+ROOT-1:  upstream: right  num-upstreams=1 commits-size=0 svnbase-size=0
+BOTH1:   upstream: right1 num-upstreams=0 commits-size=0 svnbase-size=0
+RIGHT-1: upstream: right1 num-upstreams=0 commits-size=0 svnbase-size=0
+ROOT-1:  upstream: right1 num-upstreams=0 commits-size=0 svnbase-size=0
+
+RUN: %split2mono upstream %t-left.db   %t-left2.db
+RUN: %split2mono upstream %t-both2.db  %t-left2.db
+RUN: %split2mono upstream %t-both2.db  %t-right2.db
+RUN: %split2mono upstream %t-right.db  %t-right2.db
+RUN: %split2mono upstream %t-root.db   %t-left.db
+RUN: %split2mono upstream %t-root.db   %t-right.db
+RUN: %split2mono upstream %t-root.db   %t-both2.db
+
+RUN: cat %t-left.db/upstreams  | check-diff %s LEFT-2  %t
+RUN: cat %t-right.db/upstreams | check-diff %s RIGHT-2 %t
+RUN: cat %t-both2.db/upstreams | check-diff %s BOTH2   %t
+RUN: cat %t-root.db/upstreams  | check-diff %s ROOT-2  %t
+BOTH2:   name: both2
+LEFT-2:  name: left
+RIGHT-2: name: right
+ROOT-2:  name: root
+ROOT-2:  upstream: both1  num-upstreams=2 commits-size=0 svnbase-size=0
+ROOT-2:  upstream: both2  num-upstreams=2 commits-size=0 svnbase-size=0
+ROOT-2:  upstream: left   num-upstreams=2 commits-size=0 svnbase-size=0
+LEFT-2:  upstream: left1  num-upstreams=0 commits-size=0 svnbase-size=0
+ROOT-2:  upstream: left1  num-upstreams=0 commits-size=0 svnbase-size=0
+BOTH2:   upstream: left2  num-upstreams=0 commits-size=0 svnbase-size=0
+LEFT-2:  upstream: left2  num-upstreams=0 commits-size=0 svnbase-size=0
+ROOT-2:  upstream: left2  num-upstreams=0 commits-size=0 svnbase-size=0
+ROOT-2:  upstream: right  num-upstreams=2 commits-size=0 svnbase-size=0
+RIGHT-2: upstream: right1 num-upstreams=0 commits-size=0 svnbase-size=0
+ROOT-2:  upstream: right1 num-upstreams=0 commits-size=0 svnbase-size=0
+BOTH2:   upstream: right2 num-upstreams=0 commits-size=0 svnbase-size=0
+RIGHT-2: upstream: right2 num-upstreams=0 commits-size=0 svnbase-size=0
+ROOT-2:  upstream: right2 num-upstreams=0 commits-size=0 svnbase-size=0

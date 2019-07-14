@@ -12,9 +12,9 @@
 namespace {
 struct upstream_entry {
   std::string name;
-  long num_upstreams = -1;
-  long commits_size = -1;
-  long svnbase_size = -1;
+  long num_upstreams = 0;
+  long commits_size = 0;
+  long svnbase_size = 0;
 };
 struct split2monodb {
   bool is_verbose = false;
@@ -85,39 +85,36 @@ int split2monodb::parse_upstreams() {
   auto parse_name = [&c](std::string &name) {
     auto *last = c.cur;
     for (; last != c.end; ++last) {
-      // Allow "[0-9a-zA-Z./:]".
+      // Allow "[0-9a-zA-Z-+_.]".
       if (*last >= '0' && *last <= '9' && last != c.cur)
         continue;
       if (*last >= 'a' && *last <= 'z')
         continue;
       if (*last >= 'A' && *last <= 'Z')
         continue;
-      if (*last == '.' || *last == '/' || *last == ':')
+      if (*last == '.' || *last == '-' || *last == '+' || *last == '_')
         continue;
       break;
     }
     if (c.cur == last)
       return error("invalid name");
-    if (*last != ' ')
-      return error("expected space after name");
     name.assign(c.cur, last);
     c.cur = last;
     return 0;
   };
   auto parse_number = [&c](long &num) {
     auto *last = c.cur;
-    if (*last == '-')
-      ++last;
     for (; last != c.end; ++last) {
       if (*last >= '0' && *last <= '9')
         continue;
       break;
     }
     if (c.cur == last)
-      return error("invalid number");
+      return error("invalid non-negative integer");
     std::string digits(c.cur, last);
     c.cur = last;
     num = strtol(digits.c_str(), nullptr, 10);
+    assert(num >= 0);
     return 0;
   };
   auto parse_space = [&c](bool needs_any, bool newlines) {
@@ -138,32 +135,37 @@ int split2monodb::parse_upstreams() {
       return error("expected space");
     return 0;
   };
-  auto parse_label = [&c](const char *label) {
-    while (c.cur != c.end && *label) {
-      if (*c.cur == *label)
-        continue;
-      return 1;
-    }
-    return *label ? 1 : 0;
+  auto parse_string = [&c](const char *label) {
+    auto impl = [&c](const char *label) {
+      for (; c.cur != c.end && *label; ++c.cur, ++label) {
+        if (*c.cur == *label)
+          continue;
+        return 1;
+      }
+      return *label ? 1 : 0;
+    };
+    if (impl(label))
+      return error("could not parse label '" + std::string(label) + "'");
+    return 0;
   };
 
   // Parse.
   if (parse_space(/*needs_any=*/false, /*newlines=*/true) ||
-      parse_label("name:") ||
+      parse_string("name:") ||
       parse_space(/*needs_any=*/true, /*newlines=*/false) || parse_name(name) ||
       parse_space(/*needs_any=*/true, /*newlines=*/true))
-    return error("could not parse name:");
+    return error("could not parse name");
   while (c.cur != c.end) {
     upstream_entry ue;
-    if (parse_label("upstream:") ||
+    if (parse_string("upstream:") ||
         parse_space(/*needs_any=*/true, /*newlines=*/false) ||
         parse_name(ue.name) ||
         parse_space(/*needs_any=*/true, /*newlines=*/false) ||
-        parse_number(ue.num_upstreams) ||
+        parse_string("num-upstreams=") || parse_number(ue.num_upstreams) ||
         parse_space(/*needs_any=*/true, /*newlines=*/false) ||
-        parse_number(ue.commits_size) ||
+        parse_string("commits-size=") || parse_number(ue.commits_size) ||
         parse_space(/*needs_any=*/true, /*newlines=*/false) ||
-        parse_number(ue.svnbase_size) ||
+        parse_string("svnbase-size=") || parse_number(ue.svnbase_size) ||
         parse_space(/*needs_any=*/true, /*newlines=*/true))
       return 1;
     if (ue.name == name)
@@ -214,10 +216,11 @@ static int merge_tables(table_streams &main, size_t recorded_size,
   typedef typename table_type::value_type value_type;
 
   // Read all missing commits and merge them.
+  assert(actual_size >= 0);
   long first_offset =
       table_type::table_offset + table_type::size * recorded_size;
   long num_bytes = table_type::size * (actual_size - recorded_size);
-  if (!num_bytes)
+  if (num_bytes <= 0)
     return 0;
 
   // FIXME: This copy is unfortunate.  We should be reading directly from the
