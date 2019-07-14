@@ -111,8 +111,8 @@ There are a few tools sketched out so far:
 - Expects split commits from upstream to have been mapped using
   `git apple-llvm mt split2mono-map-llvm`.
 
-`git apple-llvm mt split2mono-translate-branch` translates commits onto a
-branch.  It's given:
+`git apple-llvm mt translate-branch` translates commits onto a branch.  It's
+given:
 
 - `<branch>` the name of the branch to add commits to
 - `<upstream>...` a list of upstream monorepo branches
