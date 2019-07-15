@@ -117,7 +117,7 @@ show_destination() {
 }
 
 MTDB_REF=refs/mt/mt-db
-MTDB_SHA1=
+MTDB_SHA1= MTDB_LOCAL_REF=
 mt_setup() {
     GIT_DIR="$(canonicalize_path "$GIT_DIR")"
     MT_CONFIG="$(canonicalize_path "$MT_CONFIG")"
@@ -199,7 +199,7 @@ mt_setup() {
     log "Syncing mt-db from $monodest"
     MTDB_SHA1=$(run git ls-remote $monodest $MTDB_REF | awk '{print $1}')
     [ -n "$MTDB_SHA1" ] || return 0
-    run git fetch --force $monodest $MTDB_REF:$MTDB_REF ||
+    run git fetch --force $monodest $MTDB_REF:$MTDB_LOCAL_REF ||
         error "failed to fetch $MTDB_REF from $monodest"
 }
 
@@ -278,6 +278,10 @@ mt_generate() {
     local generator="mt_generate_$action"
     local fetcher="mt_fetch_$action"
     local pusher="mt_push_$action"
+
+    [ "$(git symbolic-ref "$MTDB_REF" 2>/dev/null)" = "$MTDB_LOCAL_REF" ] ||
+        run git symbolic-ref -m "mt generate" "$MTDB_REF" "$MTDB_LOCAL_REF" ||
+        error "failed to set up $MTDB_REF"
 
     mt_llvm_svn2git_init ||
         error "generate: could not initialize svn2git"
@@ -577,6 +581,7 @@ while [ $# -gt 0 ]; do
             MT_CONFIG="$CONFIG_DIR/$NAME.mt-config"
             [ -r "$MT_CONFIG" ] ||
                 usage_error "cannot read '$MT_CONFIG'"
+            MTDB_LOCAL_REF="$MTDB_REF.$NAME"
             shift
             ;;
     esac
