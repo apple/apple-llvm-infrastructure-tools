@@ -57,7 +57,7 @@ setup(
     author='Apple',
     python_requires='>=3.7.0',
     packages=packages,
-    install_requires=['click', 'appdirs'],
+    install_requires=['click', 'appdirs', 'github3.py'],
     cmdclass={
         'info': InfoCommand,
         'clean': CleanCommand,
