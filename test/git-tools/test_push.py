@@ -4,7 +4,7 @@
 
 from click.testing import CliRunner
 from git_apple_llvm.git_tools.push import git_apple_llvm_push
-from git_apple_llvm.git_tools import git_output
+from git_apple_llvm.git_tools import git_output, git
 from monorepo_test_harness import commit_file
 
 
@@ -122,3 +122,14 @@ def test_push_many_llvm_commits(cd_to_monorepo_clone,
     assert result.exit_code == 0
     assert git_output('rev-parse', 'master~50',
                       git_dir=monorepo_simple_llvm_remote_git_dir) == current_llvm_top
+
+
+def test_reject_mapped_commit(cd_to_monorepo_clone):
+    git('commit', '--allow-empty', '-m', '''This commit is already mapped!
+
+apple-llvm-split-commit: f0931a1b36c88157ffc25a9ed1295f3addff85b9\n
+apple-llvm-split-dir: llvm/''')
+    result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:internal/master'],
+                                mix_stderr=True)
+    assert 'one or more commits is already present in the split repo' in result.output
+    assert result.exit_code == 1

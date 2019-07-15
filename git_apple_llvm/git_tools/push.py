@@ -544,7 +544,10 @@ def git_apple_llvm_push(refspec, dry_run, verbose, merge_strategy, push_limit):
     git('log', '--format=%h %s', '--graph', commit_graph.source_commit_hash,
         '--not', *commit_graph.roots)
 
-    # FIXME: Verify the commit graph! - commits that in monorepo already.
+    message_bodies = git_output('log', '--format=%b', commit_graph.source_commit_hash,
+                                '--not', *commit_graph.roots)
+    if 'apple-llvm-split-commit:' in message_bodies:
+        fatal('one or more commits is already present in the split repo')
 
     # Prepare the split remotes.
     split_repos_of_interest = commit_graph.compute_changed_split_repos()
