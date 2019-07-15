@@ -46,7 +46,7 @@ $(pytest_targets) : check-%: venv git_apple_llvm_package requirements Makefile
 check-lit: venv requirements Makefile
 	$(PYTHON_ROOT)lit -sv $(testdir)/*/
 
-python_sources := $(shell find $(testdir) $(testdir)../libexec $(testdir)../src -not \( -path $(testdir)/.python_env -prune \) -name "*.py")
+python_sources := $(shell find $(testdir) $(testdir)../git_apple_llvm $(testdir)../src -not \( -path $(testdir)/.python_env -prune \) -name "*.py")
 
 check-lint: venv git_apple_llvm_package requirements Makefile
 	$(PYTHON_ROOT)flake8 --exclude="*env" --tee flake8_report.pep8.txt $(python_sources)
