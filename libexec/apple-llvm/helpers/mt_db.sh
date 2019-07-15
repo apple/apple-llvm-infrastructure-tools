@@ -7,11 +7,14 @@ mt_db_init() {
     [ -z "$MT_DB_INIT_ONCE" ] || return 0
     MT_DB_INIT_ONCE=1
 
+    local ref=$(mt_db)
+    run --hide-errors git symbolic-ref "$ref" ||
+        error "expected symbolic ref: $ref"
+
     local wt="$(mt_db_worktree)"
     MT_DB_SVN2GIT_DB="$wt"/svn2git.db
     MT_DB_SPLIT2MONO_DB="$wt/"split2mono.db
 
-    local ref=$(mt_db)
     if ! run --hide-errors git rev-parse --verify $ref^{commit} >/dev/null; then
         mt_db_make_ref && mt_db_make_worktree
         return $?
