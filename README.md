@@ -5,7 +5,22 @@ infrastructure, including CI, automerging, monorepo transition, and others.
 
 ## Deploying `git-apple-llvm`
 
-Add the embedded `bin` to your `PATH`.
+Prerequisites:
+- Python 3
+- Relatively recent git (git 2.20+ should work)
+
+You can deploy `git-apple-llvm` by running the `install` target:
+
+```
+sudo make install                 # Installs into /usr/local/bin
+make install PREFIX=/my/directory # Installs into /my/directory/bin
+```
+
+You can always uninstall the tools by running the `uninstall` target:
+
+```
+sudo make uninstall
+```
 
 ## More documentation
 
