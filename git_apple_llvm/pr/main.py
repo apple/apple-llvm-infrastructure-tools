@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Optional
 import sys
 import json
+from functools import partial
 
 log = logging.getLogger(__name__)
 pr_tool = None
@@ -99,8 +100,15 @@ def pr(verbose):
 
 
 @pr.command()
-def list():
-    for pr in pr_tool.list():
+@click.option('--target', type=str,
+              help='List pull requests for the specified target branch only')
+def list(target):
+    def _ident(x):
+        return x
+    filter_func = _ident
+    if target:
+        filter_func = partial(filter, lambda x: x.base_branch == target)
+    for pr in filter_func(pr_tool.list()):
         print(f'[#{pr.number}] {pr.title}')
         print('')
         print(f'{pr.body_text}')
