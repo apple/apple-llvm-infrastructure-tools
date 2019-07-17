@@ -907,11 +907,37 @@ int commit_interleaver::translate_commit(
 
   // Don't override parents for the first interleaved commit from a directory.
   // We don't want to change the number of parents of the commit (add the
-  // head), and the translation of its first parent is not going to be in the
-  // ancestry.  We'll fix up head below, after translation.
-  bool should_override_first_parent = head && (!dir || dir->head);
+  // head), and the translation of its first parent is probably not going to be
+  // in the ancestry.  We'll fix up head below, after translation.
+  bool should_override_first_parent = [&]() {
+    if (!head)
+      return false;
+    if (!*head)
+      return false;
+    if (!dir)
+      return true;
+    if (dir->head)
+      return true;
+
+    // The first parent could be in the ancestry after all.  This happens at
+    // most once per generated branch per split repo, so we can afford to check
+    // and prune those edges.
+    if (!base.num_parents)
+      return true;
+
+    // TODO: --is-ancestor would be faster than a full merge-base.
+    sha1_ref split_fparent = base.parents[0], mono_fparent, merge_base;
+    if (!cache.lookup_mono(split_fparent, mono_fparent))
+      if (!cache.merge_base(mono_fparent, *head, merge_base))
+        if (merge_base == mono_fparent)
+          return true;
+    return false;
+  }();
+
+  // Okay, override it.
   if (should_override_first_parent)
     first_parent_override = *head;
+
   int rev = 0;
   // fprintf(stderr, "translate-commit = %s, tree = %s, num-parents = %d\n",
   //         base.commit->to_string().c_str(),

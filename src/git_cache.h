@@ -91,6 +91,8 @@ struct git_cache {
   int ls_tree(git_tree &tree);
   int mktree(git_tree &tree);
 
+  int merge_base(sha1_ref a, sha1_ref b, sha1_ref &base);
+
   static int ls_tree_impl(sha1_ref sha1, std::vector<char> &reply);
   int note_tree_raw(sha1_ref sha1, const char *rawtree);
 
@@ -848,6 +850,31 @@ int git_cache::mktree(git_tree &tree) {
 
   tree.sha1 = pool.lookup(text);
   note_tree(tree);
+  return 0;
+}
+
+int git_cache::merge_base(sha1_ref a, sha1_ref b, sha1_ref &base) {
+  assert(a);
+  assert(b);
+  assert(!base);
+
+  textual_sha1 a_text(*a);
+  textual_sha1 b_text(*b);
+  const char *argv[] = {"git", "merge-base", a_text.bytes, b_text.bytes,
+                        nullptr};
+  git_reply.clear();
+  if (call_git(argv, nullptr, "", git_reply))
+    return 1;
+  git_reply.push_back(0);
+
+  textual_sha1 base_text;
+  const char *end = nullptr;
+  if (base_text.from_input(&git_reply[0], &end) || *end++ != '\n' || *end)
+    return 1;
+
+  // Doesn't seem like we need a cache for the response; just put the SHA-1 in
+  // the pool and return.
+  base = pool.lookup(base_text);
   return 0;
 }
 

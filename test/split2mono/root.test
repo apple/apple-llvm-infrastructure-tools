@@ -51,58 +51,45 @@ RUN: number-commits -p ROOT %t.root master >>%t.map
 RUN: number-commits -p A    %t.a    master >>%t.map
 RUN: number-commits -p B    %t.b    master >>%t.map
 RUN: cat %t.out | apply-commit-numbers %t.map | check-diff %s OUT %t
-OUT: MONO-11 ROOT-4:- A-2:a B-3:b
+OUT: MONO-9 ROOT-4:- A-2:a B-3:b
 RUN: git -C %t.mono log master --format="--%%n%%H%%n%%(trailers:only)" \
-RUN:       --stat --name-status -m                                     \
+RUN:       --stat --name-status                                        \
 RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s MONO %t
 MONO: --
-MONO: MONO-11
+MONO: MONO-9
 MONO: apple-llvm-split-commit: A-2
 MONO: apple-llvm-split-dir: a/
 MONO: A a/2
 MONO: --
-MONO: MONO-10
+MONO: MONO-8
 MONO: apple-llvm-split-commit: ROOT-4
 MONO: apple-llvm-split-dir: -
 MONO: D 2
 MONO: --
-MONO: MONO-9
+MONO: MONO-7
 MONO: apple-llvm-split-commit: B-3
 MONO: apple-llvm-split-dir: b/
 MONO: A b/3
 MONO: --
-MONO: MONO-8
+MONO: MONO-6
 MONO: apple-llvm-split-commit: ROOT-3
 MONO: apple-llvm-split-dir: -
 MONO: A 3
 MONO: --
-MONO: MONO-7
+MONO: MONO-5
 MONO: apple-llvm-split-commit: ROOT-2
 MONO: apple-llvm-split-dir: -
 MONO: A 2
 MONO: --
-MONO: MONO-6
+MONO: MONO-4
 MONO: apple-llvm-split-commit: B-2
 MONO: apple-llvm-split-dir: b/
 MONO: A b/2
 MONO: --
-MONO: MONO-5
-MONO: A 1
-MONO: --
-MONO: MONO-5
-MONO: A a/1
-MONO: A b/1
-MONO: --
-MONO: MONO-4
+MONO: MONO-3
 MONO: apple-llvm-split-commit: ROOT-1
 MONO: apple-llvm-split-dir: -
 MONO: A 1
-MONO: --
-MONO: MONO-3
-MONO: A b/1
-MONO: --
-MONO: MONO-3
-MONO: A a/1
 MONO: --
 MONO: MONO-2
 MONO: apple-llvm-split-commit: B-1
