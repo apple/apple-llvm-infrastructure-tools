@@ -887,10 +887,10 @@ int commit_interleaver::translate_commit(
   new_parents.clear();
   parent_revs.clear();
   items.clear();
-  const char *dir =
-      source.is_repeat ? nullptr : q.dirs.list[source.dir_index].name;
+  dir_type *dir = source.is_repeat ? nullptr : &q.dirs.list[source.dir_index];
   sha1_ref new_tree, new_commit, first_parent_override;
-  if (head)
+  bool should_override_first_parent = head;
+  if (should_override_first_parent)
     first_parent_override = *head;
   int rev = 0;
   // fprintf(stderr, "translate-commit = %s, tree = %s, num-parents = %d\n",
@@ -898,8 +898,8 @@ int commit_interleaver::translate_commit(
   //         base.tree->to_string().c_str(), base.num_parents);
   if (translate_parents(source, base, new_parents, parent_revs,
                         first_parent_override, rev) ||
-      construct_tree(/*is_head=*/head, source, base.commit, new_parents,
-                     parent_revs, items, new_tree) ||
+      construct_tree(/*is_head=*/should_override_first_parent, source,
+                     base.commit, new_parents, parent_revs, items, new_tree) ||
       cache.commit_tree(base.commit, dir, new_tree, new_parents, new_commit,
                         buffers) ||
       cache.set_base_rev(new_commit, rev) ||
@@ -908,11 +908,13 @@ int commit_interleaver::translate_commit(
   if (!head)
     return 0;
 
+  assert(should_override_first_parent);
+
   *head = new_commit;
   if (source.is_repeat)
     repeated_head = base.commit;
   else
-    dirs.list[source.dir_index].head = base.commit;
+    dir->head = base.commit;
   return 0;
 }
 
