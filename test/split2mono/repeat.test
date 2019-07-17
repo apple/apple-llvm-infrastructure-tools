@@ -90,13 +90,11 @@ AB: JUST-A-1 mkblob: 1
 AB: apple-llvm-split-commit: A-1
 AB: apple-llvm-split-dir: a/
 AB: --
-AB: ADD-B-1 mkblob: 2
+AB: ADD-B-1 JUST-A-1 mkblob: 2
 AB: apple-llvm-split-commit: B-1
 AB: apple-llvm-split-dir: b/
 AB: --
-AB: ADD-B-2 JUST-A-1 ADD-B-1 Merge: mkblob: 2
-AB: --
-AB: ADD-B-3 ADD-B-2 mkblob: 3
+AB: ADD-B-2 ADD-B-1 mkblob: 3
 AB: apple-llvm-split-commit: B-2
 AB: apple-llvm-split-dir: b/
 AB: --
@@ -104,12 +102,9 @@ AB: JUST-A-2 JUST-A-1 mkblob: 4
 AB: apple-llvm-split-commit: A-2
 AB: apple-llvm-split-dir: a/
 AB: --
-AB: ADD-B-4 ADD-B-3 JUST-A-2 Merge: mkblob: 4
+AB: ADD-B-3 ADD-B-2 JUST-A-2 Merge: mkblob: 4
 AB-BODY: --
-AB-BODY: ADD-B-2
-AB-BODY: Merge: mkblob: 2
-AB-BODY: --
-AB-BODY: ADD-B-4
+AB-BODY: ADD-B-3
 AB-BODY: Merge: mkblob: 4
 RUN: git -C %t-ba log add-a --reverse                  \
 RUN:   --format="--%%n%%H %%P %%s%%n%%(trailers:only)" \

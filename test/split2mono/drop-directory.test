@@ -105,30 +105,30 @@ RUN: cat %t.b2-no-x.out | apply-commit-numbers %t-no-x.map \
 RUN:   | check-diff %s OUT-B2-NO-X %t
 RUN: cat %t.b2-no-y.out | apply-commit-numbers %t-no-y.map \
 RUN:   | check-diff %s OUT-B2-NO-Y %t
-OUT-B2-NO-X: MONO-11 Y-6:y
-OUT-B2-NO-Y: MONO-14 X-10:x
+OUT-B2-NO-X: MONO-10 Y-6:y
+OUT-B2-NO-Y: MONO-13 X-10:x
 
 # Check that b2-no-x was generated correctly.
 RUN: git -C %t.mono log --format="--%%n%%H %%s %%P%%n%%(trailers:only)" \
 RUN:       --reverse -m --stat --name-status b2-no-x --not b1           \
 RUN:   | apply-commit-numbers %t-no-x.map | grep -e . | check-diff %s B2-NO-X %t
 B2-NO-X: --
-B2-NO-X: MONO-5 mkblob: y2 MONO-4
+B2-NO-X: MONO-4 mkblob: y2 MONO-3
 B2-NO-X: apple-llvm-split-commit: Y-2
 B2-NO-X: apple-llvm-split-dir: y/
 B2-NO-X: A y/y2
 B2-NO-X: --
-B2-NO-X: MONO-7 mkblob: y3 MONO-5
+B2-NO-X: MONO-6 mkblob: y3 MONO-4
 B2-NO-X: apple-llvm-split-commit: Y-3
 B2-NO-X: apple-llvm-split-dir: y/
 B2-NO-X: A y/y3
 B2-NO-X: --
-B2-NO-X: MONO-10 mkmerge: y5 MONO-7 MONO-8
+B2-NO-X: MONO-9 mkmerge: y5 MONO-6 MONO-7
 B2-NO-X: apple-llvm-split-commit: Y-5
 B2-NO-X: apple-llvm-split-dir: y/
 B2-NO-X: A y/y4
 B2-NO-X: --
-B2-NO-X: MONO-10 mkmerge: y5 MONO-7 MONO-8
+B2-NO-X: MONO-9 mkmerge: y5 MONO-6 MONO-7
 B2-NO-X: apple-llvm-split-commit: Y-5
 B2-NO-X: apple-llvm-split-dir: y/
 # FIXME: "D x/x4" is wrong.  This is hard to fix here because the heuristic for
@@ -138,7 +138,7 @@ B2-NO-X: D x/x4
 B2-NO-X: A y/y2
 B2-NO-X: A y/y3
 B2-NO-X: --
-B2-NO-X: MONO-11 mkblob: y6 MONO-10
+B2-NO-X: MONO-10 mkblob: y6 MONO-9
 B2-NO-X: apple-llvm-split-commit: Y-6
 B2-NO-X: apple-llvm-split-dir: y/
 B2-NO-X: A y/y6
@@ -153,30 +153,30 @@ B2-NO-Y: apple-llvm-split-commit: X-2
 B2-NO-Y: apple-llvm-split-dir: x/
 B2-NO-Y: A x/x2
 B2-NO-Y: --
-B2-NO-Y: MONO-8 mkblob: x5 MONO-2
+B2-NO-Y: MONO-7 mkblob: x5 MONO-2
 B2-NO-Y: apple-llvm-split-commit: X-5
 B2-NO-Y: apple-llvm-split-dir: x/
 B2-NO-Y: A x/x5
 B2-NO-Y: --
-B2-NO-Y: MONO-9 mkmerge: x6 MONO-8 MONO-6
+B2-NO-Y: MONO-8 mkmerge: x6 MONO-7 MONO-5
 B2-NO-Y: apple-llvm-split-commit: X-6
 B2-NO-Y: apple-llvm-split-dir: x/
 B2-NO-Y: A x/x3
 B2-NO-Y: A x/x4
 B2-NO-Y: A y/y1
 B2-NO-Y: --
-B2-NO-Y: MONO-9 mkmerge: x6 MONO-8 MONO-6
+B2-NO-Y: MONO-8 mkmerge: x6 MONO-7 MONO-5
 B2-NO-Y: apple-llvm-split-commit: X-6
 B2-NO-Y: apple-llvm-split-dir: x/
 B2-NO-Y: A x/x2
 B2-NO-Y: A x/x5
 B2-NO-Y: --
-B2-NO-Y: MONO-11 mkmerge: x8 MONO-9 MONO-10
+B2-NO-Y: MONO-10 mkmerge: x8 MONO-8 MONO-9
 B2-NO-Y: apple-llvm-split-commit: X-8
 B2-NO-Y: apple-llvm-split-dir: x/
 B2-NO-Y: A x/x7
 B2-NO-Y: --
-B2-NO-Y: MONO-11 mkmerge: x8 MONO-9 MONO-10
+B2-NO-Y: MONO-10 mkmerge: x8 MONO-8 MONO-9
 B2-NO-Y: apple-llvm-split-commit: X-8
 B2-NO-Y: apple-llvm-split-dir: x/
 B2-NO-Y: A x/x2
@@ -184,12 +184,12 @@ B2-NO-Y: A x/x5
 # FIXME: "D y/y4" is wrong.  See above.
 B2-NO-Y: D y/y4
 B2-NO-Y: --
-B2-NO-Y: MONO-14 mkmerge: x10 MONO-11 MONO-13
+B2-NO-Y: MONO-13 mkmerge: x10 MONO-10 MONO-12
 B2-NO-Y: apple-llvm-split-commit: X-10
 B2-NO-Y: apple-llvm-split-dir: x/
 B2-NO-Y: A x/x9
 B2-NO-Y: --
-B2-NO-Y: MONO-14 mkmerge: x10 MONO-11 MONO-13
+B2-NO-Y: MONO-13 mkmerge: x10 MONO-10 MONO-12
 B2-NO-Y: apple-llvm-split-commit: X-10
 B2-NO-Y: apple-llvm-split-dir: x/
 B2-NO-Y: A x/x2

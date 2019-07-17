@@ -31,11 +31,10 @@ RUN: number-commits -p B      %t.b              master        >>%t.ba.map
 RUN: git -C %t-mt-repo-ab.git log add-b --reverse --format="%%H %%P %%s" \
 RUN:   | apply-commit-numbers %t.ab.map | grep -e . | check-diff %s AB %t
 AB: JUST-A-1                   mkblob: 1
-AB:  ADD-B-1                   mkblob: 2
-AB:  ADD-B-2 JUST-A-1 ADD-B-1  Merge: mkblob: 2
-AB:  ADD-B-3  ADD-B-2          mkblob: 3
+AB:  ADD-B-1 JUST-A-1          mkblob: 2
+AB:  ADD-B-2  ADD-B-1          mkblob: 3
 AB: JUST-A-2 JUST-A-1          mkblob: 4
-AB:  ADD-B-4  ADD-B-3 JUST-A-2 Merge: mkblob: 4
+AB:  ADD-B-3  ADD-B-2 JUST-A-2 Merge: mkblob: 4
 RUN: git -C %t-mt-repo-ba.git log add-a --reverse --format="%%H %%P %%s" \
 RUN:   | apply-commit-numbers %t.ba.map | grep -e . | check-diff %s BA %t
 BA:  ADD-A-1                   mkblob: 1

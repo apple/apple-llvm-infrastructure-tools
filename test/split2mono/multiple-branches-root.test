@@ -126,8 +126,8 @@ RUN: cat %t.b2.out | awk '{print $1}' | xargs git -C %t.mono update-ref b2
 RUN: number-commits -p MONO %t.mono b1 b2 --date-order >>%t.map
 RUN: cat %t.b1.out | apply-commit-numbers %t.map | check-diff %s OUT-B1 %t
 RUN: cat %t.b2.out | apply-commit-numbers %t.map | check-diff %s OUT-B2 %t
-OUT-B1: MONO-31 R-11:- X-9:x  Y-7:y
-OUT-B2: MONO-32 R-10:- X-10:x Y-6:y
+OUT-B1: MONO-29 R-11:- X-9:x  Y-7:y
+OUT-B2: MONO-30 R-10:- X-10:x Y-6:y
 
 # Check that b1 was generated correctly.
 RUN: git -C %t.mono log --format="--%%n%%H %%s %%P%%n%%(trailers:only)" \
@@ -144,61 +144,57 @@ B1: apple-llvm-split-commit: X-3
 B1: apple-llvm-split-dir: x/
 B1: A x/x3
 B1: --
-B1: MONO-4 mkblob: y1
+B1: MONO-4 mkblob: y1 MONO-3
 B1: apple-llvm-split-commit: Y-1
 B1: apple-llvm-split-dir: y/
 B1: A y/y1
 B1: --
-B1: MONO-5 Merge: mkblob: y1 MONO-3 MONO-4
-B1: --
-B1: MONO-8 mkblob: r1
+B1: MONO-7 mkblob: r1 MONO-4
 B1: apple-llvm-split-commit: R-1
 B1: apple-llvm-split-dir: -
 B1: A r1
 B1: --
-B1: MONO-9 Merge: mkblob: r1 MONO-5 MONO-8
-B1: --
-B1: MONO-10 mkblob: r/2 MONO-9
+B1: MONO-8 mkblob: r/2 MONO-7
 B1: apple-llvm-split-commit: R-2
 B1: apple-llvm-split-dir: -
 B1: A r/2
 B1: --
-B1: MONO-13 mkblob: x4 MONO-10
+B1: MONO-11 mkblob: x4 MONO-8
 B1: apple-llvm-split-commit: X-4
 B1: apple-llvm-split-dir: x/
 B1: A x/x4
 B1: --
-B1: MONO-16 mkblob: y4 MONO-13
+B1: MONO-14 mkblob: y4 MONO-11
 B1: apple-llvm-split-commit: Y-4
 B1: apple-llvm-split-dir: y/
 B1: A y/y4
 B1: --
-B1: MONO-20 mkblob: x7 MONO-16
+B1: MONO-18 mkblob: x7 MONO-14
 B1: apple-llvm-split-commit: X-7
 B1: apple-llvm-split-dir: x/
 B1: A x/x7
 B1: --
-B1: MONO-23 rm: r/2: r7 MONO-20
+B1: MONO-21 rm: r/2: r7 MONO-18
 B1: apple-llvm-split-commit: R-7
 B1: apple-llvm-split-dir: -
 B1: D r/2
 B1: --
-B1: MONO-25 rm: r1: r9 MONO-23
+B1: MONO-23 rm: r1: r9 MONO-21
 B1: apple-llvm-split-commit: R-9
 B1: apple-llvm-split-dir: -
 B1: D r1
 B1: --
-B1: MONO-27 mkblob: r11 MONO-25
+B1: MONO-25 mkblob: r11 MONO-23
 B1: apple-llvm-split-commit: R-11
 B1: apple-llvm-split-dir: -
 B1: A r11
 B1: --
-B1: MONO-30 mkblob: y7 MONO-27
+B1: MONO-28 mkblob: y7 MONO-25
 B1: apple-llvm-split-commit: Y-7
 B1: apple-llvm-split-dir: y/
 B1: A y/y7
 B1: --
-B1: MONO-31 mkblob: x9 MONO-30
+B1: MONO-29 mkblob: x9 MONO-28
 B1: apple-llvm-split-commit: X-9
 B1: apple-llvm-split-dir: x/
 B1: A x/x9
@@ -213,49 +209,49 @@ B2: apple-llvm-split-commit: X-2
 B2: apple-llvm-split-dir: x/
 B2: A x/x2
 B2: --
-B2: MONO-6 mkblob: y2 MONO-5
+B2: MONO-5 mkblob: y2 MONO-4
 B2: apple-llvm-split-commit: Y-2
 B2: apple-llvm-split-dir: y/
 B2: A y/y2
 B2: --
-B2: MONO-7 Merge: mkblob: y2 MONO-2 MONO-6
+B2: MONO-6 Merge: mkblob: y2 MONO-2 MONO-5
 B2: A y/y1
 B2: A y/y2
 B2: --
-B2: MONO-7 Merge: mkblob: y2 MONO-2 MONO-6
+B2: MONO-6 Merge: mkblob: y2 MONO-2 MONO-5
 B2: A x/x2
 B2: D x/x3
 B2: --
-B2: MONO-11 mkblob: r3 MONO-9
+B2: MONO-9 mkblob: r3 MONO-7
 B2: apple-llvm-split-commit: R-3
 B2: apple-llvm-split-dir: -
 B2: A r3
 B2: --
-B2: MONO-12 Merge: mkblob: r3 MONO-7 MONO-11
+B2: MONO-10 Merge: mkblob: r3 MONO-6 MONO-9
 B2: A r1
 B2: A r3
 B2: --
-B2: MONO-12 Merge: mkblob: r3 MONO-7 MONO-11
+B2: MONO-10 Merge: mkblob: r3 MONO-6 MONO-9
 B2: A x/x2
 B2: D x/x3
 B2: A y/y2
 B2: --
-B2: MONO-14 mkblob: r/4 MONO-12
+B2: MONO-12 mkblob: r/4 MONO-10
 B2: apple-llvm-split-commit: R-4
 B2: apple-llvm-split-dir: -
 B2: A r/4
 B2: --
-B2: MONO-15 mkblob: y3 MONO-14
+B2: MONO-13 mkblob: y3 MONO-12
 B2: apple-llvm-split-commit: Y-3
 B2: apple-llvm-split-dir: y/
 B2: A y/y3
 B2: --
-B2: MONO-17 mkmerge: r5 MONO-15 MONO-10
+B2: MONO-15 mkmerge: r5 MONO-13 MONO-8
 B2: apple-llvm-split-commit: R-5
 B2: apple-llvm-split-dir: -
 B2: A r/2
 B2: --
-B2: MONO-17 mkmerge: r5 MONO-15 MONO-10
+B2: MONO-15 mkmerge: r5 MONO-13 MONO-8
 B2: apple-llvm-split-commit: R-5
 B2: apple-llvm-split-dir: -
 B2: A r/4
@@ -265,18 +261,18 @@ B2: D x/x3
 B2: A y/y2
 B2: A y/y3
 B2: --
-B2: MONO-18 mkblob: x5 MONO-17
+B2: MONO-16 mkblob: x5 MONO-15
 B2: apple-llvm-split-commit: X-5
 B2: apple-llvm-split-dir: x/
 B2: A x/x5
 B2: --
-B2: MONO-19 mkmerge: x6 MONO-18 MONO-13
+B2: MONO-17 mkmerge: x6 MONO-16 MONO-11
 B2: apple-llvm-split-commit: X-6
 B2: apple-llvm-split-dir: x/
 B2: A x/x3
 B2: A x/x4
 B2: --
-B2: MONO-19 mkmerge: x6 MONO-18 MONO-13
+B2: MONO-17 mkmerge: x6 MONO-16 MONO-11
 B2: apple-llvm-split-commit: X-6
 B2: apple-llvm-split-dir: x/
 B2: A r/4
@@ -286,17 +282,17 @@ B2: A x/x5
 B2: A y/y2
 B2: A y/y3
 B2: --
-B2: MONO-21 mkblob: r6 MONO-19
+B2: MONO-19 mkblob: r6 MONO-17
 B2: apple-llvm-split-commit: R-6
 B2: apple-llvm-split-dir: -
 B2: A r6
 B2: --
-B2: MONO-22 mkmerge: y5 MONO-21 MONO-16
+B2: MONO-20 mkmerge: y5 MONO-19 MONO-14
 B2: apple-llvm-split-commit: Y-5
 B2: apple-llvm-split-dir: y/
 B2: A y/y4
 B2: --
-B2: MONO-22 mkmerge: y5 MONO-21 MONO-16
+B2: MONO-20 mkmerge: y5 MONO-19 MONO-14
 B2: apple-llvm-split-commit: Y-5
 B2: apple-llvm-split-dir: y/
 B2: A r/4
@@ -307,12 +303,12 @@ B2: A x/x5
 B2: A y/y2
 B2: A y/y3
 B2: --
-B2: MONO-24 mkmerge: r8 MONO-22 MONO-23
+B2: MONO-22 mkmerge: r8 MONO-20 MONO-21
 B2: apple-llvm-split-commit: R-8
 B2: apple-llvm-split-dir: -
 B2: D r/2
 B2: --
-B2: MONO-24 mkmerge: r8 MONO-22 MONO-23
+B2: MONO-22 mkmerge: r8 MONO-20 MONO-21
 B2: apple-llvm-split-commit: R-8
 B2: apple-llvm-split-dir: -
 B2: A r/4
@@ -324,12 +320,12 @@ B2: D x/x7
 B2: A y/y2
 B2: A y/y3
 B2: --
-B2: MONO-26 mkmerge: r10 MONO-24 MONO-25
+B2: MONO-24 mkmerge: r10 MONO-22 MONO-23
 B2: apple-llvm-split-commit: R-10
 B2: apple-llvm-split-dir: -
 B2: D r1
 B2: --
-B2: MONO-26 mkmerge: r10 MONO-24 MONO-25
+B2: MONO-24 mkmerge: r10 MONO-22 MONO-23
 B2: apple-llvm-split-commit: R-10
 B2: apple-llvm-split-dir: -
 B2: A r/4
@@ -341,12 +337,12 @@ B2: D x/x7
 B2: A y/y2
 B2: A y/y3
 B2: --
-B2: MONO-28 mkmerge: x8 MONO-26 MONO-20
+B2: MONO-26 mkmerge: x8 MONO-24 MONO-18
 B2: apple-llvm-split-commit: X-8
 B2: apple-llvm-split-dir: x/
 B2: A x/x7
 B2: --
-B2: MONO-28 mkmerge: x8 MONO-26 MONO-20
+B2: MONO-26 mkmerge: x8 MONO-24 MONO-18
 B2: apple-llvm-split-commit: X-8
 B2: apple-llvm-split-dir: x/
 B2: D r/2
@@ -359,17 +355,17 @@ B2: A x/x5
 B2: A y/y2
 B2: A y/y3
 B2: --
-B2: MONO-29 mkblob: y6 MONO-28
+B2: MONO-27 mkblob: y6 MONO-26
 B2: apple-llvm-split-commit: Y-6
 B2: apple-llvm-split-dir: y/
 B2: A y/y6
 B2: --
-B2: MONO-32 mkmerge: x10 MONO-29 MONO-31
+B2: MONO-30 mkmerge: x10 MONO-27 MONO-29
 B2: apple-llvm-split-commit: X-10
 B2: apple-llvm-split-dir: x/
 B2: A x/x9
 B2: --
-B2: MONO-32 mkmerge: x10 MONO-29 MONO-31
+B2: MONO-30 mkmerge: x10 MONO-27 MONO-29
 B2: apple-llvm-split-commit: X-10
 B2: apple-llvm-split-dir: x/
 B2: A r/4
