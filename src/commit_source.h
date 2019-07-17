@@ -25,6 +25,9 @@ struct commit_type {
   sha1_ref *parents = nullptr;
   int num_parents = 0;
 
+  // Whether this commit is a generated merge commit.
+  bool is_generated_merge = false;
+
   /// Whether this commit has parents from --boundary, which will already have
   /// monorepo equivalents.
   bool has_boundary_parents = false;
