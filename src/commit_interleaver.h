@@ -376,6 +376,10 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     //
     // TODO: add a testcase where a split repository history has forked with
     // upstream LLVM and no splitref was added by mt-config.
+    //
+    // FIXME: is there a way to avoid this logic?  That might allow us to
+    // remove the blacklist in the transitive call to
+    // git_cache::compute_rev_with_metadata.
     sha1_ref mono;
     if (!cache.compute_mono(commit, mono)) {
       assert(mono);
