@@ -364,6 +364,24 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
     }
   }
 
+  // Manually blacklist cherry-picks that don't look like cherry-picks because
+  // the committer and author metadata match exactly.  The heuristics below
+  // assume that only a malicious actor could cause these to collide, but we
+  // found an exception.
+  //
+  // FIXME: Consider whether there is a safer solution for this.
+  //
+  // FIXME: Is there a way to add a test for this without having the full
+  // history available?
+  {
+    textual_sha1 text;
+
+    // 8bf1494af87f222db2b637a3be6cee40a9a51a62 is NOT r354826.
+    text.from_input("8bf1494af87f222db2b637a3be6cee40a9a51a62");
+    if (binary_sha1(text) == *commit)
+      return 1;
+  }
+
   if (!metadata)
     if (compute_metadata(commit, metadata))
       return 1;
