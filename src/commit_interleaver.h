@@ -58,6 +58,7 @@ struct commit_interleaver {
   void set_head(const textual_sha1 &sha1) { head = sha1s.lookup(sha1); }
 
   int construct_tree(bool is_head, commit_source &source, sha1_ref base_commit,
+                     bool is_generated_merge,
                      const std::vector<sha1_ref> &parents,
                      const std::vector<int> &parent_revs,
                      std::vector<git_tree::item_type> &items,
@@ -288,6 +289,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
         commits.emplace_back();
         commits.back().commit = commit;
         commits.back().tree = tree;
+        commits.back().is_generated_merge = true;
         continue;
       }
 
@@ -506,6 +508,7 @@ int commit_interleaver::translate_parents(const commit_source &source,
 
 int commit_interleaver::construct_tree(bool is_head, commit_source &source,
                                        sha1_ref base_commit,
+                                       bool is_generated_merge,
                                        const std::vector<sha1_ref> &parents,
                                        const std::vector<int> &revs,
                                        std::vector<git_tree::item_type> &items,
@@ -527,20 +530,8 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   dir_mask base_dirs;
   assert((source.dir_index == -1) == source.is_repeat);
   assert(!source.is_root || !source.is_repeat);
-  if (source.is_root) {
-    base_dirs.set(source.dir_index);
-    git_tree tree;
-    tree.sha1 = base_commit;
-    if (cache.ls_tree(tree))
-      return 1;
-
-    for (int i = 0; i < tree.num_items; ++i)
-      if (dirs.is_dir(tree.items[i].name))
-        return error("root dir '-' conflicts with tracked dir '" +
-                     base_commit->to_string() + "'");
-    items.resize(tree.num_items);
-    std::copy(tree.items, tree.items + tree.num_items, items.begin());
-  } else if (source.is_repeat) {
+  assert(source.is_repeat == is_generated_merge);
+  if (is_generated_merge) {
     // Check that this is a first parent commit.
     if (!is_head)
       return error("unexpected non-first-parent repeat commit " +
@@ -570,8 +561,21 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 
     // Confirm commit has relevant dirs to repeat.
     if (base_dirs.bits.none())
-      return error("base repeat commit " + base_commit->to_string() +
-                   " has no active directories");
+      return error("base commit " + base_commit->to_string() +
+                   " has no directories to merge");
+  } else if (source.is_root) {
+    base_dirs.set(source.dir_index);
+    git_tree tree;
+    tree.sha1 = base_commit;
+    if (cache.ls_tree(tree))
+      return 1;
+
+    for (int i = 0; i < tree.num_items; ++i)
+      if (dirs.is_dir(tree.items[i].name))
+        return error("root dir '-' conflicts with tracked dir '" +
+                     base_commit->to_string() + "'");
+    items.resize(tree.num_items);
+    std::copy(tree.items, tree.items + tree.num_items, items.begin());
   } else {
     sha1_ref base_tree;
     if (cache.compute_commit_tree(base_commit, base_tree))
@@ -899,7 +903,9 @@ int commit_interleaver::translate_commit(
   if (translate_parents(source, base, new_parents, parent_revs,
                         first_parent_override, rev) ||
       construct_tree(/*is_head=*/should_override_first_parent, source,
-                     base.commit, new_parents, parent_revs, items, new_tree) ||
+                     base.commit,
+                     /*is_generated_merge=*/base.is_generated_merge,
+                     new_parents, parent_revs, items, new_tree) ||
       cache.commit_tree(base.commit, dir, new_tree, new_parents, new_commit,
                         buffers) ||
       cache.set_base_rev(new_commit, rev) ||
