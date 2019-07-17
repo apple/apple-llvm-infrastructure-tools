@@ -54,16 +54,15 @@ RUN: git -C %t-mt-repo-ab.git log add-b --reverse --date-order \
 RUN:     --format="%%H %%P %%s"                                \
 RUN:   | apply-commit-numbers %t.ab.map | grep -e . | check-diff %s AB %t
 AB: JUST-A-1                          mkblob:  a1
-AB:  ADD-B-1                          mkblob:  b2
-AB:  ADD-B-2 JUST-A-1 ADD-B-1         Merge: mkblob:  b2
-AB:  ADD-B-3  ADD-B-2                 mkblob:  b3
-AB:  ADD-B-4  ADD-B-2                 mkblob:  b4
-AB:  ADD-B-5  ADD-B-4 ADD-B-3         mkmerge: b5
+AB:  ADD-B-1 JUST-A-1                 mkblob:  b2
+AB:  ADD-B-2  ADD-B-1                 mkblob:  b3
+AB:  ADD-B-3  ADD-B-1                 mkblob:  b4
+AB:  ADD-B-4  ADD-B-3 ADD-B-2         mkmerge: b5
 AB: JUST-A-2 JUST-A-1                 mkblob:  a6
 AB: JUST-A-3 JUST-A-1                 mkblob:  a7
-AB:  ADD-B-6  ADD-B-5 JUST-A-3 Merge: mkblob:  a7
+AB:  ADD-B-5  ADD-B-4 JUST-A-3 Merge: mkblob:  a7
 AB: JUST-A-4 JUST-A-3 JUST-A-2        mkmerge: a8
-AB:  ADD-B-7  ADD-B-6 JUST-A-4 Merge: mkmerge: a8
+AB:  ADD-B-6  ADD-B-5 JUST-A-4 Merge: mkmerge: a8
 
 RUN: git -C %t-mt-repo-ba.git log add-a --reverse --date-order \
 RUN:     --format="%%H %%P %%s"                                \

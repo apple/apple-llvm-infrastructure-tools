@@ -1,0 +1,119 @@
+RUN: mkrepo %t.x
+RUN: mkrepo %t.y
+
+# Buid commit graphs for branches b1 and b2 in split repos x and y, where both
+# x and y are established before the branch point.
+#   x:b1   x1--x2
+#   y:b1     y1-\--.------y3
+#   x:b2        x3--\--x4
+#   y:b2            y2
+RUN: git -C %t.x checkout -b b1
+RUN: git -C %t.y checkout -b b1
+RUN: env ct=1550000001 mkblob  %t.x x1
+RUN: env ct=1550000002 mkblob  %t.y y1
+RUN: env ct=1550000003 mkblob  %t.x x2
+RUN: git -C %t.x branch b2
+RUN: git -C %t.y branch b2
+RUN: env ct=1550000007 mkblob  %t.y y3
+RUN: git -C %t.x checkout b2
+RUN: git -C %t.y checkout b2
+RUN: env ct=1550000004 mkblob  %t.x x3
+RUN: env ct=1550000005 mkblob  %t.y y2
+RUN: env ct=1550000006 mkblob  %t.x x4
+RUN: number-commits -p X %t.x b1 b2 --date-order  >%t.map
+RUN: number-commits -p Y %t.y b1 b2 --date-order >>%t.map
+
+# Add an empty monorepo and fetch split commits.
+RUN: mkrepo --bare %t.mono
+RUN: git -C %t.mono remote add x %t.x
+RUN: git -C %t.mono remote add y %t.y
+RUN: git -C %t.mono fetch --all
+
+# Check that we built the right (split) graph.
+RUN: git -C %t.mono log --format="%%ct %%H %%s %%P" x/b1 y/b1 x/b2 y/b2 \
+RUN:    --reverse --date-order                                          \
+RUN:  | apply-commit-numbers %t.map | check-diff %s SPLIT %t
+SPLIT: 1550000001 X-1   mkblob: x1
+SPLIT: 1550000002 Y-1   mkblob: y1
+SPLIT: 1550000003 X-2   mkblob: x2  X-1
+SPLIT: 1550000004 X-3   mkblob: x3  X-2
+SPLIT: 1550000005 Y-2   mkblob: y2  Y-1
+SPLIT: 1550000006 X-4   mkblob: x4  X-3
+SPLIT: 1550000007 Y-3   mkblob: y3  Y-1
+
+# Interleave commits.
+RUN: rm -rf %t.svn2git
+RUN: rm -rf %t.split2mono
+RUN: %svn2git create %t.svn2git
+RUN: mkdir %t.split2mono
+RUN: %split2mono create %t.split2mono db
+RUN: git -C %t.mono apple-llvm mt list-commits x x/b1             >%t.b1.in
+RUN: git -C %t.mono apple-llvm mt list-commits y y/b1            >>%t.b1.in
+RUN: git -C %t.mono apple-llvm mt list-commits x x/b2 --not x/b1  >%t.b2.in
+RUN: git -C %t.mono apple-llvm mt list-commits y y/b2 --not y/b1 >>%t.b2.in
+RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN:     %t.split2mono %t.svn2git                                   \
+RUN:     0000000000000000000000000000000000000000                   \
+RUN:     0000000000000000000000000000000000000000:x                 \
+RUN:     0000000000000000000000000000000000000000:y                 \
+RUN:     <%t.b1.in >%t.b1.out
+RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN:     %t.split2mono %t.svn2git                                   \
+RUN:     0000000000000000000000000000000000000000                   \
+RUN:     0000000000000000000000000000000000000000:x                 \
+RUN:     0000000000000000000000000000000000000000:y                 \
+RUN:     <%t.b2.in >%t.b2.out
+RUN: cat %t.b1.out | awk '{print $1}' | xargs git -C %t.mono update-ref b1
+RUN: cat %t.b2.out | awk '{print $1}' | xargs git -C %t.mono update-ref b2
+
+# Check the end result of interleaving.
+RUN: number-commits -p MONO %t.mono b1 b2 --date-order >>%t.map
+RUN: cat %t.b1.out | apply-commit-numbers %t.map | check-diff %s OUT-B1 %t
+RUN: cat %t.b2.out | apply-commit-numbers %t.map | check-diff %s OUT-B2 %t
+OUT-B1: MONO-7 X-2:x Y-3:y
+OUT-B2: MONO-6 X-4:x Y-2:y
+
+# Check that b1 was generated correctly.
+RUN: git -C %t.mono log --format="--%%n%%H %%s %%P%%n%%(trailers:only)" \
+RUN:       --reverse --stat --name-status b1                            \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s B1 %t
+B1: --
+B1: MONO-1 mkblob: x1
+B1: apple-llvm-split-commit: X-1
+B1: apple-llvm-split-dir: x/
+B1: A x/x1
+B1: --
+B1: MONO-2 mkblob: y1 MONO-1
+B1: apple-llvm-split-commit: Y-1
+B1: apple-llvm-split-dir: y/
+B1: A y/y1
+B1: --
+B1: MONO-3 mkblob: x2 MONO-2
+B1: apple-llvm-split-commit: X-2
+B1: apple-llvm-split-dir: x/
+B1: A x/x2
+B1: --
+B1: MONO-7 mkblob: y3 MONO-3
+B1: apple-llvm-split-commit: Y-3
+B1: apple-llvm-split-dir: y/
+B1: A y/y3
+
+# Check that b2 was generated correctly.
+RUN: git -C %t.mono log --format="--%%n%%H %%s %%P%%n%%(trailers:only)" \
+RUN:       --reverse -m --stat --name-status b2 --not b1                \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s B2 %t
+B2: --
+B2: MONO-4 mkblob: x3 MONO-3
+B2: apple-llvm-split-commit: X-3
+B2: apple-llvm-split-dir: x/
+B2: A x/x3
+B2: --
+B2: MONO-5 mkblob: y2 MONO-4
+B2: apple-llvm-split-commit: Y-2
+B2: apple-llvm-split-dir: y/
+B2: A y/y2
+B2: --
+B2: MONO-6 mkblob: x4 MONO-5
+B2: apple-llvm-split-commit: X-4
+B2: apple-llvm-split-dir: x/
+B2: A x/x4

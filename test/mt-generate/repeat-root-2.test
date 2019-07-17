@@ -30,16 +30,13 @@ RUN: number-commits -p Y  %t.y           master >>%t.map
 RUN: number-commits -p R  %t.root        master >>%t.map
 RUN: git -C %t-mt-repo.git log b1 --topo-order --format="%%H %%P %%s" \
 RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s CHECK-B1 %t
-CHECK-B1: B1-5 B1-4      mkblob: x7
-CHECK-B1: B1-4 B1-3      mkblob: r5
-CHECK-B1: B1-3 B1-1 B1-2 Merge: mkblob: r2
-CHECK-B1: B1-2           mkblob: r2
-CHECK-B1: B1-1           mkblob: x1
+CHECK-B1: B1-4 B1-3 mkblob: x7
+CHECK-B1: B1-3 B1-2 mkblob: r5
+CHECK-B1: B1-2 B1-1 mkblob: r2
+CHECK-B1: B1-1      mkblob: x1
 RUN: git -C %t-mt-repo.git log b1..b2 --topo-order --format="%%H %%P %%s" \
 RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s CHECK-B2 %t
-CHECK-B2: B2-6 B2-5             mkblob: y6
-CHECK-B2: B2-5 B2-4 B1-4 Merge: mkblob: r5
-CHECK-B2: B2-4 B2-2 B2-3 Merge: mkblob: x4
-CHECK-B2: B2-3 B1-1             mkblob: x4
-CHECK-B2: B2-2 B1-3 B2-1 Merge: mkblob: y3
-CHECK-B2: B2-1                  mkblob: y3
+CHECK-B2: B2-4 B2-3             mkblob: y6
+CHECK-B2: B2-3 B2-2 B1-3 Merge: mkblob: r5
+CHECK-B2: B2-2 B2-1             mkblob: x4
+CHECK-B2: B2-1 B1-2             mkblob: y3
