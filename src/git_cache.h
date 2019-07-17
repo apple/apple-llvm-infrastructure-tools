@@ -98,7 +98,7 @@ struct git_cache {
     string_ref an, ad, ae;
     const char *message = nullptr;
   };
-  int commit_tree(sha1_ref base_commit, const char *dir, sha1_ref tree,
+  int commit_tree(sha1_ref base_commit, const dir_type *dir, sha1_ref tree,
                   const std::vector<sha1_ref> &parents, sha1_ref &commit,
                   commit_tree_buffers &buffers);
   static int parse_commit_metadata_impl(const char *metadata,
@@ -878,12 +878,12 @@ static void append_trailers(const char *dir, sha1_ref base_commit,
   message += '\n';
 }
 
-int git_cache::commit_tree(sha1_ref base_commit, const char *dir, sha1_ref tree,
-                           const std::vector<sha1_ref> &parents,
+int git_cache::commit_tree(sha1_ref base_commit, const dir_type *dir,
+                           sha1_ref tree, const std::vector<sha1_ref> &parents,
                            sha1_ref &commit, commit_tree_buffers &buffers) {
   if (parse_commit_metadata(base_commit, buffers, /*is_merge=*/!dir))
     return error("failed to get metadata for " + base_commit->to_string());
-  append_trailers(dir, base_commit, buffers.message);
+  append_trailers(dir ? dir->name : nullptr, base_commit, buffers.message);
 
   const char *envp[] = {buffers.an.c_str(),
                         buffers.ae.c_str(),
