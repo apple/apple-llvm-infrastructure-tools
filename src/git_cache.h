@@ -38,6 +38,7 @@ struct git_tree {
   item_type *items = nullptr;
   int num_items = 0;
 };
+
 struct git_cache {
   void note_commit_tree(sha1_ref commit, sha1_ref tree);
   void note_mono(sha1_ref split, sha1_ref mono);
@@ -53,7 +54,7 @@ struct git_cache {
   int compute_metadata(sha1_ref commit, const char *&metadata);
   int compute_rev(sha1_ref commit, int &rev);
   int compute_rev_with_metadata(sha1_ref commit, int &rev,
-                                const char *metadata);
+                                const char *raw_metadata);
   int set_rev(sha1_ref commit, int rev);
   int compute_mono(sha1_ref split, sha1_ref &mono);
   int set_mono(sha1_ref split, sha1_ref mono);
@@ -68,15 +69,40 @@ struct git_cache {
                                   git_tree::item_type *last);
 
   struct commit_tree_buffers {
+    // These are %cn, %cd, %ce, etc., from `man git-log`.
     std::string cn, cd, ce;
     std::string an, ad, ae;
     std::vector<textual_sha1> parents;
     std::vector<const char *> args;
     std::string message;
   };
+  struct parsed_metadata {
+    struct string_ref {
+      const char *first = nullptr;
+      const char *last = nullptr;
+      std::string str() const {
+        return first == last ? std::string() : std::string(first, last);
+      }
+      friend bool operator==(const string_ref &lhs, const string_ref &rhs) {
+        if (lhs.last - lhs.first != rhs.last - rhs.first)
+          return false;
+        return strncmp(lhs.first, rhs.first, lhs.last - lhs.first) == 0;
+      }
+      friend bool operator!=(const string_ref &lhs, const string_ref &rhs) {
+        return !(lhs == rhs);
+      }
+    };
+
+    // These are %cn, %cd, %ce, etc., from `man git-log`.
+    string_ref cn, cd, ce;
+    string_ref an, ad, ae;
+    const char *message = nullptr;
+  };
   int commit_tree(sha1_ref base_commit, const char *dir, sha1_ref tree,
                   const std::vector<sha1_ref> &parents, sha1_ref &commit,
                   commit_tree_buffers &buffers);
+  static int parse_commit_metadata_impl(const char *metadata,
+                                        parsed_metadata &result);
   int parse_commit_metadata(sha1_ref commit,
                             git_cache::commit_tree_buffers &buffers,
                             bool is_merge);
@@ -350,7 +376,7 @@ int git_cache::compute_rev(sha1_ref commit, int &rev) {
 }
 
 int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
-                                         const char *metadata) {
+                                         const char *raw_metadata) {
   if (!lookup_rev(commit, rev))
     return 0;
 
@@ -382,9 +408,20 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
       return 1;
   }
 
-  if (!metadata)
-    if (compute_metadata(commit, metadata))
+  if (!raw_metadata)
+    if (compute_metadata(commit, raw_metadata))
       return 1;
+
+  parsed_metadata parsed;
+  if (parse_commit_metadata_impl(raw_metadata, parsed))
+    return 1;
+
+  // Check that committer and author match.
+  //
+  // TODO: Add tests for all three of these heuristics.
+  if (parsed.an != parsed.cn || parsed.ae != parsed.ce ||
+      parsed.ad != parsed.cd)
+    return 1;
 
   auto try_parse_string = [](const char *&current, const char *s) {
     const char *x = current;
@@ -418,45 +455,27 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
     return 0;
   };
 
-  // Deal with the prefix: an, cn, ad, cd, ae, ce.
-  const char *ad, *ad_end, *cd, *cd_end;
-  auto parse_line = [skip_until, parse_ch](const char *&metadata,
-                                           const char *&first,
-                                           const char *&last) {
-    first = metadata;
-    if (skip_until(metadata, '\n'))
-      return 1;
-    last = metadata;
-    return parse_ch(metadata, '\n');
-  };
-  if (skip_until(metadata, '\n') || parse_ch(metadata, '\n') ||
-      skip_until(metadata, '\n') || parse_ch(metadata, '\n') ||
-      parse_line(metadata, ad, ad_end) || parse_line(metadata, cd, cd_end) ||
-      ad_end - ad != cd_end - cd || strncmp(ad, cd, cd_end - cd) ||
-      skip_until(metadata, '\n') || parse_ch(metadata, '\n') ||
-      skip_until(metadata, '\n') || parse_ch(metadata, '\n'))
-    metadata = "";
-
-  while (*metadata) {
-    if (!try_parse_string(metadata, "llvm-rev: ")) {
+  const char *current = parsed.message;
+  while (*current) {
+    if (!try_parse_string(current, "llvm-rev: ")) {
       int parsed_rev;
-      if (parse_num(metadata, parsed_rev) || parse_ch(metadata, '\n'))
+      if (parse_num(current, parsed_rev) || parse_ch(current, '\n'))
         break;
       rev = parsed_rev;
       note_rev(commit, rev);
       return 0;
     }
 
-    if (try_parse_string(metadata,
+    if (try_parse_string(current,
                          "git-svn-id: https://llvm.org/svn/llvm-project/")) {
-      skip_until(metadata, '\n');
-      parse_ch(metadata, '\n');
+      skip_until(current, '\n');
+      parse_ch(current, '\n');
       continue;
     }
 
     int parsed_rev;
-    if (skip_until(metadata, '@') || parse_ch(metadata, '@') ||
-        parse_num(metadata, parsed_rev) || parse_ch(metadata, ' '))
+    if (skip_until(current, '@') || parse_ch(current, '@') ||
+        parse_num(current, parsed_rev) || parse_ch(current, ' '))
       break;
 
     rev = parsed_rev;
@@ -677,10 +696,38 @@ int git_cache::mktree(git_tree &tree) {
   return 0;
 }
 
+int git_cache::parse_commit_metadata_impl(const char *metadata,
+                                          parsed_metadata &result) {
+  auto skip_until = [](const char *&current, int ch) {
+    for (; *current; ++current)
+      if (*current == ch)
+        return 0;
+    return 1;
+  };
+  auto parse_suffix = [&skip_until](const char *&current,
+                                    parsed_metadata::string_ref &s) {
+    s.first = current;
+    if (skip_until(current, '\n'))
+      return 1;
+    s.last = current;
+    ++current;
+    return 0;
+  };
+  if (parse_suffix(metadata, result.an) ||
+      parse_suffix(metadata, result.cn) ||
+      parse_suffix(metadata, result.ad) ||
+      parse_suffix(metadata, result.cd) ||
+      parse_suffix(metadata, result.ae) ||
+      parse_suffix(metadata, result.ce))
+    return error("failed to parse commit metadata");
+
+  result.message = metadata;
+  return 0;
+}
+
 int git_cache::parse_commit_metadata(sha1_ref commit,
                                      git_cache::commit_tree_buffers &buffers,
                                      bool is_merge) {
-  auto &message = buffers.message;
   const char *prefixes[] = {
       "GIT_AUTHOR_NAME=",    "GIT_COMMITTER_NAME=", "GIT_AUTHOR_DATE=",
       "GIT_COMMITTER_DATE=", "GIT_AUTHOR_EMAIL=",   "GIT_COMMITTER_EMAIL="};
@@ -689,50 +736,48 @@ int git_cache::parse_commit_metadata(sha1_ref commit,
   for (int i = 0; i < 6; ++i)
     *vars[i] = prefixes[i];
 
-  const char *metadata;
-  if (compute_metadata(commit, metadata))
-    return 1;
+  parsed_metadata parsed;
+  {
+    const char *metadata;
+    if (compute_metadata(commit, metadata) ||
+        parse_commit_metadata_impl(metadata, parsed))
+      return 1;
+  }
 
+  if (is_merge) {
+    buffers.an.append("apple-llvm-mt");
+    buffers.cn.append("apple-llvm-mt");
+    buffers.ae.append("mt @ apple-llvm");
+    buffers.ce.append("mt @ apple-llvm");
+    buffers.ad.append(parsed.cd.first, parsed.cd.last);
+  } else {
+    buffers.an.append(parsed.an.first, parsed.an.last);
+    buffers.cn.append(parsed.cn.first, parsed.cn.last);
+    buffers.ae.append(parsed.ae.first, parsed.ae.last);
+    buffers.ce.append(parsed.ce.first, parsed.ce.last);
+    buffers.ad.append(parsed.ad.first, parsed.ad.last);
+  }
+  buffers.cd.append(parsed.cd.first, parsed.cd.last);
+
+  if (!is_merge) {
+    buffers.message = parsed.message;
+    return 0;
+  }
+
+  // For merge commits, just extract the subject.
+  const char *start = parsed.message;
+  const char *body = start;
   auto skip_until = [](const char *&current, int ch) {
     for (; *current; ++current)
       if (*current == ch)
         return 0;
     return 1;
   };
-  auto parse_suffix = [&skip_until](const char *&current, std::string &s,
-                                    const char *replacement = nullptr) {
-    const char *start = current;
-    if (skip_until(current, '\n'))
-      return 1;
-    if (replacement)
-      s.append(replacement);
-    else
-      s.append(start, current);
-    ++current;
-    return 0;
-  };
-  const char *merge_an = is_merge ? "apple-llvm-mt" : nullptr;
-  const char *merge_ae = is_merge ? "mt @ apple-llvm" : nullptr;
-  if (parse_suffix(metadata, buffers.an, merge_an) ||
-      parse_suffix(metadata, buffers.cn, merge_an) ||
-      parse_suffix(metadata, buffers.ad) ||
-      parse_suffix(metadata, buffers.cd) ||
-      parse_suffix(metadata, buffers.ae, merge_ae) ||
-      parse_suffix(metadata, buffers.ce, merge_ae))
-    return error("failed to parse commit metadata");
-
-  if (!is_merge) {
-    message = metadata;
-    return 0;
-  }
-
-  // For merge commits, just extract the subject.
-  message = "Merge: ";
-  const char *start = metadata;
-  while (!skip_until(metadata, '\n'))
-    if (*++metadata == '\n')
+  while (!skip_until(body, '\n'))
+    if (*++body == '\n')
       break;
-  message.append(start, metadata);
+  buffers.message = "Merge: ";
+  buffers.message.append(start, body);
   return 0;
 }
 
