@@ -477,24 +477,25 @@ int commit_interleaver::translate_parents(const commit_source &source,
       if (bool(source.worker->has_error))
         return 1;
 
-  if (first_parent)
+  if (first_parent) {
     add_parent(first_parent);
 
-  if (source.is_repeat) {
-    assert(first_parent);
-    add_parent(base.commit);
-    return 0;
+    // Check for generated merges, which could be from a repeat or from the
+    // first interleaved commit on a branch.
+    if (base.is_generated_merge) {
+      add_parent(base.commit);
+      return 0;
+    }
   }
+  assert(!source.is_repeat);
 
   for (int i = 0; i < base.num_parents; ++i) {
     // fprintf(stderr, "  - parent = %s\n",
     //         base.parents[i]->to_string().c_str());
     assert(!base.parents[i]->is_zeros());
 
-    // Usually, override the first parent.  However, if this directory has not
-    // yet been active on the branch then its original first parent may not be
-    // in "first_parent"'s ancestory.
-    if (first_parent && i == 0 && dirs.active_dirs.test(source.dir_index))
+    // Override the first parent.
+    if (first_parent && i == 0)
       continue;
 
     sha1_ref mono;
@@ -530,7 +531,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   dir_mask base_dirs;
   assert((source.dir_index == -1) == source.is_repeat);
   assert(!source.is_root || !source.is_repeat);
-  assert(source.is_repeat == is_generated_merge);
+  assert(!source.is_repeat || is_generated_merge);
   if (is_generated_merge) {
     // Check that this is a first parent commit.
     if (!is_head)
@@ -538,7 +539,9 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
                    base_commit->to_string());
 
     // Head should have been fast-forwarded to base_commit instead of calling
-    // construct_tree if nothing has happened yet.
+    // construct_tree if nothing has happened yet.  Similarly, if this is the
+    // first commit for a directory, we only need a merge if another directory
+    // beat us to the punch.
     assert(head);
 
     git_tree tree;
@@ -550,11 +553,19 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       auto &item = tree.items[i];
       int d = dirs.find_dir(item.name);
       if (d == -1)
-        return error("no monorepo root to for directory '" +
-                     std::string(item.name) + "' in " +
-                     base_commit->to_string());
-      if (!dirs.repeated_dirs.test(d))
-        continue;
+        return error("no monorepo root for path '" + std::string(item.name) +
+                     "' in " + base_commit->to_string());
+
+      if (source.is_repeat) {
+        // Only pull in repeated directories up front.
+        if (!dirs.repeated_dirs.test(d))
+          continue;
+      } else {
+        // Only pull in the source directory up front.
+        if (d != source.dir_index)
+          continue;
+      }
+
       base_dirs.set(d);
       items.push_back(item);
     }
@@ -893,7 +904,12 @@ int commit_interleaver::translate_commit(
   items.clear();
   dir_type *dir = source.is_repeat ? nullptr : &q.dirs.list[source.dir_index];
   sha1_ref new_tree, new_commit, first_parent_override;
-  bool should_override_first_parent = head;
+
+  // Don't override parents for the first interleaved commit from a directory.
+  // We don't want to change the number of parents of the commit (add the
+  // head), and the translation of its first parent is not going to be in the
+  // ancestry.  We'll fix up head below, after translation.
+  bool should_override_first_parent = head && (!dir || dir->head);
   if (should_override_first_parent)
     first_parent_override = *head;
   int rev = 0;
@@ -902,19 +918,43 @@ int commit_interleaver::translate_commit(
   //         base.tree->to_string().c_str(), base.num_parents);
   if (translate_parents(source, base, new_parents, parent_revs,
                         first_parent_override, rev) ||
-      construct_tree(/*is_head=*/should_override_first_parent, source,
-                     base.commit,
+      construct_tree(/*is_head=*/head, source, base.commit,
                      /*is_generated_merge=*/base.is_generated_merge,
                      new_parents, parent_revs, items, new_tree) ||
       cache.commit_tree(base.commit, dir, new_tree, new_parents, new_commit,
                         buffers) ||
-      cache.set_base_rev(new_commit, rev) ||
-      (!source.is_repeat && cache.set_mono(base.commit, new_commit)))
+      cache.set_base_rev(new_commit, rev))
     return 1;
   if (!head)
-    return 0;
+    return cache.set_mono(base.commit, new_commit);
 
-  assert(should_override_first_parent);
+  if (!should_override_first_parent && *head) {
+    // Prepare to generate a merge to interleave the first commit.
+    new_parents.clear();
+    parent_revs.clear();
+    items.clear();
+    rev = 0;
+    commit_type translated;
+    translated.commit = new_commit;
+    translated.tree = new_tree;
+    translated.has_boundary_parents = false;
+    translated.is_generated_merge = true;
+
+    // Merge the just-translated commit into head.
+    new_tree = new_commit = sha1_ref();
+    if (translate_parents(source, translated, new_parents, parent_revs,
+                          *head, rev) ||
+        construct_tree(/*is_head=*/true, source, translated.commit,
+                       /*is_generated_merge*/true, new_parents, parent_revs,
+                       items, new_tree) ||
+        cache.commit_tree(base.commit, /*dir=*/nullptr, new_tree, new_parents,
+                          new_commit, buffers) ||
+        cache.set_base_rev(new_commit, rev))
+      return 1;
+  }
+
+  if (!source.is_repeat && cache.set_mono(base.commit, new_commit))
+    return 1;
 
   *head = new_commit;
   if (source.is_repeat)
