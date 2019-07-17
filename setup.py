@@ -57,7 +57,7 @@ setup(
     author='Apple',
     python_requires='>=3.7.0',
     packages=packages,
-    install_requires=['click'],
+    install_requires=['click', 'appdirs'],
     cmdclass={
         'info': InfoCommand,
         'clean': CleanCommand,
