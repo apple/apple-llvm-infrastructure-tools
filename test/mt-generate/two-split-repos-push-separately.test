@@ -24,13 +24,15 @@ RUN: not git -C %t-mt-repo.git/clones/out/mono.git rev-parse --verify \
 RUN:     master^{commit}
 RUN: not git -C %t.out.mono rev-parse --verify master^{commit}
 MONO: --
-MONO: MONO-4
+MONO: MONO-5
 MONO: apple-llvm-split-commit: A-2
 MONO: apple-llvm-split-dir: a/
 MONO: --
-MONO: MONO-3
+MONO: MONO-4
 MONO: apple-llvm-split-commit: B-2
 MONO: apple-llvm-split-dir: b/
+MONO: --
+MONO: MONO-3
 MONO: --
 MONO: MONO-2
 MONO: apple-llvm-split-commit: B-1

@@ -34,13 +34,15 @@ RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s MONO %t
 RUN: git -C %t.out.mono log master --format="--%%n%%H%%n%%(trailers:only)" \
 RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s MONO %t
 MONO: --
-MONO: MONO-4
+MONO: MONO-5
 MONO: apple-llvm-split-commit: A-2
 MONO: apple-llvm-split-dir: a/
 MONO: --
-MONO: MONO-3
+MONO: MONO-4
 MONO: apple-llvm-split-commit: B-2
 MONO: apple-llvm-split-dir: b/
+MONO: --
+MONO: MONO-3
 MONO: --
 MONO: MONO-2
 MONO: apple-llvm-split-commit: B-1
