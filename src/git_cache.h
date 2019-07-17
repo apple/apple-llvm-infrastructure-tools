@@ -454,12 +454,17 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
     num = parsed_num;
     return 0;
   };
+  auto try_parse_cherry_pick = [&try_parse_string](const char *&current) {
+    // TODO: add tests for the two hits below for this.
+    return try_parse_string(current, "(cherry picked");
+  };
 
   const char *current = parsed.message;
   while (*current) {
     if (!try_parse_string(current, "llvm-rev: ")) {
       int parsed_rev;
-      if (parse_num(current, parsed_rev) || parse_ch(current, '\n'))
+      if (parse_num(current, parsed_rev) || parse_ch(current, '\n') ||
+          !try_parse_cherry_pick(current))
         break;
       rev = parsed_rev;
       note_rev(commit, rev);
@@ -475,7 +480,8 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
 
     int parsed_rev;
     if (skip_until(current, '@') || parse_ch(current, '@') ||
-        parse_num(current, parsed_rev) || parse_ch(current, ' '))
+        parse_num(current, parsed_rev) || parse_ch(current, ' ') ||
+        !try_parse_cherry_pick(current))
       break;
 
     rev = parsed_rev;
