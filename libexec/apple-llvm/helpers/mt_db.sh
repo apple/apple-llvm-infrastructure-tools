@@ -50,6 +50,11 @@ mt_db_make_ref() {
 mt_db_make_worktree() {
     local wt="$(mt_db_worktree)"
     local ref="$(mt_db)"
+
+    [ ! -e "$wt" ] ||
+        run --hide-errors git worktree remove "$wt" || run rm -rf "$wt" ||
+        error "could not clean up old worktree: $wt"
+
     # Don't use -q here because some bots have an old git-worktree that doesn't
     # have it.  Instead redirect to /dev/null manually.
     run git worktree add "$wt" "$ref" >/dev/null ||
