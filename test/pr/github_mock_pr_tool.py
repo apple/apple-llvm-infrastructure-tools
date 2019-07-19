@@ -37,6 +37,9 @@ class _GitHubPullRequest(github3.pulls.ShortPullRequest):
         self.base = _GitHubBranch(pr.base_branch)
         self.html_url = pr.url
 
+    def create_comment(self, body: str):
+        pass
+
 
 class _GitHubRepo:
     def __init__(self, prs: List[_GitHubPullRequest]):
@@ -44,6 +47,12 @@ class _GitHubRepo:
 
     def pull_requests(self):
         return self.prs
+
+    def pull_request(self, number: int):
+        for pr in self.prs:
+            if pr.number == number:
+                return pr
+        raise ValueError('invalid pr number')
 
 
 def create_mock_github_pr_tool(mock: MockPRTool) -> GithubPRTool:

@@ -10,6 +10,13 @@ class MockPullRequest:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
+    @property
+    def info(self):
+        return self
+
+    def test(self):
+        pass
+
 
 class MockPRTool(PRTool):
     def __init__(self, default_author: str = "<author>"):
@@ -25,3 +32,9 @@ class MockPRTool(PRTool):
 
     def list(self):
         return self.pull_requests
+
+    def get_pr_from_number(self, pr_number: int) -> Optional[MockPullRequest]:
+        for pr in self.pull_requests:
+            if pr.info.number == pr_number:
+                return pr
+        return None
