@@ -137,3 +137,38 @@ def test_cli_tool_no_pr_config(tmp_path):
     assert result.exit_code == 1
     assert 'missing `git apple-llvm pr` configuration file' in result.output
     os.chdir(prev)
+
+
+def test_cli_tool_test_swift_ci(pr_tool_type):
+    mock_tool = MockPRTool()
+    mock_tool.create_pull_request('My test', 'This tests important things', 'master')
+    git_apple_llvm.pr.main.pr_tool = create_pr_tool(mock_tool, pr_tool_type)
+
+    result = CliRunner().invoke(pr, ['test', '#1'],
+                                mix_stderr=True)
+    assert result.exit_code == 0
+    assert 'Triggering pull request testing for pr #1 by <author>:' in result.output
+    assert 'My test' in result.output
+    assert 'you commented "@swift-ci please test" on the pull request' in result.output
+
+
+def test_cli_tool_test_invalid_pr():
+    mock_tool = MockPRTool()
+    git_apple_llvm.pr.main.pr_tool = create_pr_tool(mock_tool, 'mock')
+
+    result = CliRunner().invoke(pr, ['test', '#1'],
+                                mix_stderr=True)
+    assert result.exit_code == 1
+    assert 'pull request #1 does not exist' in result.output
+
+
+def test_cli_tool_test_closed_pr(pr_tool_type):
+    mock_tool = MockPRTool()
+    mock_tool.create_pull_request('My test', 'This tests important things', 'master')
+    mock_tool.pull_requests[0].state = PullRequestState.Closed
+    git_apple_llvm.pr.main.pr_tool = create_pr_tool(mock_tool, pr_tool_type)
+
+    result = CliRunner().invoke(pr, ['test', '#1'],
+                                mix_stderr=True)
+    assert result.exit_code == 1
+    assert 'pull request #1 (My test) is no longer open' in result.output

@@ -1,5 +1,5 @@
 import abc
-from typing import List
+from typing import List, Optional
 from enum import Enum
 
 
@@ -9,9 +9,9 @@ class PullRequestState(Enum):
     Closed = 3
 
 
-class PullRequest(abc.ABC):
+class PullRequestInfo(abc.ABC):
     """
-      An abstract class that represents a pull request.
+      An abstract class that represents the info about a pull request.
     """
 
     @property
@@ -44,12 +44,29 @@ class PullRequest(abc.ABC):
         pass
 
 
+class PullRequest(abc.ABC):
+    """
+      An abstract class that abstracts over pull request info and actions.
+    """
+    @property
+    def info(self) -> PullRequestInfo:
+        pass
+
+    def test(self):
+        """ Trigger a test action """
+        pass
+
+
 class PRTool(abc.ABC):
     """
       An abstract class that represents operations that can be
       performed on pull requests.
     """
 
-    def list(self) -> List[PullRequest]:
+    def list(self) -> List[PullRequestInfo]:
         """ Return the list of pull requests. """
+        pass
+
+    def get_pr_from_number(self, pr_number: int) -> Optional[PullRequest]:
+        """ Return the pull request or None if it doesn't exit """
         pass

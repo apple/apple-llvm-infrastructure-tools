@@ -3,7 +3,7 @@
   Script that implements `git apple-llvm pr`.
 """
 
-from git_apple_llvm.pr.pr_tool import PRTool
+from git_apple_llvm.pr.pr_tool import PRTool, PullRequest, PullRequestState
 from git_apple_llvm.pr.github_pr_tool import create_github_pr_tool
 from git_apple_llvm.git_tools import git_output, get_current_checkout_directory
 import click
@@ -13,9 +13,10 @@ from typing import Optional
 import sys
 import json
 from functools import partial
+import abc
 
 log = logging.getLogger(__name__)
-pr_tool = None
+pr_tool: PRTool = None
 
 
 class PRToolType(Enum):
@@ -114,6 +115,69 @@ def list(target):
         print(f'{pr.body_text}')
         print(f'{pr.url}')
         print('')
+
+
+class PullRequestRef(abc.ABC):
+    """ An abstract class that represents a PR reference (pr-id or branch) """
+
+
+class PullRequestNumber(PullRequestRef):
+    """ A class that represents a pull request referenced by its number (#X) """
+
+    def __init__(self, pr_number: int):
+        self.pr_number = pr_number
+
+    def __repr__(self) -> str:
+        return f'#{self.pr_number}'
+
+
+class PullRequestParamType(click.ParamType):
+    name = '<#pr / branch-name>'
+
+    def convert(self, value, param, ctx):
+        if value.startswith('#'):
+            try:
+                return PullRequestNumber(int(value[1:]))
+            except ValueError:
+                self.fail(f'{value!r} is not a valid integer', param, ctx)
+        self.fail(
+            f'{value!r} is not a valid pull request number of a branch name', param, ctx)
+
+
+def make_pr_number_ref(pr: PullRequestRef) -> PullRequestNumber:
+    assert isinstance(pr, PullRequestNumber)
+    return pr
+
+
+def max_length(text: str, max_len: int) -> str:
+    assert max_len > 3
+    if len(text) <= max_len:
+        return text
+    return text[:max_len - 3] + '...'
+
+
+def shorten(text: str) -> str:
+    return max_length(text, max_len=40)
+
+
+@pr.command()
+@click.argument('pr_ref', metavar='<#pr / branch-name>',
+                type=PullRequestParamType(), required=True)
+def test(pr_ref: PullRequestRef):
+    pr_number = make_pr_number_ref(pr_ref).pr_number
+    pr: Optional[PullRequest] = pr_tool.get_pr_from_number(pr_number)
+    if not pr:
+        fatal(f'pull request #{pr_number} does not exist')
+    assert pr  # Type checking appeasement.
+    if pr.info.state != PullRequestState.Open:
+        fatal(
+            f'pull request #{pr_number} ({shorten(pr.info.title)}) is no longer open')
+
+    click.echo(click.style(
+        f'Triggering pull request testing for pr #{pr_number} by {pr.info.author_username}:', bold=True))
+    click.echo(f'  {max_length(pr.info.title, 78)}')
+    pr.test()
+    click.echo('✅ you commented "@swift-ci please test" on the pull request.')
 
 
 if __name__ == '__main__':
