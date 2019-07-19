@@ -2,7 +2,7 @@
   A Github tool for working with pull requests.
 """
 
-from git_apple_llvm.pr.pr_tool import PullRequest, PullRequestState, PRTool
+from git_apple_llvm.pr.pr_tool import PullRequestInfo, PullRequest, PullRequestState, PRTool
 import github3
 from getpass import getuser, getpass
 from socket import gethostname
@@ -15,7 +15,7 @@ from git_apple_llvm.config import read_config, write_config
 log = logging.getLogger(__name__)
 
 
-class GithubPullRequest(PullRequest):
+class GithubPullRequestInfo(PullRequestInfo):
     def __init__(self, pr: github3.pulls.ShortPullRequest):
         self.pr = pr
 
@@ -53,13 +53,37 @@ class GithubPullRequest(PullRequest):
         return self.pr.html_url
 
 
+class GithubPullRequest(PullRequest):
+    def __init__(self, pr: github3.pulls.PullRequest):
+        self.pr = pr
+
+    @property
+    def info(self) -> PullRequestInfo:
+        return GithubPullRequestInfo(self.pr)
+
+    def add_comment(self, text: str):
+        self.pr.create_comment(body=text)
+
+    def test(self):
+        # FIXME: Support different test flavors.
+        self.add_comment('@swift-ci please test')
+
+
 class GithubPRTool(PRTool):
     def __init__(self, gh, repo):
         self.gh = gh
         self.repo = repo
 
-    def list(self) -> List[PullRequest]:
-        return [GithubPullRequest(x) for x in self.repo.pull_requests()]
+    def list(self) -> List[PullRequestInfo]:
+        return [GithubPullRequestInfo(x) for x in self.repo.pull_requests()]
+
+    def get_pr_from_number(self, pr_number: int) -> Optional[PullRequest]:
+        try:
+            return GithubPullRequest(self.repo.pull_request(number=pr_number))
+        except github3.exceptions.NotFoundError as exc:
+            if exc.code == 404:
+                return None
+            raise exc
 
 
 def _create_access_token(domain: str, username: str, password: str):
