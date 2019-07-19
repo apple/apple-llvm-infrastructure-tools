@@ -134,13 +134,10 @@ translate_branch() {
     fi
 
     list_new_commits "$branch" "${listdirs[*]}" "${repeated[*]}" $until |
-    process_new_commits
-    local status=$?
-    [ $status -ne $REPORT_WORK ] || exit 0
-    [ $status -eq 0 ] || exit $status
+    process_new_commits ||
+        exit 1
 }
 
-REPORT_WORK=27
 process_new_commits() {
     if check_for_work; then
         local num_commits
@@ -153,12 +150,11 @@ process_new_commits() {
             [ "$num_commits" -ne 0 ] 2>/dev/null ||
                 error "--check-for-work: invalid number of commits"
 
-            # Report that there's work to do.
+            # Report that there's work to do and then exit, after eating up
+            # remaining input to prevent a broken pipe.
             printf "%s\n" "$branch"
-
-            # Eat up the rest of the counts to avoid SIGPIPE.
             cat >/dev/null
-            return $REPORT_WORK
+            exit 0
         done
 
         # There's nothing to do.
