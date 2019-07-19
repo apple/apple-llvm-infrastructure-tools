@@ -5,8 +5,17 @@ RUN: rm -rf %t/prefix
 RUN: mkdir -p %t/prefix
 RUN: mkdir -p %t/prefix/bin
 RUN: mkdir -p %t/prefix/libexec
+RUN: rm -rf %t/src
+RUN: mkdir -p %t/src
 
-RUN: make -C %S/../.. install PREFIX=%t/prefix PIP=%t/venv/bin/pip
+RUN: cp -r %S/../../git_apple_llvm %t/src/git_apple_llvm
+RUN: cp -r %S/../../utils %t/src/utils
+RUN: cp -r %S/../../bin %t/src/bin
+RUN: cp -r %S/../../libexec %t/src/libexec
+RUN: cp -r %S/../../Makefile %t/src/Makefile
+RUN: cp -r %S/../../setup.py %t/src/setup.py
+
+RUN: make -C %t/src/ install PREFIX=%t/prefix PIP=%t/venv/bin/pip
 
 # Check that the files are there.
 RUN: ls %t/prefix/bin/git-apple-llvm
@@ -22,7 +31,7 @@ RUN: %t/prefix/bin/git-apple-llvm --version > %t/installed_v
 RUN: not diff %t/orig_v %t/installed_v
 
 # Run the uninstaller.
-RUN: make -C %S/../.. uninstall PREFIX=%t/prefix PIP=%t/venv/bin/pip
+RUN: make -C %t/src uninstall PREFIX=%t/prefix PIP=%t/venv/bin/pip
 
 # The files should be removed.
 RUN: not ls %t/prefix/bin/git-apple-llvm
