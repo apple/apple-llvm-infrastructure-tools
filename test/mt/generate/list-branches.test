@@ -2,24 +2,3 @@ RUN: %mtgen list --list-branches | check-diff %s BRANCHES %t
 BRANCHES: b1
 BRANCHES: b2
 BRANCHES: b3
-
-RUN: %mtgen list-down1 --list-branches | check-diff %s DOWN1 %t
-DOWN1: b4
-
-RUN: %mtgen list-down1 --list-merged-branches | check-diff %s DOWN1-MERGED %t
-DOWN1-MERGED: b1
-DOWN1-MERGED: b2
-DOWN1-MERGED: b3
-DOWN1-MERGED: b4
-
-RUN: %mtgen list-down2 --list-branches | check-diff %s DOWN2 %t
-DOWN2: b5
-DOWN2: b6
-
-RUN: %mtgen list-down2 --list-merged-branches | check-diff %s DOWN2-MERGED %t
-DOWN2-MERGED: b1
-DOWN2-MERGED: b2
-DOWN2-MERGED: b3
-DOWN2-MERGED: b4
-DOWN2-MERGED: b5
-DOWN2-MERGED: b6

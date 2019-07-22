@@ -11,9 +11,3 @@ mt_list_commits() {
         --boundary "$@" &&
     run printf "done\n"
 }
-
-mt_count_commits() {
-    local d="$1"
-    shift
-    run git rev-list --count "$@"
-}

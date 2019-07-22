@@ -1,5 +1,0 @@
-RUN: not %mtgen list-too-many-upstreams | check-empty
-RUN: not %mtgen list-too-many-upstreams 2>&1 | check-diff %s CHECK %t
-CHECK: error: second upstream declaration not supported
-CHECK: note: 1st upstream: list
-CHECK: note: 2nd upstream: mapping

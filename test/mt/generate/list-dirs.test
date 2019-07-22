@@ -4,20 +4,3 @@ DIRS: w
 DIRS: x
 DIRS: y
 DIRS: z
-
-RUN: %mtgen list-down1 --list-dirs | check-diff %s DOWN1 %t
-DOWN1: u
-DOWN1: v
-DOWN1: w
-DOWN1: x
-DOWN1: y
-DOWN1: z
-
-RUN: %mtgen list-down2 --list-dirs | check-diff %s DOWN2 %t
-DOWN2: t
-DOWN2: u
-DOWN2: v
-DOWN2: w
-DOWN2: x
-DOWN2: y
-DOWN2: z

@@ -1,4 +1,0 @@
-upstream list
-
-# Illegal to redeclare a directory.
-declare-dir z

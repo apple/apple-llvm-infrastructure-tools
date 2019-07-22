@@ -3,6 +3,3 @@ RUN: %mtgen list --list-repeat b1 | check-diff %s B1 %t
 RUN: %mtgen list --list-repeat b3 | check-diff %s B3 %t
 B1: b2
 B3: b1
-
-RUN: %mtgen list-down1 --list-repeat b1 | check-diff %s B1 %t
-RUN: %mtgen list-down2 --list-repeat b1 | check-diff %s B1 %t

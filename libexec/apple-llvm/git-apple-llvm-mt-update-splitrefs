@@ -6,27 +6,16 @@ helper mt_split2mono
 
 usage() {
     printf "%s\n" \
-        "usage: $(print_cmdname) [--check-for-work] <branch> <ref>:<dir>..."\
+        "usage: $(print_cmdname) [options] <branch> <ref>:<dir>..."         \
         ""                                                                  \
-        "  Update <branch> refs ending in /mt-split based on the given"     \
-        "  <ref>:<dir> info"                                                \
-        ""                                                                  \
-        "  --check-for-work     Print the refs that need to be updated,"    \
-        "                       but don't update them"
+        "  update <branch> refs ending in /mt-split based on the given"     \
+        "  <ref>:<dir> info"
 }
 
-CHECK_FOR_WORK=0
-check_for_work() { [ ! "${CHECK_FOR_WORK:-0}" = 0 ]; }
+[ "$#" -ge 1 ] || usage_error "missing <branch>"
+[ "$#" -ge 2 ] || usage_error "missing <ref>:<dir> (minimum 1)"
 
 main() {
-    if [ "$1" = --check-for-work ]; then
-        CHECK_FOR_WORK=1
-        shift
-    fi
-
-    [ "$#" -ge 1 ] || usage_error "missing <branch>"
-    [ "$#" -ge 2 ] || usage_error "missing <ref>:<dir> (minimum 1)"
-
     local branch="${1#refs/heads/}"
     shift
     mt_split2mono_init || exit 1
@@ -58,12 +47,6 @@ update_splitref() {
     local last_mapped="$(run git rev-list -1 $mapped)"
     [ -n "$last_mapped" ] || return 0
     [ "$already_mapped" = "$last_mapped" ] && return 0
-
-    if check_for_work; then
-        printf "%s\n" "$mtref"
-        return 0
-    fi
-
     log " - ${mtref#refs/heads/} => $last_mapped"
     run git update-ref $mtref $last_mapped ||
         error "failed to update $mtref"

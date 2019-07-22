@@ -1,6 +1,0 @@
-RUN: %mtgen list --show-upstream | check-empty
-CHECK: upconfig
-RUN: %mtgen list-down1 --show-upstream | check-diff %s DOWN1 %t
-DOWN1: list
-RUN: %mtgen list-down2 --show-upstream | check-diff %s DOWN2 %t
-DOWN2: list-down1

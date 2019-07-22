@@ -73,7 +73,6 @@ static int usage(const std::string &msg, const char *cmd) {
           "       %s lookup             <dbdir> <split>\n"
           "       %s lookup-svnbase     <dbdir> <sha1>\n"
           "       %s upstream           <dbdir> <upstream-dbdir>\n"
-          "       %s check-upstream     <dbdir> <upstream-dbdir>\n"
           "       %s insert             <dbdir> [<split> <mono>]\n"
           "       %s insert-svnbase     <dbdir> <sha1> <rev>\n"
           "       %s interleave-commits <dbdir> <svn2git-db>\n"
@@ -84,7 +83,7 @@ static int usage(const std::string &msg, const char *cmd) {
           "       <dir>     '-'         root\n"
           "                 000...0     not yet started\n"
           "       <sha1>    '-'         untracked\n",
-          cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd);
+          cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd);
   return 1;
 }
 
@@ -354,37 +353,6 @@ static int main_upstream(const char *cmd, int argc, const char *argv[]) {
   return 0;
 }
 
-static int main_check_upstream(const char *cmd, int argc, const char *argv[]) {
-  if (argc != 2)
-    return usage("upstream: wrong number of positional arguments", cmd);
-  split2monodb main, upstream;
-  upstream.is_read_only = main.is_read_only = true;
-  if (main.opendb(argv[0]) || main.parse_upstreams())
-    return usage("could not open <dbdir>", cmd);
-  if (upstream.opendb(argv[1]) || upstream.parse_upstreams())
-    return usage("could not open <dbdir>", cmd);
-
-  // Refuse to self-reference.
-  if (main.name == upstream.name)
-    return error("refusing to check self as upstream");
-
-  // Check if main is up-to-date.
-  auto existing_entry = main.upstreams.find(upstream.name);
-  if (existing_entry == main.upstreams.end() ||
-      existing_entry->second.num_upstreams !=
-          (long)upstream.upstreams.size() ||
-      existing_entry->second.commits_size != upstream.commits_size_on_open() ||
-      existing_entry->second.svnbase_size != upstream.svnbase_size_on_open()) {
-    fprintf(stderr, "'%s' is not up-to-date with '%s'\n", main.name.c_str(),
-            upstream.name.c_str());
-    return 1;
-  }
-
-  fprintf(stderr, "'%s' is up-to-date with '%s'\n", main.name.c_str(),
-          upstream.name.c_str());
-  return 0;
-}
-
 static int main_dump(const char *cmd, int argc, const char *argv[]) {
   if (argc != 1)
     return usage("dump: extra positional arguments", cmd);
@@ -534,7 +502,6 @@ int main(int argc, const char *argv[]) {
   SUB_MAIN_SVNBASE(lookup);
   SUB_MAIN_SVNBASE(insert);
   SUB_MAIN_IMPL("interleave-commits", interleave_commits);
-  SUB_MAIN_IMPL("check-upstream", check_upstream);
 #undef SUB_MAIN_IMPL
 #undef SUB_MAIN
 #undef SUB_MAIN_SVNBASE

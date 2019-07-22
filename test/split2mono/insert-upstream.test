@@ -6,13 +6,7 @@ RUN:                             9876543210abcdef0123456789abcdef01234567
 RUN: %split2mono create %t-down.db down
 RUN: not %split2mono upstream %t-down.db %t-down.db
 RUN: not %split2mono upstream %t-up.db   %t-up.db
-RUN: not %split2mono check-upstream %t-down.db %t-up.db 2>&1 \
-RUN:   | check-diff %s OUT-OF-DATE %t
 RUN: %split2mono upstream %t-down.db %t-up.db
-RUN: %split2mono check-upstream %t-down.db %t-up.db 2>&1 \
-RUN:   | check-diff %s UP-TO-DATE %t
-OUT-OF-DATE: 'down' is not up-to-date with 'up'
-UP-TO-DATE:  'down' is     up-to-date with 'up'
 
 RUN: cat %t-up.db/upstreams | check-diff %s UP-UPSTREAMS %t
 UP-UPSTREAMS: name: up
@@ -52,11 +46,7 @@ RUN: %split2mono insert %t-up.db 3123456789abcdef0123456789abcdef01234567 \
 RUN:                             3876543210abcdef0123456789abcdef01234567
 RUN: %split2mono insert-svnbase %t-up.db 3123456789abcdef0123456789abcdef01234567 \
 RUN:                                     123
-RUN: not %split2mono check-upstream %t-down.db %t-up.db 2>&1 \
-RUN:   | check-diff %s OUT-OF-DATE %t
 RUN: %split2mono upstream %t-down.db %t-up.db
-RUN: %split2mono check-upstream %t-down.db %t-up.db 2>&1 \
-RUN:   | check-diff %s UP-TO-DATE %t
 RUN: cat %t-down.db/upstreams | check-diff %s UPSTREAMS-SVNBASE %t
 UPSTREAMS-SVNBASE: name: down
 UPSTREAMS-SVNBASE: upstream: up num-upstreams=0 commits-size=2 svnbase-size=1

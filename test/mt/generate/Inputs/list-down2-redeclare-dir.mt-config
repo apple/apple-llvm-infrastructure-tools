@@ -1,4 +1,0 @@
-upstream list-down1
-
-# Illegal to redeclare a directory, even when transitive.
-declare-dir z

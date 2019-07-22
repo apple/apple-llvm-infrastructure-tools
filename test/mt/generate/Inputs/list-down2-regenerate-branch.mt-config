@@ -1,5 +1,0 @@
-upstream list-down1
-
-# Illegal to use the same branch name, even when transitive.
-generate branch b2
-dir b2 x a-name/x2

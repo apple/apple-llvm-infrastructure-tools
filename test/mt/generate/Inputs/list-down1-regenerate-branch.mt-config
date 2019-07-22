@@ -1,5 +1,0 @@
-upstream list
-
-# Illegal to use the same branch name.
-generate branch b2
-dir b2 x a-name/x2

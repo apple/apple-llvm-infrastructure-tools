@@ -3,17 +3,6 @@ RUN:        %t-both2.db %t-left.db %t-right.db %t-root.db
 RUN: mkdir  %t-left1.db %t-left2.db %t-right1.db %t-right2.db %t-both1.db \
 RUN:        %t-both2.db %t-left.db %t-right.db %t-root.db
 
-# This test sets up dbs for the following "upstream" graph:
-#
-#        left1 ---> both1 <---- right1
-#          |          |           |
-#         \|/        \|/         \|/
-#        left  ---> root  <---- right
-#         /|\        /|\         /|\
-#          |          |           |
-#        left2 ---> both2 <---- right2
-#
-# where upstream merges are allowed to happen in that order.
 RUN: %split2mono create %t-left1.db  left1
 RUN: %split2mono create %t-left2.db  left2
 RUN: %split2mono create %t-right1.db right1
@@ -33,20 +22,6 @@ LEFT2:  name: left2
 RIGHT1: name: right1
 RIGHT2: name: right2
 
-# Check whether check-upstream looks at the upstreams.  Always checking if
-# "root" is up-to-date with "left", do the following merges:
-# - root <= left  (root     up-to-date with left)
-# - left <= left1 (root not up-to-date with left)
-# - root <= left  (root     up-to-date with left)
-RUN: %split2mono           upstream %t-root.db  %t-left.db
-RUN: %split2mono     check-upstream %t-root.db  %t-left.db
-RUN: %split2mono           upstream %t-left.db  %t-left1.db
-RUN: not %split2mono check-upstream %t-root.db  %t-left.db
-RUN: %split2mono           upstream %t-root.db  %t-left.db
-RUN: %split2mono     check-upstream %t-root.db  %t-left.db
-
-# Check that cascading merges work correctly.
-RUN: %split2mono upstream %t-left.db  %t-left1.db
 RUN: %split2mono upstream %t-left.db  %t-left1.db
 RUN: %split2mono upstream %t-both1.db %t-left1.db
 RUN: %split2mono upstream %t-both1.db %t-right1.db

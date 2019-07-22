@@ -1,16 +1,14 @@
 # vim: ft=sh
 
-mt_db()          { printf "%s\n" refs/mt/mt-db; }
-mt_db_upstream() { printf "%s.%s\n" "$(mt_db)" "$1"; }
-mt_db_worktree()          { printf "%s\n"    "$GIT_DIR"/mt-db.checkout; }
-mt_db_worktree_upstream() { printf "%s/%s\n" "$GIT_DIR"/mt-db-$1.checkout; }
+mt_db() { printf "%s\n" refs/mt/mt-db; }
+mt_db_worktree() { printf "%s\n" "$GIT_DIR"/mt-db.checkout; }
 
 mt_db_init() {
     [ -z "$MT_DB_INIT_ONCE" ] || return 0
     MT_DB_INIT_ONCE=1
 
     local ref=$(mt_db)
-    run --hide-errors git symbolic-ref "$ref" >/dev/null ||
+    run --hide-errors git symbolic-ref "$ref" ||
         error "expected symbolic ref: $ref"
 
     local wt="$(mt_db_worktree)"
@@ -31,7 +29,7 @@ mt_db_init() {
     esac
     if [ -d "$wt" ]; then
         # Reset to match the ref.
-        run --hide-errors git -C "$wt" reset --hard -q "$ref" ||
+        run --hide-errors git -C "$wt" reset --hard "$ref" >/dev/null ||
             error "internal: failed to reset $wt"
     else
         # Handle a pre-existing ref with no worktree.
@@ -119,43 +117,4 @@ mt_db_save() {
         error "failed to commit mt-db to $ref"
     run git -C "$wt" update-ref $ref HEAD ||
         error "failed to update $ref to HEAD"
-}
-
-mt_db_merge_upstream() { mt_db_upstream_impl "$1" 0; }
-mt_db_check_upstream() { mt_db_upstream_impl "$1" 1; }
-
-mt_db_upstream_impl() {
-    local upstream="$1" dryrun="$2"
-    local uref="$(mt_db_upstream "$1")" uwt="$(mt_db_worktree_upstream "$1")"
-    if [ -d "$uwt" ]; then
-        run --hide-errors git -C "$uwt" reset --hard -q "$uref" ||
-            error "failed to reset worktree to $uref at '$uwt'"
-    else
-        run git worktree add "$uwt" "$uref" >/dev/null ||
-            error "failed to create worktree for $uref at '$uwt'"
-    fi
-
-    local usvn2gitdb="$uwt"/svn2git.db
-    local usplit2monodb="$uwt/"split2mono.db
-    [ -r "$usvn2gitdb" ] || error "could not read '$usvn2gitdb'"
-    [ -r "$usplit2monodb" ] || error "could not read '$usplit2monodb'"
-
-    local svn2git split2mono
-    svn2git="$(build_executable svn2git)" ||
-        error "could not build svn2git"
-    split2mono="$(build_executable split2mono)" ||
-        error "could not build split2mono"
-
-    if [ "${dryrun:-0}" = 0 ]; then
-        # Do the merge.
-        run "$split2mono" upstream "$MT_DB_SPLIT2MONO_DB" "$usplit2monodb" ||
-            error "could not update split2mono from '$upstream'"
-        run cp "$usvn2gitdb" "$MT_DB_SVN2GIT_DB" ||
-            error "could not update svn2git from '$upstream'"
-    else
-        # Check for things to do in the merge.
-        run --hide-errors "$split2mono" check-upstream \
-            "$MT_DB_SPLIT2MONO_DB" "$usplit2monodb" || return 1
-        diff -q "$usvn2gitdb" "$MT_DB_SVN2GIT_DB" || return 1
-    fi
 }
