@@ -1,9 +1,0 @@
-RUN: not mksvn
-RUN: mksvn %t
-RUN: test -d %t
-RUN: test -d %t.repo
-RUN: cd %t
-RUN: touch %t/file
-RUN: svn add file
-RUN: svn commit -m 'adding file'
-RUN: svn list file://%t.repo | grep file
