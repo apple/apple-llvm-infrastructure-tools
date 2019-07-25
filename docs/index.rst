@@ -30,6 +30,17 @@ Tools Documentation
 The documents in this section are the reference manuals for the
 invidual tools provided by `git apple-llvm`.
 
+Tools for engineers
+*******************
+
+The tools listed below simplify some of the day-to-day tasks for
+the engineers who are working with the llvm-project monorepo:
+
+.. toctree::
+   :maxdepth: 1
+
+   git-apple-llvm: pr: Tool for creating, testing and merging pull requests <git-apple-llvm-pr>
+
 Monorepo transition tools for end users
 ***************************************
 
