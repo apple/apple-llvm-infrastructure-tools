@@ -14,6 +14,7 @@ import sys
 import json
 from functools import partial
 import abc
+import textwrap
 
 log = logging.getLogger(__name__)
 pr_tool: PRTool = None
@@ -110,11 +111,27 @@ def list(target):
     if target:
         filter_func = partial(filter, lambda x: x.base_branch == target)
     for pr in filter_func(pr_tool.list()):
-        print(f'[#{pr.number}] {pr.title}')
-        print('')
-        print(f'{pr.body_text}')
-        print(f'{pr.url}')
-        print('')
+        # Print the title and the URL.
+        number_text = f'- [#{pr.number}] '
+        wrapper = textwrap.TextWrapper()
+        wrapper.initial_indent = number_text
+        wrapper.subsequent_indent = '  '
+        wrapper.width = 80
+        title = wrapper.fill(pr.title)
+        click.echo(click.style(f'{title}', bold=True))
+        click.echo(f'  {pr.url}')
+        click.echo('')
+        body_text = pr.body_text
+        if not len(body_text):
+            continue
+        # Print the body out.
+        wrapper.initial_indent = wrapper.subsequent_indent
+        body_lines = wrapper.wrap(body_text)
+        if len(body_lines) > 5:
+            body_lines = body_lines[:4] + ['  ...']
+        body = '\n'.join(body_lines)
+        click.echo(f'{body}')
+        click.echo('')
 
 
 class PullRequestRef(abc.ABC):
