@@ -80,10 +80,10 @@ def test_cli_list(pr_tool_type, cd_to_pr_tool_repo):
                                 mix_stderr=True)
 
     assert result.exit_code == 0
-    assert result.output == '''[#1] My test
+    assert result.output == '''- [#1] My test
+  test/pr/1
 
-This tests important things
-test/pr/1
+  This tests important things
 
 '''
 
@@ -97,25 +97,44 @@ def test_list_target(pr_tool_type, cd_to_pr_tool_repo):
     result = CliRunner().invoke(pr, ['list', '--target', 'master'],
                                 mix_stderr=True)
     assert result.exit_code == 0
-    assert result.output == '''[#1] My test
+    assert result.output == '''- [#1] My test
+  test/pr/1
 
-This tests important things
-test/pr/1
+  This tests important things
 
 '''
     result = CliRunner().invoke(pr, ['list', '--target', 'stable'],
                                 mix_stderr=True)
     assert result.exit_code == 0
-    assert result.output == '''[#2] Another 2
+    assert result.output == '''- [#2] Another 2
+  test/pr/2
 
-Stable only!
-test/pr/2
+  Stable only!
 
 '''
     result = CliRunner().invoke(pr, ['list', '--target', 'does-not-exist'],
                                 mix_stderr=True)
     assert result.exit_code == 0
     assert result.output == ''
+
+
+def test_cli_list_long_title(pr_tool_type, cd_to_pr_tool_repo):
+    mock_tool = MockPRTool()
+    mock_tool.create_pull_request('My test ' * 20, 'This tests important things', 'master')
+    git_apple_llvm.pr.main.pr_tool = create_pr_tool(mock_tool, pr_tool_type)
+
+    result = CliRunner().invoke(pr, ['list'],
+                                mix_stderr=True)
+
+    assert result.exit_code == 0
+    assert result.output == '''- [#1] My test My test My test My test My test My test My test My test My test
+  My test My test My test My test My test My test My test My test My test My
+  test My test
+  test/pr/1
+
+  This tests important things
+
+'''
 
 
 def test_cli_tool_no_git(tmp_path):
