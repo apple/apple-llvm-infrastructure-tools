@@ -4,6 +4,7 @@
 
 from git_apple_llvm.pr.github_pr_tool import GithubPRTool
 from git_apple_llvm.pr.pr_tool import PullRequestState
+from git_apple_llvm.git_tools import git_output
 from mock_pr_tool import MockPRTool
 from typing import List
 import github3
@@ -53,6 +54,16 @@ class _GitHubRepo:
             if pr.number == number:
                 return pr
         raise ValueError('invalid pr number')
+
+    @property
+    def clone_url(self):
+        return git_output('remote', 'get-url', 'origin')
+
+    def create_pull(self, title: str, base: str, head: str):
+        mock = MockPRTool()
+        mock.create_pr(title=title, base_branch=base, head_repo_url=None, head_branch=head)
+        self.prs.append(_GitHubPullRequest(mock.pull_requests[0]))
+        return self.prs[-1]
 
 
 def create_mock_github_pr_tool(mock: MockPRTool) -> GithubPRTool:
