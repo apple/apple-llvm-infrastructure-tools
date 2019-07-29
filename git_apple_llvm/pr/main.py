@@ -105,6 +105,7 @@ def pr(verbose):
 @click.option('--target', type=str,
               help='List pull requests for the specified target branch only')
 def list(target):
+    """ List pull requests for this repository """
     def _ident(x):
         return x
     filter_func = _ident
@@ -181,6 +182,7 @@ def shorten(text: str) -> str:
 @click.argument('pr_ref', metavar='<#pr / branch-name>',
                 type=PullRequestParamType(), required=True)
 def test(pr_ref: PullRequestRef):
+    """ Run tests for a particular pull request """
     pr_number = make_pr_number_ref(pr_ref).pr_number
     pr: Optional[PullRequest] = pr_tool.get_pr_from_number(pr_number)
     if not pr:
