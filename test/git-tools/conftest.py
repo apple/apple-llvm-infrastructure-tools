@@ -106,6 +106,7 @@ def cd_to_monorepo_clone(monorepo_test_fixture):
     """
     os.chdir(monorepo_test_fixture.clone_path)
     monorepo_test_fixture.checkout_internal_master()
+    git('branch', '-u', 'origin/internal/master', 'internal/master')
 
 
 @pytest.fixture(scope='function')
