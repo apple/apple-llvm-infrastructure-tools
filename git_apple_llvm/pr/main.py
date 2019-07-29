@@ -6,6 +6,7 @@
 from git_apple_llvm.pr.pr_tool import PRTool, PullRequest, PullRequestState
 from git_apple_llvm.pr.github_pr_tool import create_github_pr_tool
 from git_apple_llvm.git_tools import git_output, get_current_checkout_directory
+from git_apple_llvm.git_tools.tracked_branch_ref import TrackedBranchRef, get_tracked_branch_ref
 import click
 import logging
 from enum import Enum
@@ -197,6 +198,50 @@ def test(pr_ref: PullRequestRef):
     click.echo(f'  {max_length(pr.info.title, 78)}')
     pr.test()
     click.echo('✅ you commented "@swift-ci please test" on the pull request.')
+
+
+@pr.command()
+@click.option('-m', '--title', type=str,
+              help='Pull request title', required=True)
+@click.option('-h', '--head', metavar='<branch>', type=str, required=True,
+              help='Pull request branch containing the changes (default: HEAD)')
+@click.option('-b', '--base', metavar='<branch>', type=str, required=True,
+              help='Base branch into which the pull request will be merged')
+@click.option('--dry-run', is_flag=True, default=False,
+              help='Dry run; do not create the pull request')
+def create(title: str, head: str, base: str, dry_run: bool):
+    """ Create a new pull request """
+    hb: Optional[TrackedBranchRef] = get_tracked_branch_ref(head)
+    if not hb:
+        fatal(f'head branch "{head}" is not a valid remote tracking branch')
+        return
+    log.info('HEAD branch: %s from %s', hb.branch_name, hb.remote_url)
+    bb: Optional[TrackedBranchRef] = get_tracked_branch_ref(base)
+    if not bb:
+        fatal(f'base branch "{base}" is not a valid remote tracking branch')
+        return
+    log.info('BASE branch: %s from %s', bb.branch_name, bb.remote_url)
+
+    click.echo(f'Creating pull request:')
+    remote_prefix = ''
+    if hb.remote_url != bb.remote_url:
+        remote_prefix = f'{hb.remote_name}:'
+    else:
+        remote_prefix = ''
+    click.echo(
+        f'  {remote_prefix}{hb.branch_name} -> {bb.branch_name} on {bb.remote_url}')
+
+    # FIXME: The base might be old by this point, and we might not have it!
+    # click.echo('\nWith the following changes:')
+    # git('log', '--format=%h %s', '--graph', hb.head_hash,
+    #    '--not', bb.head_hash)
+    # click.echo('')
+    if dry_run:
+        click.echo('🛑 dry run, stopping before creating the pull request.')
+        return
+    pr = pr_tool.create_pr(title, base_branch=bb.branch_name,
+                           head_repo_url=hb.remote_url, head_branch=hb.branch_name)
+    click.echo(f'✅ Created a pull request #{pr.info.number} ({pr.info.url})')
 
 
 if __name__ == '__main__':

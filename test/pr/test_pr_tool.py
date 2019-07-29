@@ -48,10 +48,28 @@ def pr_tool_git_repo(tmp_path_factory) -> str:
     return path
 
 
+@pytest.fixture(scope='session')
+def pr_tool_git_repo_clone(tmp_path_factory, pr_tool_git_repo: str) -> str:
+    path = str(tmp_path_factory.mktemp('simple-pr-tool-dir-clone'))
+    git('init', git_dir=path)
+    git('remote', 'add', 'origin', pr_tool_git_repo, git_dir=path)
+    git('fetch', 'origin', git_dir=path)
+    git('checkout', 'master', git_dir=path)
+    return path
+
+
 @pytest.fixture(scope='function')
 def cd_to_pr_tool_repo(pr_tool_git_repo: str):
     prev = os.getcwd()
     os.chdir(pr_tool_git_repo)
+    yield
+    os.chdir(prev)
+
+
+@pytest.fixture(scope='function')
+def cd_to_pr_tool_repo_clone(pr_tool_git_repo_clone: str):
+    prev = os.getcwd()
+    os.chdir(pr_tool_git_repo_clone)
     yield
     os.chdir(prev)
 
@@ -191,3 +209,49 @@ def test_cli_tool_test_closed_pr(pr_tool_type):
                                 mix_stderr=True)
     assert result.exit_code == 1
     assert 'pull request #1 (My test) is no longer open' in result.output
+
+
+def test_cli_tool_create_pr(cd_to_pr_tool_repo_clone, pr_tool_type):
+    git('checkout', 'master')
+    git('branch', '-D', 'pr_branch', ignore_error=True)
+    git('checkout', '-b', 'pr_branch')
+    with open('pr-file', 'w') as f:
+        f.write('test pr file')
+    git('add', 'pr-file')
+    git('commit', '-m', 'pr file')
+
+    mock_tool = MockPRTool()
+    git_apple_llvm.pr.main.pr_tool = create_pr_tool(mock_tool, pr_tool_type)
+
+    # PR creation fails when the branch is not pushed.
+    result = CliRunner().invoke(pr, ['create', '-m', 'test pr', '-b', 'master', '-h', 'pr_branch'],
+                                mix_stderr=True)
+    assert result.exit_code == 1
+    assert 'head branch "pr_branch" is not a valid remote tracking branch' in result.output
+
+    # PR should be create when the branch is there.
+    git('push', 'origin', '-u', '-f', 'pr_branch')
+    result = CliRunner().invoke(pr, ['create', '-m', 'test pr', '--base', 'master', '--head', 'pr_branch'],
+                                mix_stderr=True)
+    assert result.exit_code == 0
+    assert 'Creating pull request:' in result.output
+    assert '  pr_branch -> master on' in result.output
+    assert 'Created a pull request #1 (test/pr/1)'
+
+    created_pr = git_apple_llvm.pr.main.pr_tool.get_pr_from_number(1)
+    assert created_pr.info.author_username == 'pr_branch'
+
+
+def test_cli_tool_create_pr_invalid_base(cd_to_pr_tool_repo_clone, pr_tool_type):
+    git('checkout', 'master')
+    git('branch', '-D', 'pr_branch2', ignore_error=True)
+    git('checkout', '-b', 'pr_branch2')
+    git('push', 'origin', '-u', '-f', 'pr_branch2')
+
+    mock_tool = MockPRTool()
+    git_apple_llvm.pr.main.pr_tool = create_pr_tool(mock_tool, pr_tool_type)
+    # PR creation fails when the branch is not pushed.
+    result = CliRunner().invoke(pr, ['create', '-m', 'test pr', '-b', 'mastar', '-h', 'pr_branch2'],
+                                mix_stderr=True)
+    assert result.exit_code == 1
+    assert 'base branch "mastar" is not a valid remote tracking branch' in result.output

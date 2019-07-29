@@ -5,9 +5,32 @@ pull requests.
 
 ## Commands
 
+- `git apple-llvm pr create`: Creates a pull request.
+
 - `git apple-llvm pr test`: Tests a pull request.
 
 - `git apple-llvm pr list`: Lists all pull requests.
+
+## Creating a pull request
+
+The `git apple-llvm pr create` command can be used to create a pull request:
+
+```
+# Create a branch, make changes, push it to my own fork.
+git checkout -b my-change
+touch my-change && git add my-change && git commit -m "my change"
+git push -u my_fork
+
+# Now create the PR!
+git apple-llvm pr create -m "This is my change" -h my-change -b master
+```
+
+Options:
+
+- `-m, --title`: Pull request title (required)
+- `-h, --head`: The name of the branch that contains the changes
+- `-b, --base`: The name of the base branch into which the pull request will be merged.
+- `--dry-run`:  Do not create the pull request.
 
 ## Testing a pull request
 

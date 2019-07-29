@@ -69,6 +69,10 @@ class GithubPullRequest(PullRequest):
         self.add_comment('@swift-ci please test')
 
 
+def _doesRepoMatchURL(repo, url: str) -> bool:
+    return repo.clone_url == url or repo.git_url == url or repo.ssh_url == url
+
+
 class GithubPRTool(PRTool):
     def __init__(self, gh, repo):
         self.gh = gh
@@ -84,6 +88,26 @@ class GithubPRTool(PRTool):
             if exc.code == 404:
                 return None
             raise exc
+
+    def find_head_repo_owner(self, url: str) -> Optional[str]:
+        if _doesRepoMatchURL(self.repo, url):
+            return None
+        for fork in self.repo.forks():
+            if _doesRepoMatchURL(fork, url):
+                return fork.owner.login
+        assert False
+
+    def create_pr(self, title: str, base_branch: str, head_repo_url: Optional[str], head_branch: str) -> PullRequest:
+        # body=''
+        if head_repo_url:
+            head_owner = self.find_head_repo_owner(head_repo_url)
+            log.debug('Found github repo fork %s for %s',
+                      head_owner, head_repo_url)
+            head = f'{head_owner}:{head_branch}' if head_owner else head_branch
+        else:
+            head = head_branch  # origin, same repo.
+        pr = self.repo.create_pull(title=title, base=base_branch, head=head)
+        return GithubPullRequest(pr)
 
 
 def _create_access_token(domain: str, username: str, password: str):

@@ -70,3 +70,7 @@ class PRTool(abc.ABC):
     def get_pr_from_number(self, pr_number: int) -> Optional[PullRequest]:
         """ Return the pull request or None if it doesn't exit """
         pass
+
+    def create_pr(self, title: str, base_branch: str, head_repo_url: Optional[str], head_branch: str) -> PullRequest:
+        """ Create a new pull request """
+        pass
