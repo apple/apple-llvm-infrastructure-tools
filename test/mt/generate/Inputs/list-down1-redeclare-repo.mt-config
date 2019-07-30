@@ -1,0 +1,4 @@
+upstream list
+
+# Illegal to declare the same repo again.
+repo a-name git://a/url

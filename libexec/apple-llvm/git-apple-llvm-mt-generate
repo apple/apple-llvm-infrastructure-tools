@@ -16,14 +16,36 @@ usage() {
         "   --[no-]verbose  Use verbose output (default: \$VERBOSE)"          \
         "   --[no-]setup    Set up and update remotes (default: on)"          \
         "   --[no-]clean    Clean local progress (default: off, for now)"     \
+        "   --[no-]generate Generate branches (default: on)"                  \
         "   --[no-]push     Push to the destination(s) (default: on)"         \
         "   --push-only     Only push previous results"                       \
-        "   --dry-run       Don't actually generate anything"                 \
+        "   --dry-run       Don't actually generate anything, just debug"     \
+        "                   commands that would run"                          \
+        "   --check-for-work"                                                 \
+        "                   Print the first <branch> that needs work, but"    \
+        "                   don't actually do anything"                       \
+        "   --sync-destinations"                                              \
+        "                   Sync destinations repeatedly until there is no"   \
+        "                   work to do, relying on another agent to push it;" \
+        "                   implies --check-for-work"                         \
+        "   --sync-destinations-retries=<count>"                              \
+        "                   Only attempt to sync <count> times"               \
+        "   --sync-destinations-delay=<delay>"                                \
+        "                   Wait <delay> seconds between attempts"            \
+        "   --dump-mt-config"                                                 \
+        "                   Dump the mt-config to stdout"                     \
+        "   --dump-merged-mt-config"                                          \
+        "                   Dump the mt-config merged with its upstream"      \
+        "   --show-upstream Show the upstream, if any"                        \
         "   --show-{monorepo,splitref}-destination"                           \
         "                   Show the monorepo or splitref desitnation repo"   \
         "   --list-actions  List generate actions in order (and exit)"        \
+        "   --list-merged-actions"                                            \
+        "                   List generate actions, including upstream"        \
         "   --list-repos    List repos (and exit)"                            \
         "   --list-branches List branches to generate (and exit)"             \
+        "   --list-merged-branches"                                           \
+        "                   List branches to generate, including upstream"    \
         "   --list-dirs     List declared dirs (and exit)"                    \
         "   --list-(active|inactive|repeat)-dirs=<branch>"                    \
         "                   List active, inactive, or repeated dirs for"      \
@@ -42,6 +64,7 @@ print_list() {
     shift
     local which="$list"
     case "$list" in
+        --show-upstream) show_upstream; return $? ;;
         --show-monorepo-destination) show_monorepo_destination; return $? ;;
         --show-splitref-destination) show_splitref_destination; return $? ;;
         *) true ;;
@@ -54,24 +77,28 @@ print_list() {
     is_function print_"$which" || usage_error "unknown option '$list'"
     print_"$which" "$@"
 }
-print_actions() {
-    cat "$MT_CONFIG" | awk '$1 == "generate" {print $2, $3}'
+print_actions_impl()   { cat "$1" | awk '$1 == "generate" {print $2, $3}'; }
+print_actions()        { print_actions_impl "$MT_CONFIG"; }
+print_merged_actions() { print_actions_impl "$MERGED_MT_CONFIG"; }
+print_repos() { cat "$MERGED_MT_CONFIG" | awk '$1 == "repo" {print $2, $3}'; }
+print_branches_impl() {
+    print_actions_impl "$1" | awk '$1 == "branch" {print $2}' | sort
 }
-print_repos() { cat "$MT_CONFIG" | awk '$1 == "repo" {print $2, $3}'; }
-print_branches() { print_actions | awk '$1 == "branch" {print $2}' | sort; }
+print_branches()        { print_branches_impl "$MT_CONFIG"; }
+print_merged_branches() { print_branches_impl "$MERGED_MT_CONFIG"; }
 print_dirs() {
-    cat "$MT_CONFIG" | awk '$1 == "declare-dir" {print $2}' | sort
+    cat "$MERGED_MT_CONFIG" | awk '$1 == "declare-dir" {print $2}' | sort
 }
 print_repeat() {
     awk -v branch="$1" '
     $1 == "repeat" && $2 == branch {
         if (any) {
-            printf "error: %s:%s: second repeat for branch %s\n" >"/dev/stderr"
+            printf "error: second repeat for branch %s\n", branch >"/dev/stderr"
             exit 1
         }
         print $3
         any = 1
-    }' "$MT_CONFIG"
+    }' "$MERGED_MT_CONFIG"
 }
 print_active_dirs()      { print_dirs_impl "$1" 1 0 0 0 0; }
 print_inactive_dirs()    { print_dirs_impl "$1" 0 1 0 0 0; }
@@ -85,7 +112,22 @@ print_dirs_impl() {
     local branch="$1" undecl=$6
     awk_helper mt-config-dirs -v branch="$branch" -v active=$2              \
         -v inactive=$3 -v repeat=$4 -v refs=$5 -v undecl=$undecl            \
-        "$MT_CONFIG" "$MT_CONFIG"
+        "$MERGED_MT_CONFIG" "$MERGED_MT_CONFIG"
+}
+
+show_upstream() {
+    run cat "$MT_CONFIG" |
+    awk '
+    $1 == "upstream" {
+        if (upstream) {
+            printf "error: second upstream declaration not supported\n" >"/dev/stderr"
+            printf "note: 1st upstream: %s\n", upstream >"/dev/stderr"
+            printf "note: 2nd upstream: %s\n", $2 >"/dev/stderr"
+            exit 1
+        }
+        upstream = $2
+    }
+    END { if (upstream) print upstream }'
 }
 
 show_monorepo_destination() { show_destination monorepo; }
@@ -116,11 +158,63 @@ show_destination() {
     }'
 }
 
+validate_mt_config() {
+    # Check repos aren't duplicated.
+    print_repos | awk '
+    names[$1] {
+        printf "error: duplicate repo name '\''%s'\''\n", $1 >"/dev/stderr"
+        exit 1
+    }
+    urls[$2] {
+        printf "error: duplicate repo url '\''%s'\''\n", $2 >"/dev/stderr"
+        exit 1
+    }
+    { names[$1]=1; urls[$2]=1 }
+    ' || return 1
+
+    # Check branches aren't duplicated.
+    print_merged_branches | awk '
+    branches[$1] {
+        printf "error: duplicate branch '\''%s'\''\n", $1 >"/dev/stderr"
+        exit 1
+    }
+    { branches[$1]=1 }
+    ' || return 1
+
+    # Check directories aren't duplicated.
+    print_dirs | awk '
+    dirs[$1] {
+        printf "error: re-declared directory '\''%s'\''\n", $1 >"/dev/stderr"
+        exit 1
+    }
+    { dirs[$1]=1 }
+    ' || return 1
+
+    # Check that there is at most one mapping and that we don't have an
+    # upstream if we have a mapping.
+    print_actions | awk -v upstream="$(show_upstream)" '
+    $1 != "mapping" { next }
+    upstream {
+        printf                                                                \
+            "error: cannot have upstream '\''%s'\'' and mapping '\''%s'\''\n",\
+            upstream, $2 >"/dev/stderr"
+        exit 1
+    }
+    mapping {
+        printf "error: too many mappings: '\''%s'\'' and '\''%s'\''\n",       \
+            mapping, $2 >"/dev/stderr"
+        exit 1
+    }
+    { mapping=$2 }
+    ' || return 1
+}
 MTDB_REF=refs/mt/mt-db
 MTDB_SHA1= MTDB_LOCAL_REF=
+mtdb_local_ref() { printf "%s.%s\n" "$MTDB_REF" "$1"; }
 mt_setup() {
     GIT_DIR="$(canonicalize_path "$GIT_DIR")"
     MT_CONFIG="$(canonicalize_path "$MT_CONFIG")"
+    CONFIG_DIR="$(canonicalize_path "$CONFIG_DIR")"
 
     # Always change directory.
     if ! should_setup; then
@@ -129,50 +223,30 @@ mt_setup() {
     fi
 
     # Verbose output.
-    local gitout=/dev/null
-    local hide=--hide-errors
-    if [ ! "${VERBOSE:-0}" = 0 ]; then
-        gitout=/dev/stdout
-        hide=
-    fi
+    local gitout hide
+    setup_gitout_and_hide
 
     # Clean up any local progress.
-    if should_clean; then
-        local existing
-        existing="$(git show-ref | grep -e ^refs/mt -e ^refs/heads |
-            awk '{print $2}')" ||
-            error "failed to look up refs to clean"
-        [ -z "$existing" ] || run git update-ref -d $existing ||
-            error "failed to clean local refs: $existing"
-        local prev_existing=
-        while existing="$(git worktree list --porcelain |
-            awk '$1=="worktree"{print substr($0,10); exit 0} END{exit 1}')"; do
-            # Prevent an infinite loop, if somehow we stop making progress.
-            # Probably not actaully reachable, but better to be paranoid.
-            [ ! "$prev_existing" = "$existing" ] ||
-                error "failed to clean worktrees"
-            prev_existing="$existing"
-
-            run git worktree remove --force "$existing" ||
-                error "failed to clean worktree: $existing"
-        done
-    fi
+    ! should_clean || clean || exit 1
 
     log "Setting up and syncing $GIT_DIR"
     log "  (based on $MT_CONFIG)"
     [ -d "$GIT_DIR" ] ||
-        run --hide-errors git init --bare "$GIT_DIR" >$gitout ||
+        run --hide-errors git init -q --bare "$GIT_DIR" >$gitout ||
         error "failed to initialize '$GIT_DIR'"
     run cd "$GIT_DIR" || error "failed to cd to $GIT_DIR"
     log "Updating remotes in parallel"
 
-    print_repos | {
-        local forks= name= url= clone=
+    # Set up repos in reverse so that upstream repos are fetched last and are
+    # more likely to be up-to-date.
+    reverse_lines() {
+        awk '{row[NR] = $0} END{for(r=NR; r; r = r-1){print row[r]}}'
+    }
+    print_repos | reverse_lines | {
+        local name= url=
         while read name url; do
-            mt_setup_repo &
-            forks="$forks $!"
+            mt_setup_repo || return 1
         done
-        run wait $forks
     } || return 1
 
     log "Combining object databases"
@@ -181,7 +255,7 @@ mt_setup() {
         log "  - $name"
         # Ignore errors here, since often the remote will already exist.
         run --hide-errors git remote add $name $PWD/clones/$name.git >$gitout
-        run $hide git fetch --no-tags $name >$gitout ||
+        run $hide git fetch -q --no-tags $name >$gitout ||
         error "failed to sync '$GIT_DIR'"
     done || return 1
 
@@ -196,11 +270,127 @@ mt_setup() {
         error "monorepo destination '$monodest' is not a repo"
 
     # Fetch the mt-db ref.
+    fetch_destination_mtdb "$monodest" || exit 1
+}
+fetch_destination_mtdb() {
+    local monodest="$1"
     log "Syncing mt-db from $monodest"
     MTDB_SHA1=$(run git ls-remote $monodest $MTDB_REF | awk '{print $1}')
     [ -n "$MTDB_SHA1" ] || return 0
-    run git fetch --force $monodest $MTDB_REF:$MTDB_LOCAL_REF ||
+    run git fetch -q --force $monodest $MTDB_REF:$MTDB_LOCAL_REF ||
         error "failed to fetch $MTDB_REF from $monodest"
+}
+
+setup_gitout_and_hide() {
+    gitout=/dev/null
+    hide=--hide-errors
+    if [ ! "${VERBOSE:-0}" = 0 ]; then
+        gitout=/dev/stderr
+        hide=
+    fi
+}
+
+clean() {
+    local existing
+    existing="$(git show-ref | grep -e ^refs/mt -e ^refs/heads |
+        awk '{print $2}')" ||
+        error "failed to look up refs to clean"
+    [ -z "$existing" ] || run git update-ref -d $existing ||
+        error "failed to clean local refs: $existing"
+    local prev_existing=
+    while existing="$(git worktree list --porcelain |
+        awk '$1=="worktree"{print substr($0,10); exit 0} END{exit 1}')"; do
+        # Prevent an infinite loop, if somehow we stop making progress.
+        # Probably not actaully reachable, but better to be paranoid.
+        [ ! "$prev_existing" = "$existing" ] ||
+            error "failed to clean worktrees"
+        prev_existing="$existing"
+
+        run git worktree remove --force "$existing" ||
+            error "failed to clean worktree: $existing"
+    done
+}
+
+MERGED_MT_CONFIG=
+initialize_merged_mt_config() {
+    local upstream
+    upstream="$(show_upstream)" || exit 1
+    if [ -z "$upstream" ]; then
+        MERGED_MT_CONFIG="$MT_CONFIG"
+        return 0
+    fi
+
+    MERGED_MT_CONFIG="$(mktemp -q)" ||
+        error "failed to generate temp file for merged mt-config"
+    mt_register_paths_to_clean_up "$MERGED_MT_CONFIG"
+
+    local grepexpr="^upstream "
+    run git apple-llvm mt generate --config-dir "$CONFIG_DIR" \
+        --dump-merged-mt-config "$upstream" |
+    grep -v "$grepexpr" >"$MERGED_MT_CONFIG" ||
+        error "could not create merged mt-config from upstream '$upstream'"
+    run cat "$MT_CONFIG" | run grep -v "$grepexpr" >>"$MERGED_MT_CONFIG" ||
+        error "could not patch merged mt-config for '$NAME'"
+}
+
+sync_upstream_destinations() {
+    [ -n "$upstream" ] ||
+        error "internal: sync_upstream_destinations called without upstream?"
+
+    log "Syncing destination repos for upstream '$upstream'"
+    run git apple-llvm mt generate --sync-destinations \
+        --sync-destinations-delay=$SYNC_DELAY \
+        --sync-destinations-retries=$SYNC_RETRIES \
+        --config-dir="$CONFIG_DIR" --git-dir="$GIT_DIR" \
+        "$upstream"
+    local status=$?
+    log "Finished syncing destination repos for upstream '$upstream'"
+    [ $status = 0 ] || error "upstream '$upstream' out-of-date"
+}
+fetch_destinations() {
+    print_repos | run awk -v m="$monorepo" -v s="$splitref" \
+        '$1 == m || $1 == s { print $0 }' |
+    while read name url; do
+        mt_setup_repo || exit 1
+        run $hide git fetch -q --no-tags $name >$gitout ||
+            error "failed to sync '$GIT_DIR'"
+    done || exit 1
+
+    fetch_destination_mtdb "$monorepo" || exit 1
+}
+sync_destinations() {
+    # Look up destinations.
+    local monorepo splitref
+    monorepo="$(show_monorepo_destination)" ||
+        error "could not extract monorepo destination"
+    splitref="$(show_splitref_destination)" ||
+        error "could not extract splitref destination"
+
+    # Configure verbose output for mt_setup_repo.
+    local gitout hide
+    setup_gitout_and_hide
+
+    # Fetch destinations.
+    log "Fetching destinations..."
+    fetch_destinations
+
+    # Double-check check-for-work is enabled...
+    check_for_work || error "--sync-destinations implies --check-for-work?"
+
+    # Check for work, and then repeat as long as there's work to do.
+    local actions
+    while true; do
+        actions="$(generate_actions)" || exit 1
+        [ -n "$actions" ] || return 0
+        [ $SYNC_RETRIES -gt 0 ] ||
+            error "too many retries for --sync-destinations, giving up"
+        SYNC_RETRIES=$(( $SYNC_RETRIES - 1 ))
+        sleep $SYNC_DELAY
+
+        # Fetch the destinations again.
+        log "Fetching destinations again..."
+        fetch_destinations || exit 1
+    done
 }
 
 mt_check_clone() {
@@ -253,7 +443,7 @@ mt_make_clone() {
     [ -e "$clone" ] && return 1
 
     run $hide mkdir -p $(dirname $clone) &&
-        run $hide git init --bare $clone  &&
+        run $hide git init -q --bare $clone  &&
         run $hide git -C $clone remote add --mirror=fetch origin $url &&
         return 0
 
@@ -271,7 +461,36 @@ mt_setup_repo() {
         error "failed to update remote '$name'"
 }
 
+report_work() {
+    printf "work: generate %s %s\n" "$1" "$2"
+    exit 0
+}
+
+generate_actions() {
+    # Handle implicit action for syncing upstream.
+    local upstream
+    upstream="$(show_upstream)" || exit 1
+    if [ -n "$upstream" ]; then
+        log "Syncing mt-db with $upstream"
+        sync_upstream_before_generate "$upstream" ||
+            error "failed to sync upstream '$upstream'"
+    fi
+
+    # Handle explicit actions.
+    print_actions |
+    while read action object; do
+        mt_generate "$action" "$object" ||
+            error "failed to generate '$action' using '$object'"
+    done
+}
+
 has_no_spaces() { [ "${1/ /}" = "$1" ]; }
+set_mtdb_symbolic_ref() {
+    [ "$(git symbolic-ref "$MTDB_REF" 2>/dev/null)" = "$MTDB_LOCAL_REF" ] ||
+        run git symbolic-ref -m "mt generate" "$MTDB_REF" "$MTDB_LOCAL_REF" ||
+        error "failed to set up $MTDB_REF"
+
+}
 mt_generate() {
     local action="$1"
     local object="$2"
@@ -279,12 +498,8 @@ mt_generate() {
     local fetcher="mt_fetch_$action"
     local pusher="mt_push_$action"
 
-    [ "$(git symbolic-ref "$MTDB_REF" 2>/dev/null)" = "$MTDB_LOCAL_REF" ] ||
-        run git symbolic-ref -m "mt generate" "$MTDB_REF" "$MTDB_LOCAL_REF" ||
-        error "failed to set up $MTDB_REF"
-
-    mt_llvm_svn2git_init ||
-        error "generate: could not initialize svn2git"
+    set_mtdb_symbolic_ref || exit 1
+    mt_db_init || error "generate: could not initialize mt-db"
 
     # Check that we have a generator for this.
     is_function "$generator" ||
@@ -296,11 +511,23 @@ mt_generate() {
     has_no_spaces "$object" ||
         error "generate: invalid object '$object'"
 
-    log "Generating $action for $object"
-    push_only || $fetcher "$object" || exit 1
-    push_only || $generator "$object" || exit 1
+    if check_for_work; then
+        log "Checking for work to generate $action for $object"
+    else
+        log "Generating $action for $object"
+    fi
+
+    # Invoke through wrappers whose logic can be reused.
+    mt_fetcher   "$fetcher"   "$object" || exit 1
+    mt_generator "$generator" "$object" || exit 1
+    mt_pusher    "$pusher"    "$object" || exit 1
+}
+mt_fetcher()   { should_fetch    || return 0; "$@"; }
+mt_generator() { should_generate || return 0; "$@"; }
+mt_pusher() {
+    ! check_for_work || return 0
     should_push || return 0
-    $pusher "$object" || exit 1
+    "$@"
 }
 
 mt_generate_mapping() {
@@ -317,6 +544,7 @@ mt_generate_mapping() {
             log "Mapping for '$branch' up-to-date"
             continue
         fi
+        ! check_for_work || report_work mapping "$remote"
         log "Generating mapping for '$branch'"
         run --dry git apple-llvm mt llvm-svn2git-map $branch ||
             error "failed to generate mapping for '$branch'"
@@ -328,7 +556,9 @@ mt_fetch_mapping() {
     true
 }
 
-mt_push_mapping() {
+mt_push_mapping() { push_mtdb; }
+
+push_mtdb() {
     local old_mtdb_sha1=$MTDB_SHA1
     MTDB_SHA1=$(run git show-ref $MTDB_REF | awk '{print $1}')
     [ ! "$old_mtdb_sha1" = "$MTDB_SHA1" ] || return 0
@@ -344,6 +574,45 @@ mt_push_mapping() {
         run --dry git -C clones/$monodest.git push origin $MTDB_REF:$MTDB_REF \
             --force-with-lease=$MTDB_REF:$old_mtdb_sha1
     } || error "failed to push $MTDB_REF to $monodest"
+}
+
+sync_upstream_before_generate() {
+    [ -n "$upstream" ] ||
+        error "internal: sync_upstream_before_generate called without upstream?"
+
+    # Do some things with upstream.  This can set MTDB_REF to upstream.
+    mt_fetcher fetch_upstream || exit 1
+    local upstream_monorepo
+    upstream_monorepo="$(run git apple-llvm mt generate \
+        --show-monorepo-destination \
+        --config-dir="$CONFIG_DIR" --git-dir="$GIT_DIR" \
+        "$upstream")" ||
+        error "failed to lookup monorepo destination for '$upstream'"
+
+    # Reset MTDB_REF to downstream and get ready to work.
+    set_mtdb_symbolic_ref || exit 1
+    mt_db_init || error "generate: could not initialize svn2git"
+
+    # Find the upstream ref.
+    local mtdb_upstream_ref="$(mtdb_local_ref "$upstream")"
+    run git fetch -q -f "$upstream_monorepo" $MTDB_REF:$mtdb_upstream_ref ||
+        error "failed to fetch $mtdb_upstream_ref"
+
+    if check_for_work; then
+        mt_db_check_upstream "$upstream" || report_work upstream "$upstream"
+    else
+        mt_db_merge_upstream "$upstream" ||
+            error "failed to merge upstream '$upstream'"
+        mt_db_save || exit 1
+        mt_pusher push_mtdb || exit 1
+    fi
+}
+
+fetch_upstream() {
+    # Sync upstream destinations.
+    [ -n "$upstream" ] ||
+        error "internal: fetch_upstream called without upstream?"
+    sync_upstream_destinations || exit 1
 }
 
 mt_generate_branch() {
@@ -383,6 +652,15 @@ mt_generate_branch() {
 
     refdirs="$(print_all_refdirs "$rawbranch")" ||
         error "failed to extract complete refdirs for $rawbranch"
+
+    if check_for_work; then
+        local work
+        work="$(run git apple-llvm mt translate-branch $branch $refdirs \
+            --check-for-work)" ||
+            error "failed to check for work on branch '$branch'"
+        [ -n "$work" ] && report_work branch "$branch"
+        return 0
+    fi
 
     run --dry git apple-llvm mt translate-branch $branch $refdirs ||
         error "failed to generate branch '$branch'"
@@ -516,6 +794,15 @@ mt_generate_splitrefs() {
             error "generate $branch: invalid dir '$dir' for ref '$ref'"
     done
 
+    if check_for_work; then
+        local work
+        work="$(run git apple-llvm mt update-splitrefs --check-for-work \
+            $branch $refdirs)" ||
+            error "failed to check for work on branch '$branch'"
+        [ -n "$work" ] && report_work splitrefs "$branch"
+        return 0
+    fi
+
     run --dry git apple-llvm mt update-splitrefs $branch $refdirs ||
         error "failed to update splitrefs for '$branch'"
 }
@@ -524,11 +811,17 @@ CONFIG_DIR="$DEFAULT_CONFIG_DIR"
 GIT_DIR=$DEFAULT_GIT_DIR
 
 # FIXME: consider setting CLEAN=1 by default.
-SETUP=1 CLEAN=0 PUSH=1 PUSH_ONLY=0
+SETUP=1 CLEAN=0 FETCH=1 GENERATE=1 PUSH=1 PUSH_ONLY=0 CHECK_FOR_WORK=0
+DUMP= SYNC=0 SYNC_RETRIES=30 SYNC_DELAY=60 ONLY_VALIDATE=0
 should_setup() { [ ! "${SETUP:-0}" = 0 ]; }
 should_clean() { [ ! "${CLEAN:-0}" = 0 ]; }
+should_fetch() { [ ! "${FETCH:-0}" = 0 ]; }
+should_generate() { [ ! "${GENERATE:-0}" = 0 ]; }
 should_push() { [ ! "${PUSH:-0}" = 0 ]; }
 push_only() { [ ! "${PUSH_ONLY:-0}" = 0 ]; }
+only_validate() { [ ! "${ONLY_VALIDATE:-0}" = 0 ]; }
+check_for_work() { [ ! "${CHECK_FOR_WORK:-0}" = 0 ]; }
+should_sync_destinations() { [ ! "${SYNC:-0}" = 0 ]; }
 NAME=
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -549,11 +842,30 @@ while [ $# -gt 0 ]; do
         --dry-run)  DRY_RUN=1; shift ;;
         --setup)    SETUP=1; shift ;;
         --no-setup) SETUP=0; shift ;;
+        --validate-mt-config) ONLY_VALIDATE=1; shift ;;
         --push)     PUSH=1; shift ;;
         --no-push)  PUSH=0; shift ;;
         --clean)    CLEAN=1; shift ;;
         --no-clean) CLEAN=0; shift ;;
-        --push-only)PUSH_ONLY=1; shift ;;
+        --push-only)PUSH_ONLY=1 GENERATE=0 FETCH=0; shift ;;
+        --generate)     GENERATE=1; shift ;;
+        --no-generate)  GENERATE=0; shift ;;
+        --check-for-work) CHECK_FOR_WORK=1; shift ;;
+        --dump-merged-mt-config) DUMP=merged; shift ;;
+        --dump-mt-config)        DUMP=raw;    shift ;;
+        --sync-destinations) SYNC=1; CHECK_FOR_WORK=1; shift ;;
+        --sync-destinations-retries|--sync-destinations-retries=*)
+            parse_cmdline_option --sync-destinations-retries SYNC_RETRIES "$@"
+            shift $?
+            [ "$SYNC_RETRIES" -ge 0 ] 2>/dev/null ||
+                usage_error "invalid argument for --sync-destinations-retries"
+            ;;
+        --sync-destinations-delay|--sync-destinations-delay=*)
+            parse_cmdline_option --sync-destinations-delay SYNC_DELAY "$@"
+            shift $?
+            [ "$SYNC_DELAY" -ge 0 ] 2>/dev/null ||
+                usage_error "invalid argument for --sync-destinations-delay"
+            ;;
         --list-*-*dirs|--list-*-*dirs=*)
             LIST="$1"
             parse_cmdline_option "--list-*-*dirs" LIST_BRANCH "$@"
@@ -580,7 +892,7 @@ while [ $# -gt 0 ]; do
             MT_CONFIG="$CONFIG_DIR/$NAME.mt-config"
             [ -r "$MT_CONFIG" ] ||
                 usage_error "cannot read '$MT_CONFIG'"
-            MTDB_LOCAL_REF="$MTDB_REF.$NAME"
+            MTDB_LOCAL_REF="$(mtdb_local_ref $NAME)"
             shift
             ;;
     esac
@@ -590,16 +902,41 @@ if push_only && should_clean; then
     usage_error "refusing to --clean when invoked with --push-only"
 fi
 
+if push_only && check_for_work; then
+    usage_error "--push-only doesn't make sense with --check-for-work"
+fi
+
+# Nothing to push if we're just checking for work.
+check_for_work && PUSH=0
+
 [ -n "$MT_CONFIG" ] || usage_error "missing name of mt-config"
+
+if [ "$DUMP" = raw ]; then
+    cat "$MT_CONFIG" || error "could not read $MT_CONFIG"
+    exit 0
+fi
+initialize_merged_mt_config || exit 1
+
+validate_mt_config || exit 1
+! only_validate || exit 0
+
+if [ "$DUMP" = merged ]; then
+    cat "$MERGED_MT_CONFIG"
+    exit 0
+elif [ -n "$DUMP" ]; then
+    error "internal: invalid '\$DUMP' value '$DUMP'"
+fi
+
 if [ -n "$LIST" ]; then
     print_list "$LIST" "$LIST_BRANCH"
     exit $?
 fi
 
+if should_sync_destinations; then
+    sync_destinations
+    exit $?
+fi
+
 mt_setup || exit 1
-print_actions |
-while read action object; do
-    mt_generate "$action" "$object" ||
-        error "failed to generate '$action' using '$object'"
-done
+generate_actions || exit 1
 exit $?

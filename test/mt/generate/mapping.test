@@ -1,0 +1,33 @@
+# Make some commits that look like llvm.org monorepo commits.
+RUN: mkrepo %t.in
+RUN: env     ct=1550000002 mkcommit %t.in --allow-empty -m "llvm-svn: 2"
+RUN: printf                                "some subject\n\nllvm-svn: 4\n" \
+RUN:   | env ct=1550000004 mkcommit %t.in --allow-empty -F -
+RUN: env     ct=1550000005 mkcommit %t.in --allow-empty -m "llvm-svn: 5"
+
+RUN: mkrepo --bare %t.out.split
+RUN: mkrepo --bare %t.out.mono
+RUN: rm -rf %t-mt-repo.git 
+RUN: rm -rf %t-mt-configs
+RUN: mkdir -p %t-mt-configs
+RUN: cat         %S/Inputs/mapping.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/mapping.mt-config
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs mapping
+RUN: git -C %t-mt-repo.git show-ref | not grep refs/heads
+RUN: number-commits -p IN %t.in master >%t.map
+RUN: %svn2git dump %t-mt-repo.git/mt-db.checkout/svn2git.db \
+RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK-3 %t
+CHECK-3: r2 IN-1
+CHECK-3: r4 IN-2
+CHECK-3: r5 IN-3
+
+# Do some more owrk.
+RUN: env     ct=1550000008 mkcommit %t.in --allow-empty -m "llvm-svn: 8"
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs mapping
+RUN: number-commits -p SECOND-RUN %t.in master^..master >>%t.map
+RUN: %svn2git dump %t-mt-repo.git/mt-db.checkout/svn2git.db \
+RUN:   | apply-commit-numbers %t.map | check-diff %s CHECK-4 %t
+CHECK-4: r2 IN-1
+CHECK-4: r4 IN-2
+CHECK-4: r5 IN-3
+CHECK-4: r8 SECOND-RUN-1

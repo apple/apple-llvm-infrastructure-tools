@@ -1,0 +1,12 @@
+# cascade.mt-config
+upstream downstream
+
+repo cask/a file://%t-cask.a
+repo cask/mono file://%t-cask.mono
+repo cask/split file://%t-cask.split
+
+destination splitref cask/split
+destination monorepo cask/mono
+
+generate branch internal/master
+dir internal/master a cask/a/internal

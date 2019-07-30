@@ -1,0 +1,4 @@
+upstream list
+
+# Illegal to have a mapping and an upstream.
+generate mapping b-name/master

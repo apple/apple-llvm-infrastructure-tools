@@ -1,0 +1,13 @@
+repo in1 file://%t-1.in
+repo in2 file://%t-2.in
+repo out/split file://%t.out.split
+repo out/mono file://%t.out.mono
+
+destination splitref out/split
+destination monorepo out/mono
+
+declare-dir a
+declare-dir b
+
+generate mapping in1/master
+generate mapping in2/master
