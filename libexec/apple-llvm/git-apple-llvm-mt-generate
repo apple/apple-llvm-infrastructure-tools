@@ -215,6 +215,7 @@ mt_setup() {
     GIT_DIR="$(canonicalize_path "$GIT_DIR")"
     MT_CONFIG="$(canonicalize_path "$MT_CONFIG")"
     CONFIG_DIR="$(canonicalize_path "$CONFIG_DIR")"
+    MERGED_MT_CONFIG="$(canonicalize_path "$MERGED_MT_CONFIG")"
 
     # Always change directory.
     if ! should_setup; then
