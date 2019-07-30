@@ -1,0 +1,11 @@
+RUN: not %mtgen list-down2-redeclare-dir --validate-mt-config 2>&1 \
+RUN:   | check-diff %s REDECLARE-DIR %t
+REDECLARE-DIR: error: re-declared directory 'z'
+
+RUN: not %mtgen list-down2-redeclare-repo --validate-mt-config 2>&1 \
+RUN:   | check-diff %s REDECLARE-REPO %t
+REDECLARE-REPO: error: duplicate repo name 'a-name'
+
+RUN: not %mtgen list-down2-regenerate-branch --validate-mt-config 2>&1 \
+RUN:   | check-diff %s REGENERATE-BRANCH %t
+REGENERATE-BRANCH: error: duplicate branch 'b2'

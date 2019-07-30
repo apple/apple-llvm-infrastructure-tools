@@ -3,3 +3,10 @@ ACTIONS: mapping a-name/master
 ACTIONS: branch b2
 ACTIONS: branch b1
 ACTIONS: branch b3
+
+RUN: %mtgen list-down1 --list-actions | check-diff %s DOWN1 %t
+DOWN1: branch b4
+
+RUN: %mtgen list-down2 --list-actions | check-diff %s DOWN2 %t
+DOWN2: branch b5
+DOWN2: branch b6

@@ -5,7 +5,8 @@ RUN: %mtgen list --list-repeat-dirs=b3 | check-diff %s REPEAT-DIRS-B3 %t
 RUN: %mtgen list --list-inactive-dirs=b3 | check-diff %s INACTIVE-DIRS-B3 %t
 RUN: %mtgen list --list-active-refdirs=b3 | check-diff %s ACTIVE-REFDIRS-B3 %t
 RUN: %mtgen list --list-repeat-refdirs=b3 | check-diff %s REPEAT-REFDIRS-B3 %t
-RUN: %mtgen list --list-inactive-refdirs=b3 | check-diff %s INACTIVE-REFDIRS-B3 %t
+RUN: %mtgen list --list-inactive-refdirs=b3 \
+RUN:   | check-diff %s INACTIVE-REFDIRS-B3 %t
 RUN: %mtgen list --list-all-refdirs=b3 | check-diff %s ALL-REFDIRS-B3 %t
 ACTIVE-DIRS-B3: z
 ACTIVE-REFDIRS-B3: a-name/z:z

@@ -1,0 +1,52 @@
+RUN: mkrepo %t-up.a
+RUN: mkrepo %t-up.b
+RUN: mkrepo %t-down.a
+RUN: mkrepo %t-down.b
+RUN: env ct=1550000001 mkblob %t-up.a 1
+RUN: env ct=1550000002 mkblob %t-up.b 2
+
+RUN: git -C %t-down.a remote add upstream %t-up.a
+RUN: git -C %t-down.b remote add upstream %t-up.b
+RUN: git -C %t-down.a remote update
+RUN: git -C %t-down.b remote update
+RUN: git -C %t-down.a checkout -b fork upstream/master
+RUN: git -C %t-down.b checkout -b fork upstream/master
+RUN: git -C %t-down.a symbolic-ref HEAD refs/heads/fork
+RUN: git -C %t-down.b symbolic-ref HEAD refs/heads/fork
+RUN: env ct=1550000003 mkblob %t-down.b 3
+RUN: env ct=1550000004 mkblob %t-down.a 4
+
+RUN: mkrepo --bare %t-up.split
+RUN: mkrepo --bare %t-up.mono
+RUN: mkrepo --bare %t-down.split
+RUN: mkrepo --bare %t-down.mono
+RUN: rm -rf %t-mt-configs %t-mt-up.git %t-mt-down.git
+RUN: mkdir -p %t-mt-configs
+RUN: cat         %S/Inputs/upstream.mt-config.in   | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/upstream.mt-config
+RUN: cat         %S/Inputs/downstream.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/downstream.mt-config
+
+# Try generating downstream.  This should fail, since there are missing
+# commits from upstream.
+RUN: not %mtgen --git-dir %t-mt-down.git --config-dir %t-mt-configs \
+RUN:     downstream 2>&1 | grep error: | check-diff %s OUT-OF-DATE %t
+OUT-OF-DATE: error: too many retries for --sync-destinations, giving up
+OUT-OF-DATE: error: upstream 'upstream' out-of-date
+
+# Try again after generating the upstream.
+RUN: %mtgen --git-dir %t-mt-up.git --config-dir %t-mt-configs \
+RUN:     upstream
+RUN: %mtgen --git-dir %t-mt-down.git --config-dir %t-mt-configs \
+RUN:     downstream
+
+# Add new commits and repeat.
+RUN: env ct=1550000005 mkblob %t-up.a 5
+RUN: git -C %t-down.a remote update
+RUN: env ct=1550000006 mkmerge %t-down.a 6 upstream/master
+RUN: not %mtgen --git-dir %t-mt-down.git --config-dir %t-mt-configs \
+RUN:     downstream 2>&1 | grep error: | check-diff %s OUT-OF-DATE %t
+RUN: %mtgen --git-dir %t-mt-up.git --config-dir %t-mt-configs \
+RUN:     upstream
+RUN: %mtgen --git-dir %t-mt-down.git --config-dir %t-mt-configs \
+RUN:     downstream

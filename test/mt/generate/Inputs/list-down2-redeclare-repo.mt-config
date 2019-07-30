@@ -1,0 +1,4 @@
+upstream list-down1
+
+# Illegal to declare the same repo again, even when transitive.
+repo a-name git://a/url
