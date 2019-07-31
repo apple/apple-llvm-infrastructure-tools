@@ -1,0 +1,70 @@
+RUN: rm -rf %t.svn2git %t.split2mono
+RUN: mkdir %t.split2mono
+RUN: %svn2git create %t.svn2git
+RUN: %split2mono create %t.split2mono db
+
+# Create r1 and r3.  Note that setting the author timestamp with 'at' also
+# changes the default 'ct'.
+RUN: mkrepo %t-s
+RUN: mkrepo %t-m
+RUN: env at=1550000001 mkblob-svn -s %t-s -m %t-m -d sub 1
+RUN: git -C %t-m rev-list -1 master | xargs %svn2git insert %t.svn2git 1
+RUN: git -C %t-s branch r1
+# Note: intentionally leaving r3 out of the monorepo here, to mimic commits
+# like r137571 on branches that are not being translated.
+RUN: env at=1550000003 mkblob-svn -s %t-s -d sub 3
+RUN: git -C %t-s branch r3
+
+# Create a branch from r1, add a commit identical to r3 on top of a downstream
+# commit, and add another downstream commit.  This mimics having an extra-fast
+# cherry-pick as a parent.
+RUN: git -C %t-s checkout -b downstream r1
+RUN: env at=1550000002 mkblob %t-s 2
+RUN: env at=1550000004 mkmerge %t-s 4 r3
+
+# Give %t-m access to %t-s.
+RUN: git -C %t-m remote add s %t-s
+RUN: git -C %t-m remote update
+
+RUN: git -C %t-m apple-llvm mt list-commits sub s/downstream \
+RUN:   | %split2mono -C %t-m interleave-commits              \
+RUN:     %t.split2mono %t.svn2git                            \
+RUN:     0000000000000000000000000000000000000000            \
+RUN:     0000000000000000000000000000000000000000:sub >%t.out
+RUN: cat %t.out | awk '{print $1}' \
+RUN:   | xargs git -C %t-m update-ref downstream
+RUN: number-commits -p SUP   %t-s master                   >%t.map
+RUN: number-commits -p SDOWN %t-s downstream --not master >>%t.map
+RUN: number-commits -p MUP   %t-m master                  >>%t.map
+RUN: number-commits -p MDOWN %t-m downstream --not master >>%t.map
+RUN: git -C %t-m log downstream                            \
+RUN:       --format="--%%n%%H %%P %%s%%n%%(trailers:only)" \
+RUN:       --stat --name-status --date-order               \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s LOG %t
+LOG: --
+LOG: MDOWN-3 MDOWN-1 MDOWN-2 mkmerge: 4
+LOG: apple-llvm-split-commit: SDOWN-2
+LOG: apple-llvm-split-dir: sub/
+LOG: --
+LOG: MDOWN-2 MUP-1 mkblob-svn: r3
+LOG: git-svn-id: https://llvm.org/svn/llvm-project/sub/trunk@3 91177308-0d34-0410-b5e6-96231b3b80d8
+LOG: apple-llvm-split-commit: SUP-2
+LOG: apple-llvm-split-dir: sub/
+LOG: A sub/3
+LOG: --
+LOG: MDOWN-1 MUP-1 mkblob: 2
+LOG: apple-llvm-split-commit: SDOWN-1
+LOG: apple-llvm-split-dir: sub/
+LOG: A sub/2
+LOG: --
+LOG: MUP-1 mkblob-svn: r1
+LOG: llvm-svn: 1
+LOG: A sub/1
+RUN: %split2mono dump %t.split2mono | apply-commit-numbers %t.map \
+RUN:   | grep -e sha1= -e split= | check-diff %s DUMP %t
+DUMP: 00000000: split=SDOWN-1 mono=MDOWN-1
+DUMP: 00000001: split=SUP-2   mono=MDOWN-2
+DUMP: 00000002: split=SDOWN-2 mono=MDOWN-3
+DUMP: 00000000: sha1=MDOWN-1 rev=-1
+DUMP: 00000001: sha1=MDOWN-2 rev=-1
+DUMP: 00000002: sha1=MDOWN-3 rev=-1

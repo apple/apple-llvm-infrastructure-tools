@@ -1,0 +1,73 @@
+RUN: rm -rf %t.svn2git %t.split2mono
+RUN: mkdir %t.split2mono
+RUN: %svn2git create %t.svn2git
+RUN: %split2mono create %t.split2mono db
+
+# Create r1 and r3.  Note that setting the author timestamp with 'at' also
+# changes the default 'ct'.
+RUN: mkrepo %t-s
+RUN: mkrepo %t-m
+RUN: env at=1550000001 mkblob-svn -s %t-s -m %t-m -d sub 1
+RUN: git -C %t-m rev-list -1 master | xargs %svn2git insert %t.svn2git 1
+RUN: git -C %t-s branch r1
+RUN: env at=1550000003 mkblob-svn -s %t-s -m %t-m -d sub 3
+RUN: git -C %t-m rev-list -1 master | xargs %svn2git insert %t.svn2git 3
+RUN: git -C %t-s branch r3
+
+# Create a branch from r1, add a commit identical to r3 on top of a downstream
+# commit, and add another downstream commit.  This mimics having an extra-fast
+# cherry-pick as a parent.
+RUN: git -C %t-s checkout -b fast-cherry-pick r1
+RUN: env at=1550000002 mkblob %t-s 2
+RUN: env at=1550000003 mkblob-svn -s %t-s -d sub 3
+RUN: env at=1550000004 mkblob %t-s 4
+
+# Give %t-m access to %t-s.
+RUN: git -C %t-m remote add s %t-s
+RUN: git -C %t-m remote update
+
+RUN: git -C %t-m apple-llvm mt list-commits sub s/fast-cherry-pick \
+RUN:   | %split2mono -C %t-m interleave-commits                    \
+RUN:     %t.split2mono %t.svn2git                                  \
+RUN:     0000000000000000000000000000000000000000                  \
+RUN:     0000000000000000000000000000000000000000:sub >%t.out
+RUN: cat %t.out | awk '{print $1}' \
+RUN:   | xargs git -C %t-m update-ref fast-cherry-pick
+RUN: number-commits -p SREV %t-s master                         >%t.map
+RUN: number-commits -p SFCP %t-s fast-cherry-pick --not master >>%t.map
+RUN: number-commits -p MREV %t-m master                        >>%t.map
+RUN: number-commits -p MFCP %t-m fast-cherry-pick --not master >>%t.map
+RUN: git -C %t-m log fast-cherry-pick                   \
+RUN:       --format="--%%n%%H %%s%%n%%(trailers:only)"  \
+RUN:       --stat --name-status                         \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s LOG %t
+LOG: --
+LOG: MFCP-3 mkblob: 4
+LOG: apple-llvm-split-commit: SFCP-3
+LOG: apple-llvm-split-dir: sub/
+LOG: A sub/4
+LOG: --
+LOG: MFCP-2 mkblob-svn: r3
+LOG: git-svn-id: https://llvm.org/svn/llvm-project/sub/trunk@3 91177308-0d34-0410-b5e6-96231b3b80d8
+LOG: apple-llvm-split-commit: SFCP-2
+LOG: apple-llvm-split-dir: sub/
+LOG: A sub/3
+LOG: --
+LOG: MFCP-1 mkblob: 2
+LOG: apple-llvm-split-commit: SFCP-1
+LOG: apple-llvm-split-dir: sub/
+LOG: A sub/2
+LOG: --
+LOG: MREV-1 mkblob-svn: r1
+LOG: llvm-svn: 1
+LOG: A sub/1
+RUN: cat %t.out | apply-commit-numbers %t.map | check-diff %s OUT %t
+OUT: MFCP-3 SFCP-3:sub
+RUN: %split2mono dump %t.split2mono | apply-commit-numbers %t.map \
+RUN:   | grep -e sha1= -e split= | check-diff %s DUMP %t
+DUMP: 00000000: split=SFCP-1 mono=MFCP-1
+DUMP: 00000001: split=SFCP-2 mono=MFCP-2
+DUMP: 00000002: split=SFCP-3 mono=MFCP-3
+DUMP: 00000000: sha1=MFCP-1 rev=-1
+DUMP: 00000001: sha1=MFCP-2 rev=-1
+DUMP: 00000002: sha1=MFCP-3 rev=-1

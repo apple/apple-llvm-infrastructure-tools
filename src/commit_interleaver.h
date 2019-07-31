@@ -65,7 +65,7 @@ struct commit_interleaver {
   int translate_parents(const commit_source &source, const commit_type &base,
                         std::vector<sha1_ref> &new_parents,
                         std::vector<int> &parent_revs, sha1_ref first_parent,
-                        int &max_srev);
+                        int &new_srev);
   int interleave();
   int interleave_impl();
   int fast_forward_initial_repeats(progress_reporter &progress);
@@ -232,7 +232,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     fparents.back().ct = last_ct;
   }
 
-  sha1_trie<binary_sha1> skipped;
+  sha1_trie<git_cache::sha1_single> skipped;
   source.commits.first = commits.size();
   std::vector<sha1_ref> parents;
   while (true) {
@@ -249,14 +249,25 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     // Warm the cache.
     cache.note_commit_tree(commit, tree);
     if (is_boundary || source.is_repeat) {
+      bool is_merge = false;
+      sha1_ref first_parent;
+
       // Get the first parent of the first repeat commit, to decide whether to
       // fast forward.
+      if (!try_parse_space(current)) {
+        if (*current) {
+          if (parse_sha1(current, first_parent))
+            return error("invalid first parent of boundary or repeat commit");
+
+          // Check for a second parent, but don't parse it.
+          if (*current)
+            is_merge = true;
+        }
+      }
+
       if (!is_boundary)
         if (commits.size() == size_t(source.commits.first))
-          if (!try_parse_space(current))
-            if (*current)
-              if (parse_sha1(current, source.first_repeat_first_parent))
-                return error("invalid first parent of first repeat commit");
+          source.first_repeat_first_parent = first_parent;
 
       // Grab the metadata, which compute_mono might leverage if this is an
       // upstream git-svn commit.
@@ -265,7 +276,7 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       const char *metadata = current;
       if (parse_through_null(current))
         return error("missing null charactor after boundary metadata");
-      cache.note_metadata(commit, metadata);
+      cache.note_metadata(commit, metadata, is_merge, first_parent);
       if (parse_newline(current))
         return 1;
 
@@ -308,17 +319,15 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       // Get the rev.
       int rev = 0;
       if (cache.lookup_rev(commit, rev) || !rev) {
-        // Figure out the monorepo commit's rev, passing in the split commit's
-        // metadata to suppress a new git-log call.  This is necessary for
-        // checking the svnbase table (where split commits do not have
-        // entries).
-        if (cache.compute_rev_with_metadata(mono, rev, metadata))
+        // This can't be an upstream SVN commit or compute_mono would have
+        // cached the rev.  Just check the svnbaserev table.
+        if (cache.compute_base_rev(mono, rev))
           return error("cannot get rev for boundary parent " +
                        commit->to_string());
         (void)rev;
       } else {
-        // Nice; compute_mono above filled this in.  Note it in the monorepo
-        // commit as well.
+        // compute_mono above filled this in.  Note it in the monorepo commit
+        // as well.
         //
         // TODO: add a testcase where a second-level branch needs the
         // rev from a parent on a first-level branch.
@@ -366,20 +375,14 @@ int translation_queue::parse_source(const char *&current, const char *end) {
     const char *metadata = current;
     if (parse_through_null(current))
       return error("missing null charactor after metadata");
-    cache.note_metadata(commit, metadata);
+    cache.note_metadata(commit, metadata, /*is_merge=*/parents.size() > 1,
+                        parents.empty() ? sha1_ref() : parents.front());
 
     if (parse_newline(current))
       return 1;
 
     // Now that we have metadata (necessary for an SVN revision, if relevant),
     // check if commit has already been translated.
-    //
-    // TODO: add a testcase where a split repository history has forked with
-    // upstream LLVM and no splitref was added by mt-config.
-    //
-    // FIXME: is there a way to avoid this logic?  That might allow us to
-    // remove the blacklist in the transitive call to
-    // git_cache::compute_rev_with_metadata.
     sha1_ref mono;
     if (!cache.compute_mono(commit, mono)) {
       assert(mono);
@@ -390,6 +393,8 @@ int translation_queue::parse_source(const char *&current, const char *end) {
       continue;
     }
 
+    // We're committed to translating this commit.
+    cache.note_being_translated(commit);
     commits.back().num_parents = parents.size();
     if (!parents.empty()) {
       commits.back().parents = new (parent_alloc) sha1_ref[parents.size()];
@@ -430,8 +435,8 @@ int commit_interleaver::translate_parents(const commit_source &source,
                                           std::vector<sha1_ref> &new_parents,
                                           std::vector<int> &parent_revs,
                                           sha1_ref first_parent,
-                                          int &max_srev) {
-  max_srev = 0;
+                                          int &new_srev) {
+  new_srev = 0;
   int max_urev = 0;
   auto process_future = [&](sha1_ref p) {
     auto *bc_index = source.worker->boundary_index_map.lookup(*p);
@@ -455,12 +460,12 @@ int commit_interleaver::translate_parents(const commit_source &source,
 
     new_parents.push_back(p);
     int srev = 0;
-    cache.compute_rev(p, srev);
+    cache.compute_rev(p, /*is_split=*/!source.is_repeat, srev);
     parent_revs.push_back(srev);
     int urev = srev < 0 ? -srev : srev;
     if (urev > max_urev) {
       max_urev = urev;
-      max_srev = srev;
+      new_srev = -int(max_urev);
     }
   };
 
@@ -865,7 +870,9 @@ void commit_interleaver::print_heads(FILE *file) {
       continue;
 
     auto &dir = dirs.list[d];
-    assert(bool(dir.head) == dirs.active_dirs.test(d));
+
+    // "==" can fail if an error is returned while mapping the first commit.
+    assert(bool(dir.head) <= dirs.active_dirs.test(d));
     set_sha1(dir.head);
     fprintf(file, " %s:%s", sha1.bytes, dir.name);
   }
@@ -895,7 +902,7 @@ int commit_interleaver::translate_commit(
                      parent_revs, items, new_tree) ||
       cache.commit_tree(base.commit, dir, new_tree, new_parents, new_commit,
                         buffers) ||
-      cache.set_rev(new_commit, rev) ||
+      cache.set_base_rev(new_commit, rev) ||
       (!source.is_repeat && cache.set_mono(base.commit, new_commit)))
     return 1;
   if (!head)
