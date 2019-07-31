@@ -1,0 +1,333 @@
+RUN: mkblob-svn -h       | grep usage: | check-diff %s USAGE %t
+RUN: mkblob-svn --help   | grep usage: | check-diff %s USAGE %t
+RUN: not mkblob-svn 2>&1 | grep usage: | check-diff %s USAGE %t
+USAGE: usage: mkblob-svn [options] rev [msg...]
+
+RUN: not mkblob-svn -s abc 2>&1 | check-diff %s MISSING-REV %t
+MISSING-REV: error: missing revision; see --help
+
+RUN: not mkblob-svn 0 "msg" 2>&1 | check-diff %s INVALID-REV-0 %t
+RUN: not mkblob-svn 0       2>&1 | check-diff %s INVALID-REV-0 %t
+RUN: not mkblob-svn X "msg" 2>&1 | check-diff %s INVALID-REV-X %t
+RUN: not mkblob-svn X       2>&1 | check-diff %s INVALID-REV-X %t
+INVALID-REV-0: error: invalid revision '0'
+INVALID-REV-X: error: invalid revision 'X'
+
+RUN: not mkblob-svn 5 2>&1 | check-diff %s NO-REPOS %t
+NO-REPOS: error: at least one of '-s' and '-m' required
+
+RUN: rm -rf %t
+RUN: not mkblob-svn -s %t     5 2>&1                 \
+RUN:   | sed -e "s,%t,missing-repo," -e 's,-s ,-X ,' \
+RUN:   | check-diff %s MISSING-REPO %t
+RUN: not mkblob-svn -s %t:sub 5 2>&1                 \
+RUN:   | sed -e "s,%t,missing-repo," -e 's,-s ,-X ,' \
+RUN:   | check-diff %s MISSING-REPO-SUB %t
+RUN: not mkblob-svn -m %t     5 2>&1                 \
+RUN:   | sed -e "s,%t,missing-repo," -e 's,-m ,-X ,' \
+RUN:   | check-diff %s MISSING-REPO %t
+RUN: not mkblob-svn -m %t:sub 5 2>&1                 \
+RUN:   | sed -e "s,%t,missing-repo," -e 's,-m ,-X ,' \
+RUN:   | check-diff %s MISSING-REPO-SUB %t
+MISSING-REPO:     error: cannot find repo for '-X missing-repo'
+MISSING-REPO-SUB: error: cannot find repo for '-X missing-repo:sub'
+
+RUN: mkdir %t
+RUN: not mkblob-svn -s %t     5 2>&1             \
+RUN:   | sed -e "s,%t,bad-repo," -e 's,-s ,-X ,' \
+RUN:   | check-diff %s BAD-REPO %t
+RUN: not mkblob-svn -s %t:sub 5 2>&1             \
+RUN:   | sed -e "s,%t,bad-repo," -e 's,-s ,-X ,' \
+RUN:   | check-diff %s BAD-REPO-SUB %t
+RUN: not mkblob-svn -m %t     5 2>&1             \
+RUN:   | sed -e "s,%t,bad-repo," -e 's,-m ,-X ,' \
+RUN:   | check-diff %s BAD-REPO %t
+RUN: not mkblob-svn -m %t:sub 5 2>&1             \
+RUN:   | sed -e "s,%t,bad-repo," -e 's,-m ,-X ,' \
+RUN:   | check-diff %s BAD-REPO-SUB %t
+BAD-REPO:     error: invalid repo for '-X bad-repo'
+BAD-REPO-SUB: error: invalid repo for '-X bad-repo:sub'
+
+RUN: mkrepo %t-s
+RUN: mkrepo %t-m
+RUN: not mkblob-svn -s %t-s             5 2>&1 \
+RUN:   | sed -e "s,%t-s,repo," -e 's,-s ,-X ,' \
+RUN:   | check-diff %s NO-IMPLIED-DIR %t
+RUN: not mkblob-svn -s %t-s -m %t-m:sub 5 2>&1 \
+RUN:   | sed -e "s,%t-s,repo," -e 's,-s ,-X ,' \
+RUN:   | check-diff %s NO-IMPLIED-DIR %t
+RUN: not mkblob-svn -m %t-m             5 2>&1 \
+RUN:   | sed -e "s,%t-m,repo," -e 's,-m ,-X ,' \
+RUN:   | check-diff %s NO-IMPLIED-DIR %t
+RUN: not mkblob-svn -m %t-m -s %t-s:sub 5 2>&1 \
+RUN:   | sed -e "s,%t-m,repo," -e 's,-m ,-X ,' \
+RUN:   | check-diff %s NO-IMPLIED-DIR %t
+NO-IMPLIED-DIR: error: no implied dir for '-X repo'
+
+RUN: env at=1550000001 mkblob-svn -d subdir -m %t-m   -s %t-s      1
+RUN: env at=1550000002 mkblob-svn -d subdir -m %t-m   -s %t-s -b X 2
+RUN: env at=1550000003 mkblob-svn -d subdir           -s %t-s      3
+RUN: env at=1550000004 mkblob-svn -d subdir -m %t-m                4
+RUN: env at=1550000005 mkblob-svn -d root   -m %t-m:- -s %t-s      5
+RUN: env at=1550000006 mkblob-svn -d -      -m %t-m   -s %t-s:root 6
+RUN: env at=1550000007 mkblob-svn -d subdir -m %t-m:- -s %t-s:root 7
+RUN: env at=1550000008 mkblob-svn           -m %t-m:- -s %t-s:root 8
+RUN: env at=1550000009 mkblob-svn -d subdir -m %t-m -s %t-s 9 subject
+RUN: env at=1550000010 mkblob-svn -d subdir -m %t-m -s %t-s 10 a b c
+RUN: env at=1550000011 mkblob-svn -d subdir -m %t-m -s %t-s 11 -t x:y -t w=z
+RUN: env at=1550000012 mkblob-svn -d subdir -m %t-m -s %t-s 12 -t x:y -t w=z \
+RUN:                                                           a b c
+
+# Check that we error out on duplicates.
+RUN: not mkblob-svn -d subdir -s %t-s 1 2>&1 | sed -e "s,'-s.*','spelling'," \
+RUN:   | check-diff %s DUPLICATE %t
+RUN: not mkblob-svn -d subdir -m %t-m 1 2>&1 | sed -e "s,'-m.*','spelling'," \
+RUN:   | check-diff %s DUPLICATE %t
+DUPLICATE: error: blob '1' already exists for 'spelling'
+
+# Check blob contents.
+RUN: cat %t-s/1 | check-diff %s BLOB-1 %t
+RUN: cat %t-s/X | check-diff %s BLOB-X %t
+RUN: cat %t-s/3 | check-diff %s BLOB-3 %t
+RUN: cat %t-s/5 | check-diff %s BLOB-5 %t
+RUN: cat %t-m/subdir/1 | check-diff %s BLOB-1 %t
+RUN: cat %t-m/subdir/X | check-diff %s BLOB-X %t
+RUN: cat %t-m/subdir/4 | check-diff %s BLOB-4 %t
+RUN: cat %t-m/5        | check-diff %s BLOB-5 %t
+BLOB-1: 1
+BLOB-X: X
+BLOB-3: 3
+BLOB-4: 4
+BLOB-5: 5
+
+# Confirm mkcommit is used under the hood.
+RUN: git -C %t-s log --date=raw -1                                \
+RUN:      --format=format:%%an%%n%%cn%%n%%ae%%n%%ce%%n%%ad%%n%%cd \
+RUN:   | check-diff %s METADATA %t
+RUN: git -C %t-m log --date=raw -1                                \
+RUN:      --format=format:%%an%%n%%cn%%n%%ae%%n%%ce%%n%%ad%%n%%cd \
+RUN:   | check-diff %s METADATA %t
+METADATA: mkblob.sh
+METADATA: mkblob.sh
+METADATA: mkblob@apple.llvm
+METADATA: mkblob@apple.llvm
+METADATA: 1550000012 +0000
+METADATA: 1550000012 +0000
+
+# Check that the git-svn-id tags have the right form (other checks will shorten
+# them).
+RUN: git -C %t-s log --reverse --format=format:%B -1 | grep git-svn-id: \
+RUN:   | check-diff %s GIT-SVN-ID %t
+GIT-SVN-ID: git-svn-id: https://llvm.org/svn/llvm-project/subdir/trunk@12 91177308-0d34-0410-b5e6-96231b3b80d8
+
+# Check the logs and paths.
+RUN: git -C %t-s log --reverse --format=format:--%n%B --name-status \
+RUN:   | sed -e 's,https://llvm.org/svn/llvm-project/,,'            \
+RUN:         -e 's,/trunk\(@[0-9]*\) .*,\1,'                        \
+RUN:   | check-diff %s LOG-SPLIT %t
+LOG-SPLIT: --
+LOG-SPLIT: mkblob-svn: r1
+LOG-SPLIT:
+LOG-SPLIT: added the blob '1'
+LOG-SPLIT:
+LOG-SPLIT: git-svn-id: subdir@1
+LOG-SPLIT:
+LOG-SPLIT: A 1
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: mkblob-svn: r2
+LOG-SPLIT:
+LOG-SPLIT: added the blob 'X'
+LOG-SPLIT:
+LOG-SPLIT: git-svn-id: subdir@2
+LOG-SPLIT:
+LOG-SPLIT: A X
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: mkblob-svn: r3
+LOG-SPLIT:
+LOG-SPLIT: added the blob '3'
+LOG-SPLIT:
+LOG-SPLIT: git-svn-id: subdir@3
+LOG-SPLIT:
+LOG-SPLIT: A 3
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: mkblob-svn: r5
+LOG-SPLIT:
+LOG-SPLIT: added the blob '5'
+LOG-SPLIT:
+LOG-SPLIT: git-svn-id: root@5
+LOG-SPLIT:
+LOG-SPLIT: A 5
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: mkblob-svn: r6
+LOG-SPLIT:
+LOG-SPLIT: added the blob '6'
+LOG-SPLIT:
+LOG-SPLIT: git-svn-id: root@6
+LOG-SPLIT:
+LOG-SPLIT: A 6
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: mkblob-svn: r7
+LOG-SPLIT:
+LOG-SPLIT: added the blob '7'
+LOG-SPLIT:
+LOG-SPLIT: git-svn-id: root@7
+LOG-SPLIT:
+LOG-SPLIT: A 7
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: mkblob-svn: r8
+LOG-SPLIT:
+LOG-SPLIT: added the blob '8'
+LOG-SPLIT:
+LOG-SPLIT: git-svn-id: root@8
+LOG-SPLIT:
+LOG-SPLIT: A 8
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: subject
+LOG-SPLIT:
+LOG-SPLIT: git-svn-id: subdir@9
+LOG-SPLIT:
+LOG-SPLIT: A 9
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: a
+LOG-SPLIT:
+LOG-SPLIT: b
+LOG-SPLIT: c
+LOG-SPLIT:
+LOG-SPLIT: git-svn-id: subdir@10
+LOG-SPLIT:
+LOG-SPLIT: A 10
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: mkblob-svn: r11
+LOG-SPLIT:
+LOG-SPLIT: added the blob '11'
+LOG-SPLIT:
+LOG-SPLIT: x: y
+LOG-SPLIT: w: z
+LOG-SPLIT: git-svn-id: subdir@11
+LOG-SPLIT:
+LOG-SPLIT: A 11
+LOG-SPLIT:
+LOG-SPLIT: --
+LOG-SPLIT: a
+LOG-SPLIT:
+LOG-SPLIT: b
+LOG-SPLIT: c
+LOG-SPLIT:
+LOG-SPLIT: x: y
+LOG-SPLIT: w: z
+LOG-SPLIT: git-svn-id: subdir@12
+LOG-SPLIT:
+LOG-SPLIT: A 12
+RUN: git -C %t-m log --reverse --format=format:--%n%B --name-status \
+RUN:   | check-diff %s LOG-MONO %t
+LOG-MONO: --
+LOG-MONO: mkblob-svn: r1
+LOG-MONO:
+LOG-MONO: added the blob '1'
+LOG-MONO:
+LOG-MONO: llvm-svn: 1
+LOG-MONO:
+LOG-MONO: A subdir/1
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: mkblob-svn: r2
+LOG-MONO:
+LOG-MONO: added the blob 'X'
+LOG-MONO:
+LOG-MONO: llvm-svn: 2
+LOG-MONO:
+LOG-MONO: A subdir/X
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: mkblob-svn: r4
+LOG-MONO:
+LOG-MONO: added the blob '4'
+LOG-MONO:
+LOG-MONO: llvm-svn: 4
+LOG-MONO:
+LOG-MONO: A subdir/4
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: mkblob-svn: r5
+LOG-MONO:
+LOG-MONO: added the blob '5'
+LOG-MONO:
+LOG-MONO: llvm-svn: 5
+LOG-MONO:
+LOG-MONO: A 5
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: mkblob-svn: r6
+LOG-MONO:
+LOG-MONO: added the blob '6'
+LOG-MONO:
+LOG-MONO: llvm-svn: 6
+LOG-MONO:
+LOG-MONO: A 6
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: mkblob-svn: r7
+LOG-MONO:
+LOG-MONO: added the blob '7'
+LOG-MONO:
+LOG-MONO: llvm-svn: 7
+LOG-MONO:
+LOG-MONO: A 7
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: mkblob-svn: r8
+LOG-MONO:
+LOG-MONO: added the blob '8'
+LOG-MONO:
+LOG-MONO: llvm-svn: 8
+LOG-MONO:
+LOG-MONO: A 8
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: subject
+LOG-MONO:
+LOG-MONO: llvm-svn: 9
+LOG-MONO:
+LOG-MONO: A subdir/9
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: a
+LOG-MONO:
+LOG-MONO: b
+LOG-MONO: c
+LOG-MONO:
+LOG-MONO: llvm-svn: 10
+LOG-MONO:
+LOG-MONO: A subdir/10
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: mkblob-svn: r11
+LOG-MONO:
+LOG-MONO: added the blob '11'
+LOG-MONO:
+LOG-MONO: x: y
+LOG-MONO: w: z
+LOG-MONO: llvm-svn: 11
+LOG-MONO:
+LOG-MONO: A subdir/11
+LOG-MONO:
+LOG-MONO: --
+LOG-MONO: a
+LOG-MONO:
+LOG-MONO: b
+LOG-MONO: c
+LOG-MONO:
+LOG-MONO: x: y
+LOG-MONO: w: z
+LOG-MONO: llvm-svn: 12
+LOG-MONO:
+LOG-MONO: A subdir/12

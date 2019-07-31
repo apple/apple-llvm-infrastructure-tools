@@ -1,0 +1,125 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/init.sh
+
+usage() {
+    printf "%s\n" \
+        "usage: mkblob-svn [options] rev [msg...]"                              \
+        "  -b blob        name/content of blob"                                 \
+        "                 * defaults to rev"                                    \
+        "  -d dir         directory/project name for monorepo and git-svn-id"   \
+        "                 * optional if -s/-m specify explicitly"               \
+        "  -s repo[:dir]  split repo, with 'git-svn-id:' trailers"              \
+        "                 * optional dir overrides -d for trailers"             \
+        "  -m repo[:dir]  monorepo, with 'llvm-svn:' trailers"                  \
+        "                 * optional dir overrides -d for monorepo paths"       \
+        "                 * use repo:- for root"                                \
+        "  -t key=value   trailers"                                             \
+        "                 * can be specified multiple times"                    \
+        "                 * note: 'git-svn-id:' and 'llvm-svn:' are implied"    \
+        "  msg...         commit message, excluding trailers"                   \
+        "                 * default based on rev"                               \
+        "                 * multiple positional arguments appended"             \
+        "                   and newline-separated"                              \
+        "                 * implied empty line between first and second arg to" \
+        "                   create subject"
+}
+
+main() {
+    if [ $# -eq 0 ]; then
+        usage >&2
+        exit 1
+    fi
+
+    local blob rev dir split mono lines=() trailers=() pos=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) usage; exit 0;;
+            -d) dir="$2";                                     shift 2;;
+            -b) blob="$2";                                    shift 2;;
+            -s) split="$2";                                   shift 2;;
+            -m) mono="$2";                                    shift 2;;
+            -t) trailers=( "${trailers[@]}" --trailer "$2" ); shift 2;;
+            -*) error "unknown option $1";;
+            *)
+                case $pos in
+                    0) rev="$1";;
+                    2) lines=( "${lines[@]}" "" "$1" );;
+                    *) lines=( "${lines[@]}" "$1" );;
+                esac
+                pos=$(( $pos + 1 ))
+                shift;;
+        esac
+    done
+
+    [ $pos -ge 1 ] || error "missing revision; see --help"
+    [ "$rev" -gt 0 ] 2>/dev/null || error "invalid revision '$rev'"
+
+    blob="${blob:-$rev}"
+    [ $pos -gt 1 ] || lines=( "mkblob-svn: r$rev" "" "added the blob '$blob'" )
+
+    get_repo() { printf "%s" "${1%:*}"; }
+    get_dir() {
+        local extracted="${1##*:}"
+        if [ "$extracted" = "$1" ]; then
+            printf "%s" "$dir"
+        else
+            printf "%s" "$extracted"
+        fi
+    }
+
+    local splitrepo="$(get_repo "$split")"
+    local monorepo="$(get_repo "$mono")"
+    local splitdir="$(get_dir "$split")"
+    local monodir="$(get_dir "$mono")"
+    [ -n "$splitrepo" ] || [ -n "$monorepo" ] ||
+        error "at least one of '-s' and '-m' required"
+
+    validate "-m $mono" "$monorepo" "$monodir" "$monodir"
+    validate "-s $split" "$splitrepo" "$splitdir"
+
+    [ -z "$mono" ]  ||
+        make_blob llvm-svn:$rev "$monorepo" "$monodir"
+    [ -z "$split" ] ||
+        make_blob git-svn-id:"$(gitsvntag "$splitdir" $rev)" "$splitrepo"
+}
+
+validate() {
+    local relative file spelling="$1" repo="$2" dir="$3" subdir="$4"
+    [ -n "$repo" ] || return 0
+    setup_file || error "failed to validate '$spelling'"
+
+    [ -d "$repo" ] || error "cannot find repo for '$spelling'"
+    [ -d "$repo/.git" ] || error "invalid repo for '$spelling'"
+    [ -n "$dir" ] || error "no implied dir for '$spelling'"
+    [ ! -e "$file" ] || error "blob '$blob' already exists for '$spelling'"
+}
+
+gitsvntag() {
+    printf "https://llvm.org/svn/llvm-project/%s/trunk@%s %s\n" \
+        "$1" "$2" "91177308-0d34-0410-b5e6-96231b3b80d8"
+}
+
+setup_file() {
+    [ -n "$repo" ] || printf "internal-error: no value for '\$repo'" >&2
+    if [ -z "$subdir" -o "$subdir" = - ]; then
+        relative="$blob"
+    else
+        relative="$subdir/$blob"
+    fi
+    file="$repo/$relative"
+}
+
+make_blob() {
+    local relative file tag="$1" repo="$2" subdir="$3"
+    setup_file || error "failed to make blob for '$repo'"
+
+    check mkdir -p "$(dirname "$file")"
+    check printf "%s\n" "$blob" > "$file"
+    check git -C "$repo" add "$relative"
+    run printf "%s\n" "${lines[@]}" |
+    run git -C "$repo" interpret-trailers "${trailers[@]}" --trailer "$tag" |
+    execdir mkcommit "$repo" -a -F - || exit 1
+}
+
+main "$@"
