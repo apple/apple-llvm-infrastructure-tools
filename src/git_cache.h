@@ -40,23 +40,53 @@ struct git_tree {
 };
 
 struct git_cache {
+  /// Mark the given commit as one that will be translated.  Even if it can't
+  /// be found in the commits table, it'll be there eventually.
+  void note_being_translated(sha1_ref commit);
+
   void note_commit_tree(sha1_ref commit, sha1_ref tree);
-  void note_mono(sha1_ref split, sha1_ref mono);
+  void note_mono(sha1_ref split, sha1_ref mono, bool is_based_on_rev);
   void note_rev(sha1_ref commit, int rev);
   void note_tree(const git_tree &tree);
-  void note_metadata(sha1_ref commit, const char *metadata);
+  void note_metadata(sha1_ref commit, const char *metadata, bool is_merge,
+                     sha1_ref first_parent);
+
+  /// Check whether the given commit is going to be (and/or has been)
+  /// translated and stored in the commits table.
+  bool is_being_translated(sha1_ref commit);
+
   int lookup_commit_tree(sha1_ref commit, sha1_ref &tree) const;
   int lookup_mono(sha1_ref split, sha1_ref &mono) const;
+  int lookup_mono_impl(sha1_ref split, sha1_ref &mono,
+                       bool &is_based_on_rev) const;
   int lookup_rev(sha1_ref commit, int &rev) const;
   int lookup_tree(git_tree &tree) const;
-  int lookup_metadata(sha1_ref commit, const char *&metadata) const;
+  int lookup_metadata(sha1_ref commit, const char *&metadata, bool &is_merge,
+                      sha1_ref &first_parent) const;
   int compute_commit_tree(sha1_ref commit, sha1_ref &tree);
-  int compute_metadata(sha1_ref commit, const char *&metadata);
-  int compute_rev(sha1_ref commit, int &rev);
-  int compute_rev_with_metadata(sha1_ref commit, int &rev,
-                                const char *raw_metadata);
-  int set_rev(sha1_ref commit, int rev);
+  int compute_metadata(sha1_ref commit, const char *&metadata, bool &is_merge,
+                       sha1_ref &first_parent);
+  int compute_rev(sha1_ref commit, bool is_split, int &rev);
+  int compute_rev_with_metadata(sha1_ref commit, bool is_split, int &rev,
+                                const char *raw_metadata, bool is_merge,
+                                sha1_ref first_parent);
+
+  /// Add an entry to the svnbaserev table.
+  int set_base_rev(sha1_ref commit, int rev);
+
+  /// Figure out the base rev by looking in the svnbaserev table.
+  int compute_base_rev(sha1_ref commit, int &rev);
+
+  /// Figure out the monorepo commit without doing any rev-based heroics.  Note
+  /// that this still hits the in-memory cache.  If a previous call to
+  /// compute_mono cached a result based on the rev, then is_based_on_rev will
+  /// be true.
+  int compute_mono_from_table(sha1_ref split, sha1_ref &mono,
+                              bool &is_based_on_rev);
+
+  /// Compute the monorepo commit, including rev-based heroics.
   int compute_mono(sha1_ref split, sha1_ref &mono);
+
   int set_mono(sha1_ref split, sha1_ref mono);
   int ls_tree(git_tree &tree);
   int mktree(git_tree &tree);
@@ -107,11 +137,25 @@ struct git_cache {
                             git_cache::commit_tree_buffers &buffers,
                             bool is_merge);
 
+  struct sha1_single {
+    sha1_ref key;
+
+    explicit sha1_single(const binary_sha1 &sha1) : key(&sha1) {}
+    explicit operator const binary_sha1 &() const { return *key; }
+  };
   struct sha1_pair {
     sha1_ref key;
     sha1_ref value;
 
     explicit sha1_pair(const binary_sha1 &sha1) : key(&sha1) {}
+    explicit operator const binary_sha1 &() const { return *key; }
+  };
+  struct split2mono_pair {
+    sha1_ref key;
+    sha1_ref value;
+    bool is_based_on_rev = false;
+
+    explicit split2mono_pair(const binary_sha1 &sha1) : key(&sha1) {}
     explicit operator const binary_sha1 &() const { return *key; }
   };
   struct git_svn_base_rev {
@@ -130,7 +174,9 @@ struct git_cache {
 
   struct sha1_metadata {
     sha1_ref commit;
-    const char *metadata;
+    const char *metadata = nullptr;
+    bool is_merge = false;
+    sha1_ref first_parent;
 
     explicit sha1_metadata(const binary_sha1 &sha1) : commit(&sha1) {}
     explicit operator const binary_sha1 &() const { return *commit; }
@@ -139,8 +185,9 @@ struct git_cache {
   sha1_trie<git_tree> trees;
   sha1_trie<sha1_pair> commit_trees;
   sha1_trie<git_svn_base_rev> revs;
-  sha1_trie<sha1_pair> monos;
+  sha1_trie<split2mono_pair> monos;
   sha1_trie<sha1_metadata> metadata;
+  sha1_trie<sha1_single> being_translated;
 
   std::vector<const char *> names;
   std::vector<std::unique_ptr<char[]>> big_metadata;
@@ -191,6 +238,14 @@ constexpr const char *git_tree::item_type::get_type(type_enum type) {
   return nullptr;
 }
 
+void git_cache::note_being_translated(sha1_ref commit) {
+  assert(commit);
+  bool was_inserted = false;
+  sha1_single *inserted = being_translated.insert(*commit, was_inserted);
+  assert(inserted);
+  assert(was_inserted);
+}
+
 void git_cache::note_commit_tree(sha1_ref commit, sha1_ref tree) {
   assert(tree);
   bool was_inserted = false;
@@ -206,12 +261,13 @@ void git_cache::note_rev(sha1_ref commit, int rev) {
   inserted->rev = rev;
 }
 
-void git_cache::note_mono(sha1_ref split, sha1_ref mono) {
+void git_cache::note_mono(sha1_ref split, sha1_ref mono, bool is_based_on_rev) {
   assert(mono);
   bool was_inserted = false;
-  sha1_pair *inserted = monos.insert(*split, was_inserted);
+  split2mono_pair *inserted = monos.insert(*split, was_inserted);
   assert(inserted);
   inserted->value = mono;
+  inserted->is_based_on_rev = is_based_on_rev;
 }
 
 void git_cache::note_tree(const git_tree &tree) {
@@ -222,11 +278,18 @@ void git_cache::note_tree(const git_tree &tree) {
   *inserted = tree;
 }
 
-void git_cache::note_metadata(sha1_ref commit, const char *metadata) {
+void git_cache::note_metadata(sha1_ref commit, const char *metadata,
+                              bool is_merge, sha1_ref first_parent) {
   bool was_inserted = false;
   sha1_metadata *inserted = this->metadata.insert(*commit, was_inserted);
   assert(inserted);
   inserted->metadata = metadata;
+  inserted->is_merge = is_merge;
+  inserted->first_parent = first_parent;
+}
+
+bool git_cache::is_being_translated(sha1_ref commit) {
+  return being_translated.lookup(*commit);
 }
 
 int git_cache::lookup_commit_tree(sha1_ref commit, sha1_ref &tree) const {
@@ -246,10 +309,16 @@ int git_cache::lookup_rev(sha1_ref commit, int &rev) const {
 }
 
 int git_cache::lookup_mono(sha1_ref split, sha1_ref &mono) const {
-  sha1_pair *existing = monos.lookup(*split);
+  bool is_based_on_rev;
+  return lookup_mono_impl(split, mono, is_based_on_rev);
+}
+int git_cache::lookup_mono_impl(sha1_ref split, sha1_ref &mono,
+                                bool &is_based_on_rev) const {
+  split2mono_pair *existing = monos.lookup(*split);
   if (!existing)
     return 1;
   mono = existing->value;
+  is_based_on_rev = existing->is_based_on_rev;
   return 0;
 }
 
@@ -261,11 +330,14 @@ int git_cache::lookup_tree(git_tree &tree) const {
   return 0;
 }
 
-int git_cache::lookup_metadata(sha1_ref commit, const char *&metadata) const {
+int git_cache::lookup_metadata(sha1_ref commit, const char *&metadata,
+                               bool &is_merge, sha1_ref &first_parent) const {
   sha1_metadata *existing = this->metadata.lookup(*commit);
   if (!existing)
     return 1;
   metadata = existing->metadata;
+  is_merge = existing->is_merge;
+  first_parent = existing->first_parent;
   return 0;
 }
 
@@ -273,35 +345,49 @@ int git_cache::set_mono(sha1_ref split, sha1_ref mono) {
   if (commits_query(*split).insert_data(db.commits, *mono))
     return error("failed to map split " + split->to_string() + " to mono " +
                  mono->to_string());
-  note_mono(split, mono);
+  note_mono(split, mono, /*is_based_on_rev=*/false);
   return 0;
 }
-int git_cache::compute_mono(sha1_ref split, sha1_ref &mono) {
-  if (!lookup_mono(split, mono))
+
+int git_cache::compute_mono_from_table(sha1_ref split, sha1_ref &mono,
+                                       bool &is_based_on_rev) {
+  if (!lookup_mono_impl(split, mono, is_based_on_rev))
     return 0;
 
+  is_based_on_rev = false;
   binary_sha1 sha1;
-  if (!commits_query(*split).lookup_data(db.commits, sha1)) {
-    mono = pool.lookup(sha1);
-    note_mono(split, mono);
-    return 0;
-  }
-
-  int rev = -1;
-  if (compute_rev(split, rev) || rev <= 0)
+  if (commits_query(*split).lookup_data(db.commits, sha1))
     return 1;
 
+  mono = pool.lookup(sha1);
+  note_mono(split, mono, /*is_based_on_rev=*/false);
+  return 0;
+}
+
+int git_cache::compute_mono(sha1_ref split, sha1_ref &mono) {
+  bool is_based_on_rev = false;
+  if (!compute_mono_from_table(split, mono, is_based_on_rev))
+    return 0;
+
+  int rev = -1;
+  if (compute_rev(split, /*is_split=*/true, rev) || rev <= 0)
+    return 1;
+
+  // This looks like a real git-svn commit.  Even so, there may not be a
+  // monorepo commit for it.  Not all historical branches got translated.
+  // Unfortunately this makes it impossible to differentiate "not mapped" and
+  // "no monorepo commit" from here.
   auto *bytes = reinterpret_cast<const unsigned char *>(svn2git.bytes);
   long offset = 20 * rev;
   if (offset + 20 > svn2git.num_bytes)
     return 1;
+
+  binary_sha1 sha1;
   sha1.from_binary(bytes + offset);
-  // TODO: add testcase for something like r137571 which has a valid SVN
-  // revision but is not in the monorepo.
   mono = pool.lookup(sha1);
   if (!mono)
     return 1;
-  note_mono(split, mono);
+  note_mono(split, mono, /*is_based_on_rev=*/true);
   note_rev(mono, rev);
   return 0;
 }
@@ -328,8 +414,9 @@ int git_cache::compute_commit_tree(sha1_ref commit, sha1_ref &tree) {
   return 0;
 }
 
-int git_cache::compute_metadata(sha1_ref commit, const char *&metadata) {
-  if (!lookup_metadata(commit, metadata))
+int git_cache::compute_metadata(sha1_ref commit, const char *&metadata,
+                                bool &is_merge, sha1_ref &first_parent) {
+  if (!lookup_metadata(commit, metadata, is_merge, first_parent))
     return 0;
 
   textual_sha1 sha1(*commit);
@@ -337,7 +424,7 @@ int git_cache::compute_metadata(sha1_ref commit, const char *&metadata) {
                         "log",
                         "--date=raw",
                         "-1",
-                        "--format=format:%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B",
+                        "--format=format:%P%n%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B",
                         sha1.bytes,
                         nullptr};
   git_reply.clear();
@@ -347,21 +434,68 @@ int git_cache::compute_metadata(sha1_ref commit, const char *&metadata) {
   if (git_reply.empty())
     return error("missing commit metadata for " + sha1.to_string());
 
+  // Parse the parents eagerly to fill in is_merge and first_parent.
+  auto parse_parents = [&](const char *&end_parents) {
+    // Check for a root commit.
+    if (*end_parents == '\n')
+      return 0;
+
+    textual_sha1 text;
+    if (text.from_input(git_reply.data(), &end_parents))
+      return error("invalid first parent for " + sha1.to_string());
+
+    first_parent = pool.lookup(text);
+    if (!first_parent)
+      return error("null first parent for " + sha1.to_string());
+
+    // Check for only one parent.
+    if (*end_parents == '\n')
+      return 0;
+
+    // This is a merge commit with multiple parents.  Skip the the newline.
+    is_merge = true;
+    for (; *end_parents != '\n'; ++end_parents)
+      if (!*end_parents)
+        return error("invalid parent metadata for " + sha1.to_string());
+    return 0;
+  };
+
+  git_reply.push_back(0);
+  const char *end_parents = git_reply.data();
+  if (parse_parents(end_parents))
+    return 1;
+  assert(*end_parents == '\n');
+  git_reply.pop_back();
+  ++end_parents;
+
+  const auto message_size = git_reply.size() - (end_parents - git_reply.data());
+
+  // Save the rest.
   char *&storage = const_cast<char *&>(metadata);
-  if (git_reply.size() >= 4096) {
-    big_metadata.emplace_back(new char[git_reply.size() + 1]);
+  if (message_size >= 4096) {
+    big_metadata.emplace_back(new char[message_size + 1]);
     storage = big_metadata.back().get();
   } else {
-    storage = new (name_alloc.allocate(git_reply.size() + 1,
-                                       1)) char[git_reply.size() + 1];
+    storage =
+        new (name_alloc.allocate(message_size + 1, 1)) char[message_size + 1];
   }
-  memcpy(storage, &git_reply[0], git_reply.size());
-  storage[git_reply.size()] = 0;
-  note_metadata(commit, storage);
+  memcpy(storage, &git_reply[0], message_size);
+  storage[message_size] = 0;
+  note_metadata(commit, storage, is_merge, first_parent);
   return 0;
 }
 
-int git_cache::set_rev(sha1_ref commit, int rev) {
+int git_cache::set_base_rev(sha1_ref commit, int rev) {
+  // We expect this to always be negative, since llvm.org upstream commits
+  // don't get mapped.
+  if (rev > 0)
+    return error("unexpected upstream mapping from r" + std::to_string(rev) +
+                 " to " + commit->to_string());
+
+  // It's a little unfortunate to be storing something that is never positive
+  // as a negative number, but a long-standing bug means that existing
+  // databases have negative numbers in them.  It's not clear there's good
+  // motivation to change now.
   svnbaserev dbrev;
   dbrev.set_rev(rev);
   if (svnbase_query(*commit).insert_data(db.svnbase, dbrev))
@@ -371,54 +505,67 @@ int git_cache::set_rev(sha1_ref commit, int rev) {
   return 0;
 }
 
-int git_cache::compute_rev(sha1_ref commit, int &rev) {
-  return compute_rev_with_metadata(commit, rev, nullptr);
+int git_cache::compute_rev(sha1_ref commit, bool is_split, int &rev) {
+  return compute_rev_with_metadata(commit, is_split, rev, nullptr, false,
+                                   sha1_ref());
 }
 
-int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
-                                         const char *raw_metadata) {
+int git_cache::compute_base_rev(sha1_ref commit, int &rev) {
   if (!lookup_rev(commit, rev))
     return 0;
 
-  {
-    svnbaserev dbrev;
-    if (!svnbase_query(*commit).lookup_data(db.svnbase, dbrev)) {
-      // Negative indicates it's not upstream.
-      rev = -dbrev.get_rev();
-      note_rev(commit, rev);
+  svnbaserev dbrev;
+  if (svnbase_query(*commit).lookup_data(db.svnbase, dbrev))
+    return 1;
+
+  // We expect this to always be negative, since llvm.org upstream commits
+  // don't get mapped.
+  rev = dbrev.get_rev();
+  note_rev(commit, rev);
+  return 0;
+}
+
+int git_cache::compute_rev_with_metadata(sha1_ref commit, bool is_split,
+                                         int &rev, const char *raw_metadata,
+                                         bool is_merge, sha1_ref first_parent) {
+  if (is_split) {
+    // Split commits aren't mapped in the svnbaserev table.
+    if (!lookup_rev(commit, rev))
       return 0;
-    }
-  }
-
-  // Manually blacklist cherry-picks that don't look like cherry-picks because
-  // the committer and author metadata match exactly.  The heuristics below
-  // assume that only a malicious actor could cause these to collide, but we
-  // found an exception.
-  //
-  // FIXME: Consider whether there is a safer solution for this.
-  //
-  // FIXME: Is there a way to add a test for this without having the full
-  // history available?
-  {
-    textual_sha1 text;
-
-    // 8bf1494af87f222db2b637a3be6cee40a9a51a62 is NOT r354826.
-    text.from_input("8bf1494af87f222db2b637a3be6cee40a9a51a62");
-    if (binary_sha1(text) == *commit)
-      return 1;
+  } else {
+    // Starts with a call to lookup_rev.
+    if (!compute_base_rev(commit, rev))
+      return 0;
   }
 
   if (!raw_metadata)
-    if (compute_metadata(commit, raw_metadata))
+    if (compute_metadata(commit, raw_metadata, is_merge, first_parent))
       return 1;
+
+  // Merges cannot be upstream SVN commits.
+  if (is_merge)
+    return 1;
+
+  if (is_split && first_parent) {
+    // If first_parent is in the split2mono database, then commit is not an
+    // upstream SVN commit.  This helps to avoid mapping commits like
+    // 8bf1494af87f222db2b637a3be6cee40a9a51a62 from swift-clang to commit
+    // being cherry-picked (in this case, r354826), since the cherry-pick's
+    // parent will not be upstream.
+    if (is_being_translated(first_parent))
+      return 1;
+    sha1_ref mono;
+    bool is_based_on_rev = false;
+    if (!compute_mono_from_table(first_parent, mono, is_based_on_rev))
+      if (!is_based_on_rev)
+        return 1;
+  }
 
   parsed_metadata parsed;
   if (parse_commit_metadata_impl(raw_metadata, parsed))
     return 1;
 
   // Check that committer and author match.
-  //
-  // TODO: Add tests for all three of these heuristics.
   if (parsed.an != parsed.cn || parsed.ae != parsed.ce ||
       parsed.ad != parsed.cd)
     return 1;
@@ -454,17 +601,15 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
     num = parsed_num;
     return 0;
   };
-  auto try_parse_cherry_pick = [&try_parse_string](const char *&current) {
-    // TODO: add tests for the two hits below for this.
-    return try_parse_string(current, "(cherry picked");
-  };
 
   const char *current = parsed.message;
   while (*current) {
-    if (!try_parse_string(current, "llvm-rev: ")) {
+    if (!is_split) {
+      if (try_parse_string(current, "llvm-rev: "))
+        continue;
+
       int parsed_rev;
-      if (parse_num(current, parsed_rev) || parse_ch(current, '\n') ||
-          !try_parse_cherry_pick(current))
+      if (parse_num(current, parsed_rev) || parse_ch(current, '\n'))
         break;
       rev = parsed_rev;
       note_rev(commit, rev);
@@ -480,8 +625,7 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
 
     int parsed_rev;
     if (skip_until(current, '@') || parse_ch(current, '@') ||
-        parse_num(current, parsed_rev) || parse_ch(current, ' ') ||
-        !try_parse_cherry_pick(current))
+        parse_num(current, parsed_rev) || parse_ch(current, ' '))
       break;
 
     rev = parsed_rev;
@@ -489,7 +633,12 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, int &rev,
     return 0;
   }
 
-  // FIXME: consider warning here.
+  // Monorepo commits should always have a rev, either from the 'llvm-rev:' tag
+  // or stored in the svnbaserev table.  If we get here there's a problem.
+  if (!is_split)
+    return error("missing base svn rev for monorepo commit");
+
+  // This is a split commit that's not an upstream commit.
   rev = 0;
   note_rev(commit, rev);
   return 0;
@@ -719,12 +868,9 @@ int git_cache::parse_commit_metadata_impl(const char *metadata,
     ++current;
     return 0;
   };
-  if (parse_suffix(metadata, result.an) ||
-      parse_suffix(metadata, result.cn) ||
-      parse_suffix(metadata, result.ad) ||
-      parse_suffix(metadata, result.cd) ||
-      parse_suffix(metadata, result.ae) ||
-      parse_suffix(metadata, result.ce))
+  if (parse_suffix(metadata, result.an) || parse_suffix(metadata, result.cn) ||
+      parse_suffix(metadata, result.ad) || parse_suffix(metadata, result.cd) ||
+      parse_suffix(metadata, result.ae) || parse_suffix(metadata, result.ce))
     return error("failed to parse commit metadata");
 
   result.message = metadata;
@@ -745,7 +891,9 @@ int git_cache::parse_commit_metadata(sha1_ref commit,
   parsed_metadata parsed;
   {
     const char *metadata;
-    if (compute_metadata(commit, metadata) ||
+    bool is_merge;
+    sha1_ref first_parent;
+    if (compute_metadata(commit, metadata, is_merge, first_parent) ||
         parse_commit_metadata_impl(metadata, parsed))
       return 1;
   }

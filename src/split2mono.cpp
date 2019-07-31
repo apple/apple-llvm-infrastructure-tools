@@ -371,8 +371,7 @@ static int main_check_upstream(const char *cmd, int argc, const char *argv[]) {
   // Check if main is up-to-date.
   auto existing_entry = main.upstreams.find(upstream.name);
   if (existing_entry == main.upstreams.end() ||
-      existing_entry->second.num_upstreams !=
-          (long)upstream.upstreams.size() ||
+      existing_entry->second.num_upstreams != (long)upstream.upstreams.size() ||
       existing_entry->second.commits_size != upstream.commits_size_on_open() ||
       existing_entry->second.svnbase_size != upstream.svnbase_size_on_open()) {
     fprintf(stderr, "'%s' is not up-to-date with '%s'\n", main.name.c_str(),
