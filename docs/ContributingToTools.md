@@ -40,6 +40,8 @@ For test suites that use `pytest`, add the name of the subdirectory to the
 - `apply-commit-numbers <map>`: filter input using map from `number-commits`.
 - `mkrepo [--bare] <repo>`: create a git repository.
 - `mkblob <repo> <blob>`: create and commit a blob with the given name.
+- `mkblob-svn [options] rev [msg...]`: create and commit blobs in a way that
+  mimics SVN commits in either (or both) git-svn and llvm style.
 - `mkrange <repo> <first> <last>`: run `mkblob.sh` on `{<first>..<last>}` in
   sequence.
 - `mkmerge <repo> <id> <args>...`: create a merge commit from `<args>` using
