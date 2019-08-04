@@ -419,21 +419,21 @@ mt_check_clone_impl() {
     # refspecs with old Git clients.
     local config="$clone"/config
     local key=remote.origin.mirror
-    ! run $hide git -C "$clone" --local config $key ||
-        run $hide git -C "$clone" --local config --unset $key ||
+    ! run $hide git --file "$config" config $key ||
+        run $hide git --file "$config" config --unset $key ||
         return 1
 
     # Mirror when fetching.
     local fetchspec="+refs/*:refs/*"
     key=remote.origin.fetch
-    [ "$fetchspec" = "$(run $hide git -C "$clone" --local config $key)" ] ||
-        run $hide git -C "$clone" --local config --replace-all $key "$fetchspec" ||
+    [ "$fetchspec" = "$(run $hide git --file "$config" config $key)" ] ||
+        run $hide git --file "$config" config --replace-all $key "$fetchspec" ||
         return 1
 
     # No push configuration.
     key=remote.origin.push
-    [ -z "$(run $hide git -C "$clone" --local config $key)" ] ||
-        run $hide git -C "$clone" --local config --unset-all $key ||
+    [ -z "$(run $hide git --file "$config" config $key)" ] ||
+        run $hide git --file "$config" config --unset-all $key ||
         return 1
 
     # Looks good.
