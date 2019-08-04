@@ -23,24 +23,24 @@ usage() {
 }
 
 main() {
-    [ $# -ge 1 ] || usage_error "missing <branch>"
-    [ $# -ge 2 ] || usage_error "missing <ref>:<dir>..."
+    local branch
+    local -a refdirs
+    parse_cmdline "$@" || return 1
 
-    mt_split2mono_init || return 1
+    # Only initialize split2mono db if we will interleave commits.
+    # Initializing the blob is not free and there's no point.
+    check_for_work || mt_split2mono_init || return 1
     translate_branch "$@" || return 1
-
-    ! check_for_work || return 0
-    mt_split2mono_save
+    check_for_work || mt_split2mono_save || return 1
 }
 
 CHECK_FOR_WORK=0
 check_for_work() { [ ! "${CHECK_FOR_WORK:-0}" = 0 ]; }
 
-translate_branch() {
-    local branch
+parse_cmdline() {
+    [ $# -ge 1 ] || usage_error "missing <branch>"
+    [ $# -ge 2 ] || usage_error "missing <ref>:<dir>..."
     local pos=0
-    local -a refdirs
-    local value=
     while [ $# -gt 0 ]; do
         case "$1" in
             --help)
@@ -68,7 +68,9 @@ translate_branch() {
     branch="${branch#refs/heads/}"
 
     [ ${#refdirs[@]} -gt 0 ] || usage_error "missing <ref>:<dir>"
+}
 
+translate_branch() {
     local current
     current=$(run --hide-errors git rev-parse --verify \
         refs/heads/$branch^{commit}) ||
