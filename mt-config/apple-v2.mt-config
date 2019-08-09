@@ -156,6 +156,14 @@ generate branch swift/swift-5.1-branch
 repeat swift/swift-5.1-branch      apple/stable/20190104
 dir    swift/swift-5.1-branch lldb split/apple/lldb/swift-5.1-branch
 
+# Generate apple/stable/20190619.
+dir apple/stable/20190619 -                 split/apple/root/apple/stable/20190619
+dir apple/stable/20190619 clang             split/apple/clang/apple/stable/20190619
+dir apple/stable/20190619 clang-tools-extra split/apple/clang-tools-extra/apple/stable/20190619
+dir apple/stable/20190619 compiler-rt       split/apple/compiler-rt/apple/stable/20190619
+dir apple/stable/20190619 libcxx            split/apple/libcxx/apple/stable/20190619
+dir apple/stable/20190619 llvm              split/apple/llvm/apple/stable/20190619
+
 # Generate swift/master from each split repo's stable branch, intended to be
 # paired with swift's master branch.
 #
