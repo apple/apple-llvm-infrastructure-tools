@@ -52,16 +52,21 @@ $(VIRTUALENV):
 	python3 -m venv $(PREFIX)
 	@echo ""
 
-install-git-scripts:
+LIBEXEC_DIR=$(DESTDIR)$(PREFIX)/libexec/apple-llvm
+
+install-git-scripts: svn2git split2mono
 	@echo "Installing 'git apple-llvm' bash scripts"
 	@echo "################################################################################"
 	$(INSTALL) bin/git-apple-llvm $(DESTDIR)$(PREFIX)/bin/
-	$(INSTALL) -d $(DESTDIR)$(PREFIX)/libexec/apple-llvm
+	$(INSTALL) -d $(LIBEXEC_DIR)
 	tar cf - libexec/apple-llvm | (cd $(DESTDIR)$(PREFIX); tar xf -)
-	echo "${shell utils/get-git-revision.sh}" > $(DESTDIR)$(PREFIX)/libexec/apple-llvm/helpers/version
+	echo "${shell utils/get-git-revision.sh}" > $(LIBEXEC_DIR)/helpers/version
 	@echo ""
 	@echo "################################################################################"
 	@echo "Installation succeeded: 'git apple-llvm' is now available!"
+
+svn2git split2mono:
+	make -C src D="$(LIBEXEC_DIR)/tools" $(LIBEXEC_DIR)/tools/$@
 
 uninstall:
 	@echo "Uninstalling 'git-apple-llvm'"

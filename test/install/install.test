@@ -6,6 +6,7 @@ RUN: cp -r %S/../../git_apple_llvm %t/src/git_apple_llvm
 RUN: cp -r %S/../../utils %t/src/utils
 RUN: cp -r %S/../../bin %t/src/bin
 RUN: cp -r %S/../../libexec %t/src/libexec
+RUN: cp -r %S/../../src %t/src/src
 RUN: cp -r %S/../../Makefile %t/src/Makefile
 RUN: cp -r %S/../../setup.py %t/src/setup.py
 

@@ -1,5 +1,11 @@
 build_executable() {
     local name="$1"
+    if [ -x "$(dirname $0)"/tools/"$name" ]; then
+        # Prebuilt executable (ie, we're installed)
+        echo "$(dirname $0)"/tools/"$name"
+        return 0
+    fi
+
     local srcdir="$APPLE_LLVM_LIBEXEC_DIR"/../../src
     local srcfile="$srcdir"/"$name".cpp
     local makefile="$srcdir"/Makefile
