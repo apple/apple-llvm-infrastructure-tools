@@ -600,8 +600,10 @@ sync_upstream_before_generate() {
         error "failed to fetch $mtdb_upstream_ref"
 
     if check_for_work; then
+        log "Checking for work in upstream mt-db: $upstream"
         mt_db_check_upstream "$upstream" || report_work upstream "$upstream"
     else
+        log "Merging upstream mt-db: $upstream"
         mt_db_merge_upstream "$upstream" ||
             error "failed to merge upstream '$upstream'"
         mt_db_save || exit 1
