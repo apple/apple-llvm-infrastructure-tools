@@ -6,12 +6,14 @@ import os
 import pytest
 from git_apple_llvm.pr.pr_tool import PullRequestState
 from git_apple_llvm.pr.main import pr, PRToolType
+from git_apple_llvm.config import write_config
 import git_apple_llvm.pr.main
 from mock_pr_tool import MockPRTool
 from github_mock_pr_tool import create_mock_github_pr_tool
 from click.testing import CliRunner
 from git_apple_llvm.git_tools import git
 import json
+import httpretty
 
 
 @pytest.fixture(scope='function',
@@ -35,7 +37,10 @@ def pr_tool_git_repo(tmp_path_factory) -> str:
         'type': 'github',
         'domain': 'github.com',
         'user': 'apple',
-        'repo': 'apple-llvm-infrastructure-tools'
+        'repo': 'apple-llvm-infrastructure-tools',
+        'test': {
+            'type': 'swift-ci'
+        }
     }
     pr_config_json = json.dumps(pr_config)
     # Create the repo with the PR config.
@@ -176,7 +181,7 @@ def test_cli_tool_no_pr_config(tmp_path):
     os.chdir(prev)
 
 
-def test_cli_tool_test_swift_ci(pr_tool_type):
+def test_cli_tool_test_swift_ci(pr_tool_type, cd_to_pr_tool_repo):
     mock_tool = MockPRTool()
     mock_tool.create_pull_request('My test', 'This tests important things', 'master')
     git_apple_llvm.pr.main.pr_tool = create_pr_tool(mock_tool, pr_tool_type)
@@ -189,7 +194,86 @@ def test_cli_tool_test_swift_ci(pr_tool_type):
     assert 'you commented "@swift-ci please test" on the pull request' in result.output
 
 
-def test_cli_tool_test_invalid_pr():
+JENKINS_TEST_API_URL = 'https://test.foo/bar'
+
+
+@pytest.fixture(scope='function')
+def cd_to_pr_tool_repo_clone_adjust_jenkins_ci(cd_to_pr_tool_repo):
+    pr_config = {
+        'type': 'github',
+        'domain': 'github.com',
+        'user': 'apple',
+        'repo': 'apple-llvm-infrastructure-tools',
+        'test': {
+            'type': 'jenkins-test-plans'
+        }
+    }
+    with open('apple-llvm-config/pr.json', 'w') as f:
+        f.write(json.dumps(pr_config))
+    test_plans = {
+        "test-plans": {
+            "pr": {
+                "description": "",
+                "ci-jobs": "pull-request-RA",
+                "params": {
+                    "test_targets": "check-llvm"
+                }
+            }
+        }
+    }
+    ci_jobs = {
+        "type": "jenkins",
+        "url": JENKINS_TEST_API_URL,
+        "jobs": [{
+            "name": "a-RA",
+            "url": JENKINS_TEST_API_URL + "/view/monorepo/job/pr-build-test",
+            "params": {}
+        }]
+    }
+    # Create the repo with the CI and test plan configs.
+    with open(os.path.join('apple-llvm-config', 'ci-test-plans.json'), 'w') as f:
+        f.write(json.dumps(test_plans))
+    os.mkdir(os.path.join('apple-llvm-config/ci-jobs'))
+    with open(os.path.join('apple-llvm-config/ci-jobs', 'pull-request-RA.json'), 'w') as f:
+        f.write(json.dumps(ci_jobs))
+    git('add', 'apple-llvm-config')
+    git('commit', '-m', 'use jenkins now')
+    yield
+    git('reset', '--hard', 'HEAD~1')
+
+
+@pytest.fixture(scope='function')
+def config_dir(tmp_path):
+    dir = str(tmp_path / 'git-apple-llvm')
+    os.environ['GIT_APPLE_LLVM_CONFIG_DIR'] = dir
+    yield dir
+    del os.environ['GIT_APPLE_LLVM_CONFIG_DIR']
+
+
+@httpretty.activate()
+def test_cli_tool_test_jenkins_swift_plans(cd_to_pr_tool_repo_clone_adjust_jenkins_ci):
+    write_config('jenkins-test.foo-bar', '{"username": "user", "token": "123"}')
+    mock_tool = MockPRTool()
+    mock_tool.create_pull_request('My test', 'This tests important things', 'master')
+    git_apple_llvm.pr.main.pr_tool = create_pr_tool(mock_tool, PRToolType.GitHub)
+
+    def request_callback(request, uri, response_headers):
+        return [201, response_headers, '']
+
+    url1 = f'{JENKINS_TEST_API_URL}/view/monorepo/job/pr-build-test/buildWithParameters?token=GIT_APPLE_LLVM'
+    url1 += '&cause=started%20by%20user%20using%20git%20apple-llvm&pullRequestID=1'
+    url1 += '&test_targets=check-llvm'
+    httpretty.register_uri(httpretty.POST, url1,
+                           body=request_callback)
+    result = CliRunner().invoke(pr, ['test', '#1', '--test', 'pr'],
+                                mix_stderr=True)
+    assert result.exit_code == 0
+    assert 'Triggering pull request testing for pr #1 by <author>:' in result.output
+    assert 'My test' in result.output
+    assert '✅ requested pr [a-RA] ci job for PR #1' in result.output
+
+
+def test_cli_tool_test_invalid_pr(cd_to_pr_tool_repo):
     mock_tool = MockPRTool()
     git_apple_llvm.pr.main.pr_tool = create_pr_tool(mock_tool, 'mock')
 

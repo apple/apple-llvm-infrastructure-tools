@@ -14,7 +14,7 @@ class MockPullRequest:
     def info(self):
         return self
 
-    def test(self):
+    def test_swift_ci(self):
         pass
 
 

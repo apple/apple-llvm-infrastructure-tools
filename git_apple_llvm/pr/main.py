@@ -5,6 +5,7 @@
 
 from git_apple_llvm.pr.pr_tool import PRTool, PullRequest, PullRequestState
 from git_apple_llvm.pr.github_pr_tool import create_github_pr_tool
+from git_apple_llvm.ci import CISystemType
 from git_apple_llvm.git_tools import git_output, get_current_checkout_directory
 from git_apple_llvm.git_tools.tracked_branch_ref import TrackedBranchRef, get_tracked_branch_ref
 import click
@@ -19,6 +20,7 @@ import textwrap
 
 log = logging.getLogger(__name__)
 pr_tool: PRTool = None
+ci_test_type: Optional[CISystemType] = None
 
 
 class PRToolType(Enum):
@@ -31,23 +33,33 @@ def pr_tool_type_from_string(s: str) -> Optional[PRToolType]:
     return None
 
 
+def pr_test_type_from_string(s: str) -> Optional[CISystemType]:
+    if s == 'swift-ci':
+        return CISystemType.SwiftCI
+    if s == 'jenkins-test-plans':
+        return CISystemType.JenkinsTestPlans
+    return None
+
+
 class PRToolConfiguration:
     """
     Contains the information about which repository is operated on
     for pull requests.
 
     Attributes:
-    type    The type of git hosting service.
-    domain  The domain of the git hosting service (e.g. github.com)
-    user    Which username owns the repo (e.g. apple)
-    repo    The name of the actual repository (e.g. apple-llvm-infrastructure-tools)
+    type      The type of git hosting service.
+    domain    The domain of the git hosting service (e.g. github.com)
+    user      Which username owns the repo (e.g. apple)
+    repo      The name of the actual repository (e.g. apple-llvm-infrastructure-tools)
+    test_type The type of testing service to use for PRs (e.g. swift-ci).
     """
 
-    def __init__(self, type: PRToolType, domain: str, user: str, repo: str):
+    def __init__(self, type: PRToolType, domain: str, user: str, repo: str, test_type: Optional[CISystemType]):
         self.type = type
         self.domain = domain
         self.user = user
         self.repo = repo
+        self.test_type = test_type
 
     def create_tool(self) -> PRTool:
         if self.type == PRToolType.GitHub:
@@ -69,10 +81,14 @@ def load_pr_config() -> Optional[PRToolConfiguration]:
     if not type:
         return None
     # FIXME: Validate json.
+    test_type: Optional[CISystemType] = None
+    if 'test' in value:
+        test_type = pr_test_type_from_string(value['test']['type'])
     return PRToolConfiguration(type=type,
                                domain=value['domain'],
                                user=value['user'],
-                               repo=value['repo'])
+                               repo=value['repo'],
+                               test_type=test_type)
 
 
 def fatal(message: str):
@@ -96,7 +112,8 @@ def pr(verbose):
     if not config:
         fatal('missing `git apple-llvm pr` configuration file')
 
-    global pr_tool
+    global pr_tool, ci_test_type
+    ci_test_type = config.test_type
     if pr_tool:
         return
     pr_tool = config.create_tool()
@@ -182,7 +199,10 @@ def shorten(text: str) -> str:
 @pr.command()
 @click.argument('pr_ref', metavar='<#pr / branch-name>',
                 type=PullRequestParamType(), required=True)
-def test(pr_ref: PullRequestRef):
+@click.option('-t', '--test', metavar='<test_plan>', type=str,
+              default='pr',
+              help='The test plan which should run (default: pr)')
+def test(pr_ref: PullRequestRef, test: str):
     """ Run tests for a particular pull request """
     pr_number = make_pr_number_ref(pr_ref).pr_number
     pr: Optional[PullRequest] = pr_tool.get_pr_from_number(pr_number)
@@ -196,8 +216,16 @@ def test(pr_ref: PullRequestRef):
     click.echo(click.style(
         f'Triggering pull request testing for pr #{pr_number} by {pr.info.author_username}:', bold=True))
     click.echo(f'  {max_length(pr.info.title, 78)}')
-    pr.test()
-    click.echo('✅ you commented "@swift-ci please test" on the pull request.')
+    global ci_test_type
+    if ci_test_type == CISystemType.SwiftCI:
+        if test != 'pr':
+            fatal(f'swift-ci does not support test plan "{test}"')
+        pr.test_swift_ci()
+        click.echo('✅ you commented "@swift-ci please test" on the pull request.')
+    elif ci_test_type == CISystemType.JenkinsTestPlans:
+        pr.test_jenkins_test_plans(test)
+    else:
+        fatal('this repository does not support PR testing')
 
 
 @pr.command()
