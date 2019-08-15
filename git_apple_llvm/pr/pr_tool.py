@@ -1,6 +1,7 @@
 import abc
 from typing import List, Optional
 from enum import Enum
+import git_apple_llvm.ci.test_plans as tp
 
 
 class PullRequestState(Enum):
@@ -52,9 +53,13 @@ class PullRequest(abc.ABC):
     def info(self) -> PullRequestInfo:
         pass
 
-    def test(self):
-        """ Trigger a test action """
+    def test_swift_ci(self):
+        """ Trigger a test action using swift-ci """
         pass
+
+    def test_jenkins_test_plans(self, test_plan_name: str):
+        """ Trigger a test action using jenkins test plans """
+        tp.TestPlanDispatcher().dispatch_test_plan_for_pull_request(test_plan_name, self.info.number)
 
 
 class PRTool(abc.ABC):

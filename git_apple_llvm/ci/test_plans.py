@@ -2,6 +2,7 @@ import logging
 from typing import Dict
 import json
 from git_apple_llvm.ci.jenkins_ci import JenkinsCIConfig
+from git_apple_llvm.git_tools import git_output
 
 log = logging.getLogger(__name__)
 
@@ -48,9 +49,8 @@ class TestPlan:
         ci_job_config_filename = f'apple-llvm-config/ci-jobs/{self.ci_jobs}.json'
         log.debug('Test plan %s: loading ci config %s',
                   self.name, ci_job_config_filename)
-        with open(ci_job_config_filename, 'r') as f:
-            ci_job_config_json = json.load(f)
-            ci_job_config = JenkinsCIConfig(ci_job_config_json)
+        ci_job_config_json = json.loads(git_output('show', f'HEAD:{ci_job_config_filename}'))
+        ci_job_config = JenkinsCIConfig(ci_job_config_json)
         params.update(self.params)
         log.debug(
             'Test plan %s: dispatching ci job requests for params: %s', self.name, params)
@@ -75,10 +75,9 @@ class TestPlanDispatcher:
         log.debug('Test plan dispatcher: loading test plans %s',
                   test_plans_filename)
         test_plans: Dict[str, TestPlan] = {}
-        with open(test_plans_filename, 'r') as f:
-            tp = json.load(f)['test-plans']
-            for k in tp:
-                test_plans[k] = TestPlan(k, tp[k])
+        tp = json.loads(git_output('show', f'HEAD:{test_plans_filename}'))['test-plans']
+        for k in tp:
+            test_plans[k] = TestPlan(k, tp[k])
         if name not in test_plans:
             raise TestPlanNotFoundError(name)
         log.debug(

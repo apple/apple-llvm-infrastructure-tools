@@ -64,7 +64,7 @@ class GithubPullRequest(PullRequest):
     def add_comment(self, text: str):
         self.pr.create_comment(body=text)
 
-    def test(self):
+    def test_swift_ci(self):
         # FIXME: Support different test flavors.
         self.add_comment('@swift-ci please test')
 
