@@ -196,3 +196,9 @@ dir swift/master llvm              split/apple/llvm/stable
 generate branch swift/master-next
 repeat swift/master-next      apple/master
 dir    swift/master-next lldb split/apple/lldb/upstream-with-swift
+
+# Generate the swift/master-rebranch branch from LLDB's master-rebranch branch
+# and the pre-existing apple/stable/20190619 branch.
+generate branch swift/master-rebranch
+repeat swift/master-rebranch  apple/stable/20190619
+dir    swift/master-rebranch  lldb split/apple/lldb/master-rebranch
