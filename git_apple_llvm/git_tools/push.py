@@ -553,7 +553,7 @@ def git_apple_llvm_push(refspec, dry_run, verbose, merge_strategy, push_limit):
     split_repos_of_interest = commit_graph.compute_changed_split_repos()
 
     click.echo(
-        f'Split repos that should be updates: {", ".join(map(split_dir_to_str, split_repos_of_interest))}\n')
+        f'Split repos that should be updated: {", ".join(map(split_dir_to_str, split_repos_of_interest))}\n')
 
     split_remotes = {}
     for split_dir in split_repos_of_interest:
