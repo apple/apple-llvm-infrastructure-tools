@@ -154,8 +154,14 @@ mt_db_upstream_impl() {
             error "could not update svn2git from '$upstream'"
     else
         # Check for things to do in the merge.
-        run --hide-errors "$split2mono" check-upstream \
+        run "$split2mono" check-upstream \
             "$MT_DB_SPLIT2MONO_DB" "$usplit2monodb" || return 1
-        diff -q "$usvn2gitdb" "$MT_DB_SVN2GIT_DB" || return 1
+        if ! diff -q "$usvn2gitdb" "$MT_DB_SVN2GIT_DB" >/dev/null 2>&1; then
+            log "$usvn2gitdb does not match $MT_DB_SVN2GIT_DB"
+            diff -u --label "$usvn2gitdb" --label "$MT_DB_SVN2GIT_DB" \
+                 <("$svn2git" dump "$usvn2gitdb") \
+                 <("$svn2git" dump "$MT_DB_SVN2GIT_DB") >&2
+            return 1
+        fi
     fi
 }
