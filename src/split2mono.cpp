@@ -371,12 +371,25 @@ static int main_check_upstream(const char *cmd, int argc, const char *argv[]) {
 
   // Check if main is up-to-date.
   auto existing_entry = main.upstreams.find(upstream.name);
-  if (existing_entry == main.upstreams.end() ||
-      existing_entry->second.num_upstreams != (long)upstream.upstreams.size() ||
-      existing_entry->second.commits_size != upstream.commits_size_on_open() ||
-      existing_entry->second.svnbase_size != upstream.svnbase_size_on_open()) {
-    fprintf(stderr, "'%s' is not up-to-date with '%s'\n", main.name.c_str(),
-            upstream.name.c_str());
+  auto report_out_of_date = [&](const char *reason) {
+    fprintf(stderr, "'%s' is not up-to-date with '%s': %s\n", main.name.c_str(),
+            upstream.name.c_str(), reason);
+  };
+
+  if (existing_entry == main.upstreams.end()) {
+      report_out_of_date("Entry not found");
+      return 1;
+  }
+  if (existing_entry->second.num_upstreams != (long)upstream.upstreams.size()) {
+      report_out_of_date("Upstream count mismatch");
+      return 1;
+  }
+  if (existing_entry->second.commits_size != upstream.commits_size_on_open()) {
+    report_out_of_date("Commit count mismatch");
+    return 1;
+  }
+  if (existing_entry->second.svnbase_size != upstream.svnbase_size_on_open()) {
+    report_out_of_date("svnbase size mismatch");
     return 1;
   }
 
