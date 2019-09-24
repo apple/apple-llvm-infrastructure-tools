@@ -24,42 +24,46 @@ RUN: %split2mono create %t-ab-db/split2mono ab
 RUN: %split2mono create %t-ba-db/split2mono ba
 
 # Create the single-directory branch for each direction.
-RUN: git -C %t-ab apple-llvm mt list-commits a split/a/master >%t-ab-a.in
-RUN: git -C %t-ba apple-llvm mt list-commits b split/b/master >%t-ba-b.in
-RUN: %split2mono -C %t-ab interleave-commits                    \
+RUN: git -C %t-ab rev-parse split/a/master | xargs printf "%%s:a\n" >%t-ab-a.in
+RUN: git -C %t-ba rev-parse split/b/master | xargs printf "%%s:b\n" >%t-ba-b.in
+RUN: cat %t-ab-a.in                                             \
+RUN:   | xargs %split2mono -C %t-ab interleave-commits          \
 RUN:     %t-ab-db/split2mono %t-ab-db/svn2git                   \
 RUN:     0000000000000000000000000000000000000000               \
 RUN:     0000000000000000000000000000000000000000:a             \
-RUN:     <%t-ab-a.in >%t-ab-a.out
-RUN: %split2mono -C %t-ba interleave-commits                    \
+RUN:     -- >%t-ab-a.out
+RUN: cat %t-ba-b.in                                             \
+RUN:   | xargs %split2mono -C %t-ba interleave-commits          \
 RUN:     %t-ba-db/split2mono %t-ba-db/svn2git                   \
 RUN:     0000000000000000000000000000000000000000               \
 RUN:     0000000000000000000000000000000000000000:b             \
-RUN:     <%t-ba-b.in >%t-ba-b.out
+RUN:     -- >%t-ba-b.out
 RUN: cat %t-ab-a.out | awk '{print $1}' \
 RUN:   | xargs git -C %t-ab update-ref refs/heads/just-a
 RUN: cat %t-ba-b.out | awk '{print $1}' \
 RUN:   | xargs git -C %t-ba update-ref refs/heads/just-b
 
 # Create the second branch, which repeats commits from the first.
-RUN: git -C %t-ab apple-llvm mt list-commits b split/b/master >%t-ab-b.in
-RUN: git -C %t-ab apple-llvm mt list-commits % just-a        >>%t-ab-b.in
-RUN: git -C %t-ba apple-llvm mt list-commits a split/a/master >%t-ba-a.in
-RUN: git -C %t-ba apple-llvm mt list-commits % just-b        >>%t-ba-a.in
+RUN: git -C %t-ab rev-parse split/b/master | xargs printf "%%s:b\n" >%t-ab-b.in
+RUN: git -C %t-ab rev-parse just-a     | xargs printf "%%s:%%%%\n" >>%t-ab-b.in
+RUN: git -C %t-ba rev-parse split/a/master | xargs printf "%%s:a\n" >%t-ba-a.in
+RUN: git -C %t-ba rev-parse just-b     | xargs printf "%%s:%%%%\n" >>%t-ba-a.in
 RUN: ditto %t-ab-db %t-ab-db.backup
 RUN: ditto %t-ab-db.backup %t-ab-db
-RUN: env MT_TRACE_GIT=1 %split2mono -C %t-ab interleave-commits                    \
+RUN: cat %t-ab-b.in                                             \
+RUN:   | xargs %split2mono -C %t-ab interleave-commits          \
 RUN:     %t-ab-db/split2mono %t-ab-db/svn2git                   \
 RUN:     0000000000000000000000000000000000000000               \
 RUN:     0000000000000000000000000000000000000000:b             \
 RUN:     0000000000000000000000000000000000000000:% %:a         \
-RUN:     <%t-ab-b.in >%t-ab-b.out
-RUN: env MT_TRACE_GIT=1 %split2mono -C %t-ba interleave-commits                    \
+RUN:     -- >%t-ab-b.out
+RUN: cat %t-ba-a.in                                             \
+RUN:   | xargs %split2mono -C %t-ba interleave-commits          \
 RUN:     %t-ba-db/split2mono %t-ba-db/svn2git                   \
 RUN:     0000000000000000000000000000000000000000               \
 RUN:     0000000000000000000000000000000000000000:a             \
 RUN:     0000000000000000000000000000000000000000:% %:b         \
-RUN:     <%t-ba-a.in >%t-ba-a.out
+RUN:     -- >%t-ba-a.out
 RUN: cat %t-ab-b.out | awk '{print $1}' \
 RUN:   | xargs git -C %t-ab update-ref refs/heads/add-b
 RUN: cat %t-ba-a.out | awk '{print $1}' \
@@ -102,10 +106,12 @@ AB: JUST-A-2 JUST-A-1 mkblob: 4
 AB: apple-llvm-split-commit: A-2
 AB: apple-llvm-split-dir: a/
 AB: --
-AB: ADD-B-3 ADD-B-2 JUST-A-2 Merge: mkblob: 4
+AB: ADD-B-3 ADD-B-2 JUST-A-2 Merge a: mkblob: 4
+AB: apple-llvm-split-dir: a/
 AB-BODY: --
 AB-BODY: ADD-B-3
-AB-BODY: Merge: mkblob: 4
+AB-BODY: Merge a: mkblob: 4
+AB-BODY: apple-llvm-split-dir: a/
 RUN: git -C %t-ba log add-a --reverse                  \
 RUN:   --format="--%%n%%H %%P %%s%%n%%(trailers:only)" \
 RUN:   | apply-commit-numbers %t-ba.map | grep -e . | check-diff %s BA %t
@@ -127,19 +133,23 @@ BA: JUST-B-1 mkblob: 2
 BA: apple-llvm-split-commit: B-1
 BA: apple-llvm-split-dir: b/
 BA: --
-BA: ADD-A-2 ADD-A-1 JUST-B-1 Merge: mkblob: 2
+BA: ADD-A-2 ADD-A-1 JUST-B-1 Merge b: mkblob: 2
+BA: apple-llvm-split-dir: b/
 BA-BODY: --
 BA-BODY: ADD-A-2
-BA-BODY: Merge: mkblob: 2
+BA-BODY: Merge b: mkblob: 2
+BA-BODY: apple-llvm-split-dir: b/
 BA: --
 BA: JUST-B-2 JUST-B-1 mkblob: 3
 BA: apple-llvm-split-commit: B-2
 BA: apple-llvm-split-dir: b/
 BA: --
-BA: ADD-A-3 ADD-A-2 JUST-B-2 Merge: mkblob: 3
+BA: ADD-A-3 ADD-A-2 JUST-B-2 Merge b: mkblob: 3
+BA: apple-llvm-split-dir: b/
 BA-BODY: --
 BA-BODY: ADD-A-3
-BA-BODY: Merge: mkblob: 3
+BA-BODY: Merge b: mkblob: 3
+BA-BODY: apple-llvm-split-dir: b/
 BA: --
 BA: ADD-A-4 ADD-A-3 mkblob: 4
 BA: apple-llvm-split-commit: A-2

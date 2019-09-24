@@ -15,6 +15,7 @@ dir b3 z a-name/z
 repeat b1 b2
 repeat b3 b1
 start b3 b1
+start b3 b2
 
 generate mapping a-name/master
 generate branch b2

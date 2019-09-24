@@ -27,11 +27,11 @@ RUN: rm -rf %t.split2mono
 RUN: %svn2git create %t.svn2git
 RUN: mkdir %t.split2mono
 RUN: %split2mono create %t.split2mono db
-RUN: git -C %t.mono apple-llvm mt list-commits dir split/dir/master \
-RUN: | %split2mono -C %t.mono interleave-commits                    \
-RUN:     %t.split2mono %t.svn2git                                   \
-RUN:     0000000000000000000000000000000000000000                   \
-RUN:     0000000000000000000000000000000000000000:dir >%t.out
+RUN: git -C %t.mono rev-parse split/dir/master | xargs printf "%%s:dir\n" \
+RUN:   | xargs %split2mono -C %t.mono interleave-commits                  \
+RUN:     %t.split2mono %t.svn2git                                         \
+RUN:     0000000000000000000000000000000000000000                         \
+RUN:     0000000000000000000000000000000000000000:dir -- >%t.out
 RUN: cat %t.out | awk '{print $1}' | xargs git -C %t.mono update-ref master
 RUN: number-commits -p SPLIT %t.split master  >%t.map
 RUN: number-commits -p MONO  %t.mono  master >>%t.map

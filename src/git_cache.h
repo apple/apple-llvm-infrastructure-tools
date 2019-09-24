@@ -5,6 +5,7 @@
 #include "call_git.h"
 #include "dir_list.h"
 #include "error.h"
+#include "parsers.h"
 #include "sha1_pool.h"
 #include "split2monodb.h"
 
@@ -50,6 +51,12 @@ struct git_cache {
   void note_tree(const git_tree &tree);
   void note_metadata(sha1_ref commit, const char *metadata, bool is_merge,
                      sha1_ref first_parent);
+  void store_metadata_if_new(sha1_ref commit, const char *metadata,
+                             const char *metadata_end, bool is_merge,
+                             sha1_ref first_parent);
+  const char *store_metadata_impl(sha1_ref commit, const char *metadata,
+                                  const char *metadata_end, bool is_merge,
+                                  sha1_ref first_parent);
 
   /// Check whether the given commit is going to be (and/or has been)
   /// translated and stored in the commits table.
@@ -92,11 +99,16 @@ struct git_cache {
   int mktree(git_tree &tree);
 
   int merge_base(sha1_ref a, sha1_ref b, sha1_ref &base);
+  int rev_parse(const std::string &rev, sha1_ref &result);
+  bool merge_base_is_ancestor(sha1_ref a, sha1_ref b);
+  int merge_base_independent(std::vector<sha1_ref> &commits);
 
   static int ls_tree_impl(sha1_ref sha1, std::vector<char> &reply);
   int note_tree_raw(sha1_ref sha1, const char *rawtree);
 
   const char *make_name(const char *name, size_t len);
+  int parse_name(const char *&current, const char *&name);
+
   git_tree::item_type *make_items(git_tree::item_type *first,
                                   git_tree::item_type *last);
 
@@ -132,12 +144,25 @@ struct git_cache {
   };
   int commit_tree(sha1_ref base_commit, const dir_type *dir, sha1_ref tree,
                   const std::vector<sha1_ref> &parents, sha1_ref &commit,
-                  commit_tree_buffers &buffers);
+                  commit_tree_buffers &buffers, dir_name_range dir_names);
+  int commit_tree_impl(sha1_ref tree, const std::vector<sha1_ref> &parents,
+                       sha1_ref &commit, commit_tree_buffers &buffers);
+  void apply_merge_authorship(commit_tree_buffers &buffers,
+                              parsed_metadata::string_ref cd);
+  void apply_authorship(commit_tree_buffers &buffers,
+                        const parsed_metadata &parsed);
+  void apply_dir_names_in_subject(std::string &message,
+                                  dir_name_range dir_names);
+  void apply_dir_name_trailers(std::string &message, dir_name_range dir_names);
+  int extract_subject(std::string &buffer, const char *message);
+
   static int parse_commit_metadata_impl(const char *metadata,
                                         parsed_metadata &result);
   int parse_commit_metadata(sha1_ref commit,
                             git_cache::commit_tree_buffers &buffers,
-                            bool is_merge);
+                            bool is_merge, dir_name_range dir_names);
+
+  void apply_metadata_env_names(git_cache::commit_tree_buffers &buffers);
 
   struct sha1_single {
     sha1_ref key;
@@ -453,12 +478,19 @@ int git_cache::compute_metadata(sha1_ref commit, const char *&metadata,
     // Check for only one parent.
     if (*end_parents == '\n')
       return 0;
+    if (*end_parents != ' ')
+      return error("missing space after first parent of " + sha1.to_string());
 
-    // This is a merge commit with multiple parents.  Skip the the newline.
+    // This is a merge commit with multiple parents.  Skip to the newline,
+    // checking that the parents are well formed.
     is_merge = true;
-    for (; *end_parents != '\n'; ++end_parents)
-      if (!*end_parents)
-        return error("invalid parent metadata for " + sha1.to_string());
+    while (*end_parents == ' ') {
+      ++end_parents;
+      if (text.from_input(end_parents, &end_parents))
+        return error("invalid parent for " + sha1.to_string());
+    }
+    if (*end_parents != '\n')
+      return error("invalid parent metadata for " + sha1.to_string());
     return 0;
   };
 
@@ -467,24 +499,45 @@ int git_cache::compute_metadata(sha1_ref commit, const char *&metadata,
   if (parse_parents(end_parents))
     return 1;
   assert(*end_parents == '\n');
-  git_reply.pop_back();
   ++end_parents;
+  git_reply.pop_back();
 
-  const auto message_size = git_reply.size() - (end_parents - git_reply.data());
+  metadata = store_metadata_impl(commit, end_parents,
+                                 git_reply.data() + git_reply.size(), is_merge,
+                                 first_parent);
+  return 0;
+}
 
+void git_cache::store_metadata_if_new(sha1_ref commit, const char *metadata,
+                                      const char *metadata_end, bool is_merge,
+                                      sha1_ref first_parent) {
+  // Check if we already have it, to avoid allocating again.
+  if (sha1_metadata *existing = this->metadata.lookup(*commit))
+    return;
+
+  (void)store_metadata_impl(commit, metadata, metadata_end, is_merge,
+                            first_parent);
+}
+
+const char *git_cache::store_metadata_impl(sha1_ref commit,
+                                           const char *metadata,
+                                           const char *metadata_end,
+                                           bool is_merge,
+                                           sha1_ref first_parent) {
   // Save the rest.
-  char *&storage = const_cast<char *&>(metadata);
-  if (message_size >= 4096) {
-    big_metadata.emplace_back(new char[message_size + 1]);
+  char *storage = nullptr;
+  auto metadata_size = metadata_end - metadata;
+  if (metadata_size >= 4096) {
+    big_metadata.emplace_back(new char[metadata_size + 1]);
     storage = big_metadata.back().get();
   } else {
     storage =
-        new (name_alloc.allocate(message_size + 1, 1)) char[message_size + 1];
+        new (name_alloc.allocate(metadata_size + 1, 1)) char[metadata_size + 1];
   }
-  memcpy(storage, &git_reply[0], message_size);
-  storage[message_size] = 0;
+  memcpy(storage, metadata, metadata_size);
+  storage[metadata_size] = 0;
   note_metadata(commit, storage, is_merge, first_parent);
-  return 0;
+  return storage;
 }
 
 int git_cache::set_base_rev(sha1_ref commit, int rev) {
@@ -571,38 +624,6 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, bool is_split,
   if (parsed.an != parsed.cn || parsed.ae != parsed.ce ||
       parsed.ad != parsed.cd)
     return 1;
-
-  auto try_parse_string = [](const char *&current, const char *s) {
-    const char *x = current;
-    for (; *x && *s; ++x, ++s)
-      if (*x != *s)
-        return 1;
-    if (*s)
-      return 1;
-    current = x;
-    return 0;
-  };
-  auto parse_ch = [](const char *&current, int ch) {
-    if (*current != ch)
-      return 1;
-    ++current;
-    return 0;
-  };
-  auto skip_until = [](const char *&current, int ch) {
-    for (; *current; ++current)
-      if (*current == ch)
-        return 0;
-    return 1;
-  };
-  auto parse_num = [](const char *&current, int &num) {
-    char *end = nullptr;
-    long parsed_num = strtol(current, &end, 10);
-    if (current == end || parsed_num > INT_MAX || parsed_num < INT_MIN)
-      return 1;
-    current = end;
-    num = parsed_num;
-    return 0;
-  };
 
   const char *current = parsed.message;
   while (*current) {
@@ -717,12 +738,6 @@ int git_cache::ls_tree_impl(sha1_ref sha1, std::vector<char> &git_reply) {
 }
 
 int git_cache::note_tree_raw(sha1_ref sha1, const char *rawtree) {
-  auto parse_token = [](const char *&current, int token) {
-    if (*current != token)
-      return 1;
-    ++current;
-    return 0;
-  };
   auto parse_mode = [](const char *&current, auto &type) {
     assert(type == git_tree::item_type::unknown);
 #define PARSE_MODE_FOR_TYPE(VALUE)                                             \
@@ -768,30 +783,6 @@ int git_cache::note_tree_raw(sha1_ref sha1, const char *rawtree) {
 #undef PARSE_TYPE_AND_CHECK_IMPL
     return 1;
   };
-  auto parse_sha1 = [this](const char *&current, sha1_ref &sha1) {
-    textual_sha1 text;
-    const char *end = nullptr;
-    if (text.from_input(current, &end))
-      return 1;
-
-    // Don't allow "0000000000000000000000000000000000000000".
-    sha1 = pool.lookup(text);
-    if (!sha1)
-      return 1;
-
-    current = end;
-    return 0;
-  };
-  auto parse_name = [this](const char *&current, const char *&name) {
-    const char *ch = current;
-    for (; *ch; ++ch)
-      if (*ch == '\n') {
-        name = make_name(current, ch - current);
-        current = ch;
-        return 0;
-      }
-    return 1;
-  };
 
   constexpr const int max_items = dir_mask::max_size;
   git_tree::item_type items[max_items];
@@ -802,10 +793,10 @@ int git_cache::note_tree_raw(sha1_ref sha1, const char *rawtree) {
       return error(
           "ls-tree: too many items (max: " + std::to_string(max_items) + ")");
 
-    if (parse_mode(current, last->type) || parse_token(current, ' ') ||
-        parse_type(current, last->type) || parse_token(current, ' ') ||
-        parse_sha1(current, last->sha1) || parse_token(current, '\t') ||
-        parse_name(current, last->name) || parse_token(current, '\n'))
+    if (parse_mode(current, last->type) || parse_ch(current, ' ') ||
+        parse_type(current, last->type) || parse_ch(current, ' ') ||
+        pool.parse_sha1(current, last->sha1) || parse_ch(current, '\t') ||
+        parse_name(current, last->name) || parse_ch(current, '\n'))
       return error("ls-tree: could not parse entry");
     ++last;
   }
@@ -816,6 +807,17 @@ int git_cache::note_tree_raw(sha1_ref sha1, const char *rawtree) {
   tree.items = make_items(items, last);
   note_tree(tree);
   return 0;
+}
+
+int git_cache::parse_name(const char *&current, const char *&name) {
+  const char *ch = current;
+  for (; *ch; ++ch)
+    if (*ch == '\n') {
+      name = make_name(current, ch - current);
+      current = ch;
+      return 0;
+    }
+  return 1;
 }
 
 int git_cache::mktree(git_tree &tree) {
@@ -853,6 +855,14 @@ int git_cache::mktree(git_tree &tree) {
   return 0;
 }
 
+bool git_cache::merge_base_is_ancestor(sha1_ref a, sha1_ref b) {
+  // Could use 'git merge-base --is-ancestor', but this is easier to type.
+  sha1_ref base;
+  if (merge_base(a, b, base))
+    return false;
+  return base == a;
+}
+
 int git_cache::merge_base(sha1_ref a, sha1_ref b, sha1_ref &base) {
   assert(a);
   assert(b);
@@ -875,6 +885,53 @@ int git_cache::merge_base(sha1_ref a, sha1_ref b, sha1_ref &base) {
   // Doesn't seem like we need a cache for the response; just put the SHA-1 in
   // the pool and return.
   base = pool.lookup(base_text);
+  return 0;
+}
+
+int git_cache::rev_parse(const std::string &rev, sha1_ref &result) {
+  const char *argv[] = {"git", "rev-parse", "--verify", rev.c_str(), nullptr};
+  git_reply.clear();
+  if (call_git(argv, nullptr, "", git_reply, /*ignore_errors=*/true))
+    return 1;
+  git_reply.push_back(0);
+
+  textual_sha1 base_text;
+  const char *end = nullptr;
+  if (base_text.from_input(&git_reply[0], &end) || *end++ != '\n' || *end)
+    return 1;
+
+  result = pool.lookup(base_text);
+  return 0;
+}
+
+int git_cache::merge_base_independent(std::vector<sha1_ref> &commits) {
+  // Fill these first to avoid memory corruption.
+  std::vector<textual_sha1> sha1s;
+  for (auto &sha1 : commits)
+    sha1s.emplace_back(*sha1);
+  commits.clear();
+
+  std::vector<const char *> argv;
+  argv.push_back("git");
+  argv.push_back("merge-base");
+  argv.push_back("--independent");
+  for (auto &sha1 : sha1s)
+    argv.push_back(sha1.bytes);
+  argv.push_back(nullptr);
+
+  git_reply.clear();
+  if (call_git(argv.data(), nullptr, "", git_reply))
+    return 1;
+
+  git_reply.push_back(0);
+  const char *current = git_reply.data();
+  while (*current) {
+    textual_sha1 text;
+    if (text.from_input(current, &current) || *current++ != '\n')
+      return 1;
+
+    commits.push_back(pool.lookup(text));
+  }
   return 0;
 }
 
@@ -904,9 +961,7 @@ int git_cache::parse_commit_metadata_impl(const char *metadata,
   return 0;
 }
 
-int git_cache::parse_commit_metadata(sha1_ref commit,
-                                     git_cache::commit_tree_buffers &buffers,
-                                     bool is_merge) {
+void git_cache::apply_metadata_env_names(git_cache::commit_tree_buffers &buffers) {
   const char *prefixes[] = {
       "GIT_AUTHOR_NAME=",    "GIT_COMMITTER_NAME=", "GIT_AUTHOR_DATE=",
       "GIT_COMMITTER_DATE=", "GIT_AUTHOR_EMAIL=",   "GIT_COMMITTER_EMAIL="};
@@ -914,7 +969,42 @@ int git_cache::parse_commit_metadata(sha1_ref commit,
                          &buffers.cd, &buffers.ae, &buffers.ce};
   for (int i = 0; i < 6; ++i)
     *vars[i] = prefixes[i];
+}
 
+void git_cache::apply_dir_names_in_subject(std::string &message,
+                                           dir_name_range dir_names) {
+  for (int i = 0, ie = dir_names.end() - dir_names.begin(); i != ie; ++i) {
+    const char *name = dir_names.begin()[i];
+    if (i) {
+      if (ie == 2)
+        message += " and ";
+      else if (i + 1 == ie)
+        message += ", and ";
+      else
+        message += ", ";
+    }
+    message += strcmp(name, "-") ? name : "root";
+  }
+}
+
+static void append_split_dir_trailer(std::string &message, const char *name) {
+  message += "apple-llvm-split-dir: ";
+  message += name;
+  if (strcmp("-", name))
+    message += '/';
+  message += '\n';
+}
+
+void git_cache::apply_dir_name_trailers(std::string &message,
+                                        dir_name_range dir_names) {
+  for (auto i = dir_names.begin(), ie = dir_names.end(); i != ie; ++i)
+    append_split_dir_trailer(message, *i);
+}
+
+int git_cache::parse_commit_metadata(sha1_ref commit,
+                                     git_cache::commit_tree_buffers &buffers,
+                                     bool is_merge, dir_name_range dir_names) {
+  apply_metadata_env_names(buffers);
   parsed_metadata parsed;
   {
     const char *metadata;
@@ -925,28 +1015,55 @@ int git_cache::parse_commit_metadata(sha1_ref commit,
       return 1;
   }
 
-  if (is_merge) {
-    buffers.an.append("apple-llvm-mt");
-    buffers.cn.append("apple-llvm-mt");
-    buffers.ae.append("mt @ apple-llvm");
-    buffers.ce.append("mt @ apple-llvm");
-    buffers.ad.append(parsed.cd.first, parsed.cd.last);
-  } else {
-    buffers.an.append(parsed.an.first, parsed.an.last);
-    buffers.cn.append(parsed.cn.first, parsed.cn.last);
-    buffers.ae.append(parsed.ae.first, parsed.ae.last);
-    buffers.ce.append(parsed.ce.first, parsed.ce.last);
-    buffers.ad.append(parsed.ad.first, parsed.ad.last);
-  }
-  buffers.cd.append(parsed.cd.first, parsed.cd.last);
+  if (is_merge)
+    apply_merge_authorship(buffers, parsed.cd);
+  else
+    apply_authorship(buffers, parsed);
 
   if (!is_merge) {
     buffers.message = parsed.message;
     return 0;
   }
 
+  buffers.message = "Merge ";
+  apply_dir_names_in_subject(buffers.message, dir_names);
+  buffers.message += ": ";
+  if (extract_subject(buffers.message, parsed.message))
+    return error("failed to extract subject from '" + commit->to_string() +
+                 "'");
+
+  // Account for an empty subject.
+  if (buffers.message.back() != '\n')
+    buffers.message += '\n';
+  buffers.message += '\n';
+  apply_dir_name_trailers(buffers.message, dir_names);
+  return 0;
+}
+
+void git_cache::apply_merge_authorship(commit_tree_buffers &buffers,
+                                       parsed_metadata::string_ref cd) {
+  buffers.an.append("apple-llvm-mt");
+  buffers.cn.append("apple-llvm-mt");
+  buffers.ae.append("mt @ apple-llvm");
+  buffers.ce.append("mt @ apple-llvm");
+  buffers.ad.append(cd.first, cd.last);
+  buffers.cd.append(cd.first, cd.last);
+}
+
+void git_cache::apply_authorship(commit_tree_buffers &buffers,
+                                 const parsed_metadata &parsed) {
+  buffers.an.append(parsed.an.first, parsed.an.last);
+  buffers.cn.append(parsed.cn.first, parsed.cn.last);
+  buffers.ae.append(parsed.ae.first, parsed.ae.last);
+  buffers.ce.append(parsed.ce.first, parsed.ce.last);
+  buffers.ad.append(parsed.ad.first, parsed.ad.last);
+  buffers.cd.append(parsed.cd.first, parsed.cd.last);
+}
+
+int git_cache::extract_subject(std::string &buffer,
+                               const char *message) {
   // For merge commits, just extract the subject.
-  const char *start = parsed.message;
+  const char *start = message;
   const char *body = start;
   auto skip_until = [](const char *&current, int ch) {
     for (; *current; ++current)
@@ -957,8 +1074,7 @@ int git_cache::parse_commit_metadata(sha1_ref commit,
   while (!skip_until(body, '\n'))
     if (*++body == '\n')
       break;
-  buffers.message = "Merge: ";
-  buffers.message.append(start, body);
+  buffer.append(start, body);
   return 0;
 }
 
@@ -1046,20 +1162,24 @@ static void append_trailers(const char *dir, sha1_ref base_commit,
   message += "apple-llvm-split-commit: ";
   message += sha1.bytes;
   message += '\n';
-  message += "apple-llvm-split-dir: ";
-  message += dir;
-  if (dir[0] != '-' || dir[1])
-    message += '/';
-  message += '\n';
+  append_split_dir_trailer(message, dir);
 }
 
-int git_cache::commit_tree(sha1_ref base_commit, const dir_type *dir,
-                           sha1_ref tree, const std::vector<sha1_ref> &parents,
-                           sha1_ref &commit, commit_tree_buffers &buffers) {
-  if (parse_commit_metadata(base_commit, buffers, /*is_merge=*/!dir))
+int git_cache::commit_tree(
+    sha1_ref base_commit, const dir_type *dir, sha1_ref tree,
+    const std::vector<sha1_ref> &parents, sha1_ref &commit,
+    commit_tree_buffers &buffers, dir_name_range dir_names) {
+  if (parse_commit_metadata(base_commit, buffers, /*is_merge=*/!dir,
+                            dir_names))
     return error("failed to get metadata for " + base_commit->to_string());
   append_trailers(dir ? dir->name : nullptr, base_commit, buffers.message);
+  return commit_tree_impl(tree, parents, commit, buffers);
+}
 
+int git_cache::commit_tree_impl(sha1_ref tree,
+                                const std::vector<sha1_ref> &parents,
+                                sha1_ref &commit,
+                                commit_tree_buffers &buffers) {
   const char *envp[] = {buffers.an.c_str(),
                         buffers.ae.c_str(),
                         buffers.ad.c_str(),

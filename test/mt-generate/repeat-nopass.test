@@ -13,18 +13,19 @@ RUN: rm -rf %t-mt-configs
 RUN: mkdir -p %t-mt-configs
 RUN: cat %S/Inputs/repeat-nopass.mt-config.in | sed -e 's,%%t,%t,' \
 RUN:   | tee %t-mt-configs/repeat-nopass.mt-config
-RUN: %mtgen --verbose --git-dir %t-mt-repo.git --config-dir %t-mt-configs repeat-nopass
+RUN: %mtgen -v --git-dir %t-mt-repo.git --config-dir %t-mt-configs repeat-nopass
 
 RUN: number-commits -p JUST-A %t-mt-repo.git just-a         >%t.map
 RUN: number-commits -p ADD-B  %t-mt-repo.git just-a..add-b >>%t.map
 RUN: number-commits -p A      %t.a              master     >>%t.map
 RUN: number-commits -p B      %t.b              master     >>%t.map
-RUN: git -C %t-mt-repo.git log add-b --reverse --format="%%H %%P %%s" \
+RUN: git -C %t-mt-repo.git log add-b --date-order --reverse \
+RUN:      --format="%%H %%P %%s"                            \
 RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s CHECK %t
 CHECK: JUST-A-1                   mkblob: 1
 CHECK:  ADD-B-1 JUST-A-1          mkblob: 2
 CHECK: JUST-A-2 JUST-A-1          mkblob: 3
-CHECK:  ADD-B-2  ADD-B-1 JUST-A-2 Merge: mkblob: 3
+CHECK:  ADD-B-2  ADD-B-1 JUST-A-2 Merge a: mkblob: 3
 CHECK:  ADD-B-3  ADD-B-2          mkblob: 4
 
 # Confirm that just-a has an extra commit that wasn't repeated.

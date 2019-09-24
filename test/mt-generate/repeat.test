@@ -34,14 +34,14 @@ AB: JUST-A-1                   mkblob: 1
 AB:  ADD-B-1 JUST-A-1          mkblob: 2
 AB:  ADD-B-2  ADD-B-1          mkblob: 3
 AB: JUST-A-2 JUST-A-1          mkblob: 4
-AB:  ADD-B-3  ADD-B-2 JUST-A-2 Merge: mkblob: 4
+AB:  ADD-B-3  ADD-B-2 JUST-A-2 Merge a: mkblob: 4
 RUN: git -C %t-mt-repo-ba.git log add-a --reverse --format="%%H %%P %%s" \
 RUN:   | apply-commit-numbers %t.ba.map | grep -e . | check-diff %s BA %t
 BA:  ADD-A-1                   mkblob: 1
 BA: JUST-B-1                   mkblob: 2
-BA:  ADD-A-2  ADD-A-1 JUST-B-1 Merge: mkblob: 2
+BA:  ADD-A-2  ADD-A-1 JUST-B-1 Merge b: mkblob: 2
 BA: JUST-B-2 JUST-B-1          mkblob: 3
-BA:  ADD-A-3  ADD-A-2 JUST-B-2 Merge: mkblob: 3
+BA:  ADD-A-3  ADD-A-2 JUST-B-2 Merge b: mkblob: 3
 BA:  ADD-A-4  ADD-A-3          mkblob: 4
 
 # Check that mt-repeat is correct, and published in the right places.

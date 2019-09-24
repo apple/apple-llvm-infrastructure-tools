@@ -16,10 +16,7 @@ usage() {
         "                     other refs)"                                  \
         "                   '-' if there is no relevant split repo"         \
         "   <dir>         the name of the top-level tree to put <ref> into" \
-        "                   '-' for root (splat contents)"                  \
-        ""                                                                  \
-        "  --check-for-work"                                                \
-        "                 print <branch> if there's work (but don't do it)"
+        "                   '-' for root (splat contents)"
 }
 
 main() {
@@ -29,13 +26,10 @@ main() {
 
     # Only initialize split2mono db if we will interleave commits.
     # Initializing the blob is not free and there's no point.
-    check_for_work || mt_split2mono_init || return 1
+    mt_split2mono_init || return 1
     translate_branch "$@" || return 1
-    check_for_work || mt_split2mono_save || return 1
+    mt_split2mono_save || return 1
 }
-
-CHECK_FOR_WORK=0
-check_for_work() { [ ! "${CHECK_FOR_WORK:-0}" = 0 ]; }
 
 parse_cmdline() {
     [ $# -ge 1 ] || usage_error "missing <branch>"
@@ -47,7 +41,6 @@ parse_cmdline() {
                 usage
                 exit 0
                 ;;
-            --check-for-work) CHECK_FOR_WORK=1; shift ;;
             *:*)
                 [ $pos -ne 0 ] || usage_error "invalid branch name '$1'"
                 refdirs=( "${refdirs[@]}" "$1" )
@@ -70,189 +63,160 @@ parse_cmdline() {
     [ ${#refdirs[@]} -gt 0 ] || usage_error "missing <ref>:<dir>"
 }
 
+is_translated() { mt_split2mono "$1" >/dev/null 2>/dev/null; }
 translate_branch() {
     local current
     current=$(run --hide-errors git rev-parse --verify \
         refs/heads/$branch^{commit}) ||
         current=$ZERO_SHA1
 
-    local r d rd ref sha1
+    local r d rd mtref sha1 goal_sha1 start_sha1
     local -a listdirs # refs to list commits of and for which directory
     local -a repeated # directories getting repeated
     local repeated_root # the root is getting repeated
-    local -a sha1dirs # command-line for split2mono interleave-commits
+    local -a head_sha1dirs # head sha1 for each active directory
+    local -a goal_sha1dirs # goal sha1 for each active directory
+    local -a goal_sha1s # goal sha1s without the directories
+    local -a other_sha1dirs # other directories as '-:$d' and '%:$d'
     local repeat suffix
-    local nopass
+    local nopass repeat_stripped
     local declared # all declared directories, except '-'
+    local needs_initial_merge should_reset_head
     for rd in "${refdirs[@]}"; do
         r="${rd%:*}"
         d="${rd##*:}"
         suffix="$d/mt-split"
 
-        # Gather all the declared directories for list_new_commits.
+        # Gather all the declared directories for list_new_commits, except for
+        # '-'.
         [ "$d" = - ] || declared="$declared${declared:+ }$d"
 
+        # Return early if there is no ref for this directory.
+        if [ "$r" = - ]; then
+            other_sha1dirs=( "${other_sha1dirs[@]}" "$rd" )
+            continue
+        fi
+
         if [ "${r:0:1}" = % ]; then
+            # Handle repeat logic for this directory.
             [ -z "$repeat" ] || [ "$repeat" = "${r:1}" ] ||
                 error "mismatched repeat in '$rd' (expected: '$repeat')"
-            sha1dirs=( "${sha1dirs[@]}" "%:$d" )
-
-            if [ "$d" = - ]; then
-                repeated_root=1
-            else
-                repeated=( "${repeated[@]}" "$d/" )
-            fi
+            other_sha1dirs=( "${other_sha1dirs[@]}" "%:$d" )
 
             [ -z "$repeat" ] || continue
             repeat="${r:1}"
             suffix=mt-repeat r="$repeat" d=%
-            rd="${r%\{no-pass\}}:$d"
+            repeat_stripped="${r%\{no-pass\}}"
+            rd="$repeat_stripped:$d"
             [ "$rd" = "$r:$d" ] || nopass=1
+        else
+            # Figure out the goal sha1 for this directory.  Note that the
+            # repeat goal is determined below.
+            goal_sha1=$(run --hide-errors \
+                git rev-parse --verify $r^{commit}) ||
+                error "failed to extract goal sha1 from '$r' for dir '$d'"
+            goal_sha1dirs=( "${goal_sha1dirs[@]}" "$goal_sha1:$d" )
+            goal_sha1s=( "${goal_sha1s[@]}" "$goal_sha1" )
         fi
 
-        ref=refs/heads/mt/$branch/$suffix
-        sha1=-
-        [ "$r" = - ] ||
-            sha1=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
-            sha1=$ZERO_SHA1
-        sha1dirs=( "${sha1dirs[@]}" "$sha1:$d" )
+        mtref=refs/heads/mt/$branch/$suffix
+        head_sha1=$(run --hide-errors \
+            git rev-parse --verify $mtref^{commit}) ||
+            head_sha1=$ZERO_SHA1
 
-        [ ! "$r" = - ] || continue
-        listdirs=( "${listdirs[@]}" "$rd" )
+        head_sha1dirs=( "${head_sha1dirs[@]}" "$head_sha1:$d" )
     done
 
-    # Figure out the latest commit date coming in.
-    local until ct
-    if [ -n "$nopass" ]; then
-        until=0
-        for rd in "${refdirs[@]}"; do
-            [ "${rd:0:1}" = % ] && continue
-            [ "${rd:0:1}" = - ] && continue
-            r="${rd%:*}"
-            ct=$(run git log --format=%ct -1 "$r") ||
-                error "failed to extract committer date from ref '$r'"
-            [ $until -ge $ct ] || until=$ct
-        done
+    local head
+    head=$(run --hide-errors git rev-parse --verify $branch^{commit})
+    [ -n "$head" ] || head=$ZERO_SHA1
+
+    # Figure out the latest commit date coming in, if the repeat is "no-pass".
+    # This command takes goal_sha1s implicitly and returns via repeat_sha1.
+    if [ -n "$repeat" ]; then
+        local repeat_sha1
+        mt_list_first_repeat_sha1 "$repeat"
+        goal_sha1s=( "${goal_sha1s[@]}" "$repeat_sha1" )
+        goal_sha1dirs=( "${goal_sha1dirs[@]}" "$repeat_sha1:%" )
     fi
 
-    list_new_commits "$branch" "${listdirs[*]}" "${repeated[*]}" $until |
-    process_new_commits ||
+    process_new_commits </dev/null ||
         exit 1
 }
 
-process_new_commits() {
-    if check_for_work; then
-        local num_commits
-        while read num_commits; do
-            # If there are no commits, continue.  Ignore errors from
-            # non-integer input for now.
-            [ "$num_commits" -eq 0 ] 2>/dev/null && continue
+create_initial_merge() {
+    [ "${VERBOSE:-0}" = 0 ] || log "translate: create initial merge"
 
-            # Validate commit count.
-            [ "$num_commits" -ne 0 ] 2>/dev/null ||
-                error "--check-for-work: invalid number of commits"
+    # From parent: local head
+    # From parent: local new_sha1dirs
+    # From parent: local -a zero_sha1dirs
+    # From parent: local -a start_sha1dirs
+    # From parent: local -a nonsha1_sha1dirs
+    # Build this here so that build_executable is cached for the pipeline.
+    local split2mono
+    split2mono="$(build_executable split2mono)" ||
+        error "could not build split2mono"
 
-            # Report that there's work to do and then exit, after eating up
-            # remaining input to prevent a broken pipe.
-            printf "%s\n" "$branch"
-            cat >/dev/null
-            exit 0
-        done
-
-        # There's nothing to do.
-        return 0
-    fi
-
-    interleave_commits "$branch" "${sha1dirs[*]}" |
-    update_refs "$branch" "$current" "${sha1dirs[*]}" ||
-        error "failure interleaving commits"
+    local output
+    output="$(create_initial_merge_impl)" || exit 1
+    head="${output%% *}"
+    new_sha1dirs="${output#* }"
 }
 
-list_new_commits() {
-    local commit_lister=mt_list_commits
-    ! check_for_work || commit_lister=mt_count_commits
+create_initial_merge_impl() {
+    local -a main_sha1s
+    main_sha1dirs=( "${zero_sha1dirs[@]}" "${nonsha1_sha1dirs[@]}" )
+    list_no_commits "${start_sha1dirs[*]}" |
+    {
+        interleave_commits "${main_sha1dirs[*]}" "${start_sha1dirs[*]}" ||
+            error "could not create initial merge"
+        printf "%s\n" "$head $new_sha1dirs"
+    } || exit 1
+}
 
-    local branch="$1"
-    local refdirs="$2"
-    local repeated="$3"
-    local until=$4
-    local rd r d head tail format tailref headref suffix extra nots
-    local add_repeated_root extra_repeated
-    for rd in $refdirs; do
-        r="${rd%:*}"
-        d="${rd##*:}"
+process_new_commits() {
+    # From parent: local head
+    # From parent: local -a head_sha1dirs
+    # From parent: local -a other_sha1dirs
+    # From parent: local -a goal_sha1dirs
+    [ "${VERBOSE:-0}" = 0 ] || log "translate: process new commits"
 
-        extra= nots= add_repeated_root=
-        if [ "$d" = % ]; then
-            run --hide-errors git rev-parse --verify $branch^{commit} \
-                >/dev/null &&
-                nots=$branch
-            suffix=mt-repeat
-            extra="--first-parent${until:+ --until=}$until --"
-            extra="$extra${repeated:+ }$repeated"
-            add_repeated_root=$repeated_root
-        else
-            suffix="$d/mt-split"
-        fi
-        tailref="refs/heads/mt/$branch/$suffix"
-        headref="$r"
-        tail="$(run --hide-errors git rev-parse --verify $tailref^{commit})"
-        head="$(run --hide-errors git rev-parse --verify $headref^{commit})" ||
-            error "invalid ref '$headref' from '$rd'"
-        [ "$tail" = "$head" ] && continue
+    # Build this here so that build_executable is cached for the pipeline.
+    local split2mono
+    split2mono="$(build_executable split2mono)" ||
+        error "could not build split2mono"
 
-        # TODO: add a testcase for d of '-', which requires '--' here.
-        nots="$nots${nots:+ }$(run git show-ref -- $suffix |
-            grep refs/heads/mt/ | awk '{print $2}')"
-
-        if [ -n "$add_repeated_root" ]; then
-            # List all the top-level paths touched in the root, so we can
-            # select those commits to repeat.
-            local begin= decl=
-            begin="BEGIN {"
-            for decl in $declared; do
-                begin="$begin ignore[\"$decl\"] = 1;"
-            done
-            begin="$begin }"
-            # This is missing the existing "extra" flags, but it's okay if we
-            # get an over-approximation of changed paths here.
-            extra_repeated="$(run git log --format= --name-only $headref \
-                --not $nots | sed -e 's,/.*,,' | sort -u |
-                run awk "$begin"' ignore[$0] { next } { print }')"
-            extra="$extra${extra_repeated:+ }$extra_repeated"
-        fi
-
-        $commit_lister "$d" $headref --not $nots $extra ||
-            error "failed to list new commits for $rd"
-    done
+    local new_sha1dirs
+    interleave_commits "${main_sha1dirs[*]}" "${goal_sha1dirs[*]}" ||
+        error "could not update branch"
+    update_refs "$branch" "$current" "${head_sha1dirs[*]}" || exit 1
 }
 
 interleave_commits() {
-    local branch="$1"
-    local sha1dirs="$2"
-
-    ref=refs/heads/${branch#refs/heads/}
-    local head
-    head=$(run --hide-errors git rev-parse --verify $ref^{commit}) ||
-        head=$ZERO_SHA1
-
-    local svn2git split2mono
-    split2mono="$(build_executable split2mono)" ||
-        error "could not build split2mono"
-    run "$split2mono" interleave-commits \
-        "$MT_DB_SPLIT2MONO_DB" "$MT_DB_SVN2GIT_DB" "$head" $sha1dirs
+    # From parent: local head
+    # From parent: local split2mono
+    # From parent: local new_sha1dirs
+    # From parent: local -a head_sha1dirs
+    # From parent: local -a other_sha1dirs
+    # From parent: local -a goal_sha1dirs
+    local ref=refs/heads/${branch#refs/heads/}
+    local result
+    result="$(run "$split2mono" interleave-commits \
+        "$MT_DB_SPLIT2MONO_DB" "$MT_DB_SVN2GIT_DB" \
+        "$head" "${head_sha1dirs[@]}" "${other_sha1dirs[@]}" \
+        -- "${goal_sha1dirs[@]}")" ||
+        error "failure interleaving commits"
+    head="${result%% *}"
+    new_sha1dirs="${result#* }"
+    [ "${VERBOSE:-0}" = 0 ] || log "translation: $head $new_sha1dirs"
 }
 
 update_refs() {
+    # From parent: local head
+    # From parent: local new_sha1dirs
     local branch="${1#refs/heads/}"
     local current="$2"
     local old_sha1dirs="$3"
-    local new_sha1dirs head
-    read head new_sha1dirs
-    [ "${VERBOSE:-0}" = 0 ] || log "translation: $head $new_sha1dirs"
-
-    # Detect failure.  No reason to report a new error.
-    [ -n "$head" ] || return 1
 
     local ref=refs/heads/$branch
     {
@@ -263,10 +227,6 @@ update_refs() {
             d=${sd#*:}
             old_sha1=${sd%:*}
             new_sha1=
-            case "$old_sha1" in
-                -|%) continue ;;
-                *)   true ;;
-            esac
             if [ "$d" = % ]; then
                 ref=refs/heads/mt/$branch/mt-repeat
             else

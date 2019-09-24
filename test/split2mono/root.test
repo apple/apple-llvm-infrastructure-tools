@@ -35,16 +35,17 @@ RUN: rm -rf %t.split2mono
 RUN: %svn2git create %t.svn2git
 RUN: mkdir %t.split2mono
 RUN: %split2mono create %t.split2mono db
-RUN: git -C %t.mono apple-llvm mt list-commits - split/root/master >%t.in
-RUN: git -C %t.mono apple-llvm mt list-commits a split/a/master   >>%t.in
-RUN: git -C %t.mono apple-llvm mt list-commits b split/b/master   >>%t.in
-RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN: git -C %t.mono rev-parse split/root/master| xargs printf "%%s:-\n"  >%t.in
+RUN: git -C %t.mono rev-parse split/a/master   | xargs printf "%%s:a\n" >>%t.in
+RUN: git -C %t.mono rev-parse split/b/master   | xargs printf "%%s:b\n" >>%t.in
+RUN: cat %t.in                                                      \
+RUN:   | xargs %split2mono -C %t.mono interleave-commits            \
 RUN:     %t.split2mono %t.svn2git                                   \
 RUN:     0000000000000000000000000000000000000000                   \
 RUN:     0000000000000000000000000000000000000000:-                 \
 RUN:     0000000000000000000000000000000000000000:a                 \
 RUN:     0000000000000000000000000000000000000000:b                 \
-RUN:     <%t.in >%t.out
+RUN:     -- >%t.out
 RUN: cat %t.out | awk '{print $1}' | xargs git -C %t.mono update-ref master
 RUN: number-commits -p MONO %t.mono master  >%t.map
 RUN: number-commits -p ROOT %t.root master >>%t.map

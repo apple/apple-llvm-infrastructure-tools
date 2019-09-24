@@ -33,11 +33,11 @@ RUN: git -C %t-s merge --ff-only fast-cherry-pick
 RUN: git -C %t-m remote add s %t-s
 RUN: git -C %t-m remote update
 
-RUN: git -C %t-m apple-llvm mt list-commits sub s/fcp-and-merge \
-RUN:   | %split2mono -C %t-m interleave-commits                 \
-RUN:     %t.split2mono %t.svn2git                               \
-RUN:     0000000000000000000000000000000000000000               \
-RUN:     0000000000000000000000000000000000000000:sub >%t.out
+RUN: git -C %t-m rev-parse s/fcp-and-merge | xargs printf "%%s:sub\n" \
+RUN:   | xargs %split2mono -C %t-m interleave-commits                 \
+RUN:     %t.split2mono %t.svn2git                                     \
+RUN:     0000000000000000000000000000000000000000                     \
+RUN:     0000000000000000000000000000000000000000:sub -- >%t.out
 RUN: cat %t.out | awk '{print $1}' \
 RUN:   | xargs git -C %t-m update-ref fcp-and-merge
 RUN: number-commits -p SREV %t-s master                     >%t.map

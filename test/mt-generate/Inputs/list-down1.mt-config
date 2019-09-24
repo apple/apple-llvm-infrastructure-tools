@@ -10,3 +10,4 @@ dir    b4 x a2-name/x
 dir    b4 u b2-name/u
 dir    b4 z a-name/z2
 repeat b4 b2
+start b4 b3

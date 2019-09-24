@@ -53,28 +53,28 @@ RUN: number-commits -p ADD-A  %t-mt-repo-ba.git just-b..add-a >>%t.ba.map
 RUN: git -C %t-mt-repo-ab.git log add-b --reverse --date-order \
 RUN:     --format="%%H %%P %%s"                                \
 RUN:   | apply-commit-numbers %t.ab.map | grep -e . | check-diff %s AB %t
-AB: JUST-A-1                          mkblob:  a1
-AB:  ADD-B-1 JUST-A-1                 mkblob:  b2
-AB:  ADD-B-2  ADD-B-1                 mkblob:  b3
-AB:  ADD-B-3  ADD-B-1                 mkblob:  b4
-AB:  ADD-B-4  ADD-B-3 ADD-B-2         mkmerge: b5
-AB: JUST-A-2 JUST-A-1                 mkblob:  a6
-AB: JUST-A-3 JUST-A-1                 mkblob:  a7
-AB:  ADD-B-5  ADD-B-4 JUST-A-3 Merge: mkblob:  a7
-AB: JUST-A-4 JUST-A-3 JUST-A-2        mkmerge: a8
-AB:  ADD-B-6  ADD-B-5 JUST-A-4 Merge: mkmerge: a8
+AB: JUST-A-1                            mkblob:  a1
+AB:  ADD-B-1 JUST-A-1                   mkblob:  b2
+AB:  ADD-B-2  ADD-B-1                   mkblob:  b3
+AB:  ADD-B-3  ADD-B-1                   mkblob:  b4
+AB:  ADD-B-4  ADD-B-3 ADD-B-2           mkmerge: b5
+AB: JUST-A-2 JUST-A-1                   mkblob:  a6
+AB: JUST-A-3 JUST-A-1                   mkblob:  a7
+AB:  ADD-B-5  ADD-B-4 JUST-A-3 Merge a: mkblob:  a7
+AB: JUST-A-4 JUST-A-3 JUST-A-2          mkmerge: a8
+AB:  ADD-B-6  ADD-B-5 JUST-A-4 Merge a: mkmerge: a8
 
 RUN: git -C %t-mt-repo-ba.git log add-a --reverse --date-order \
 RUN:     --format="%%H %%P %%s"                                \
 RUN:   | apply-commit-numbers %t.ba.map | grep -e . | check-diff %s BA %t
-BA:  ADD-A-1                          mkblob:  a1
-BA: JUST-B-1                          mkblob:  b2
-BA:  ADD-A-2  ADD-A-1 JUST-B-1 Merge: mkblob:  b2
-BA: JUST-B-2 JUST-B-1                 mkblob:  b3
-BA: JUST-B-3 JUST-B-1                 mkblob:  b4
-BA:  ADD-A-3  ADD-A-2 JUST-B-3 Merge: mkblob:  b4
-BA: JUST-B-4 JUST-B-3 JUST-B-2        mkmerge: b5
-BA:  ADD-A-4  ADD-A-3 JUST-B-4 Merge: mkmerge: b5
-BA:  ADD-A-5  ADD-A-1                 mkblob:  a6
-BA:  ADD-A-6  ADD-A-4                 mkblob:  a7
-BA:  ADD-A-7  ADD-A-6  ADD-A-5        mkmerge: a8
+BA:  ADD-A-1                            mkblob:  a1
+BA: JUST-B-1                            mkblob:  b2
+BA:  ADD-A-2  ADD-A-1 JUST-B-1 Merge b: mkblob:  b2
+BA: JUST-B-2 JUST-B-1                   mkblob:  b3
+BA: JUST-B-3 JUST-B-1                   mkblob:  b4
+BA:  ADD-A-3  ADD-A-2 JUST-B-3 Merge b: mkblob:  b4
+BA: JUST-B-4 JUST-B-3 JUST-B-2          mkmerge: b5
+BA:  ADD-A-4  ADD-A-3 JUST-B-4 Merge b: mkmerge: b5
+BA:  ADD-A-5  ADD-A-1                   mkblob:  a6
+BA:  ADD-A-6  ADD-A-4                   mkblob:  a7
+BA:  ADD-A-7  ADD-A-6  ADD-A-5          mkmerge: a8
