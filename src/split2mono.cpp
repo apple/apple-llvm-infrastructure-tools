@@ -452,11 +452,18 @@ static int main_interleave_commits(const char *cmd, int argc,
     return 0;
   };
   bool was_repeated_head_specified = false;
-  for (int i = 0; i < argc; ++i) {
-    const char *arg = argv[i];
+  for (; argc; ++argv, --argc) {
+    const char *arg = *argv;
     sha1_ref head;
     bool is_tracked = false;
     bool is_repeat = false;
+
+    // Skip over "--" and break out to continue to goals.
+    if (!strcmp(arg, "--")) {
+      ++argv, --argc;
+      break;
+    }
+
     if (try_parse_ch(arg, '-')) {
       is_tracked = true;
       if (!try_parse_ch(arg, '%'))
@@ -464,11 +471,11 @@ static int main_interleave_commits(const char *cmd, int argc,
     }
     if ((is_tracked && !is_repeat && parse_sha1(arg, head)) ||
         try_parse_ch(arg, ':'))
-      return error("invalid <sha1>:... in '" + std::string(argv[i]) + "'");
+      return error("invalid <sha1>:... in '" + std::string(*argv) + "'");
 
     if (!try_parse_ch(arg, '%')) {
       if (*arg)
-        return error("invalid junk after '%' in '" + std::string(argv[i]) +
+        return error("invalid junk after '%' in '" + std::string(*argv) +
                      "'");
 
       // This is the head for all of the repeated dirs.
@@ -482,7 +489,7 @@ static int main_interleave_commits(const char *cmd, int argc,
     int d = -1;
     bool is_new = false;
     if (interleaver.dirs.add_dir(arg, is_new, d))
-      return error("invalid ...:<dir> in '" + std::string(argv[i]) + "'");
+      return error("invalid ...:<dir> in '" + std::string(*argv) + "'");
     if (!is_new)
       return usage("duplicate <dir> '" + std::string(arg) + "'", cmd);
     if (!is_tracked)
@@ -498,6 +505,37 @@ static int main_interleave_commits(const char *cmd, int argc,
     return usage("repeated dirs specified, but missing head", cmd);
   if (interleaver.repeated_head)
     interleaver.dirs.active_dirs.bits |= interleaver.dirs.repeated_dirs.bits;
+
+  // Parse goals.
+  for (; argc; ++argv, --argc) {
+    const char *arg = *argv;
+    sha1_ref goal;
+    if (parse_sha1(arg, goal) || try_parse_ch(arg, ':'))
+      return usage("invalid <sha1>:... in '" + std::string(*argv) + "'", cmd);
+    if (!goal)
+      return usage("invalid null goal in '" + std::string(*argv) + "'", cmd);
+
+    if (arg[0] == '%' && !arg[1]) {
+      if (interleaver.repeated_goal)
+        return usage("two goals for repeat '%'", cmd);
+      interleaver.repeated_goal = goal;
+      continue;
+    }
+
+    bool found = false;
+    int d = interleaver.dirs.lookup_dir(arg, found);
+    if (!found)
+      return usage("unknown <dir> '" + std::string(arg) + "'", cmd);
+    if (!interleaver.dirs.tracked_dirs.test(d))
+      return usage("untracked <dir> '" + std::string(arg) + "'", cmd);
+    if (interleaver.dirs.repeated_dirs.test(d))
+      return usage("cannot have goal for repeat <dir> '" + std::string(arg)
+                       + "'",
+                   cmd);
+    if (interleaver.dirs.list[d].goal)
+      return usage("two goals for <dir> '" + std::string(arg) + "'", cmd);
+    interleaver.dirs.list[d].goal = goal;
+  }
 
   return interleaver.read_queue_from_stdin() || interleaver.interleave();
 }

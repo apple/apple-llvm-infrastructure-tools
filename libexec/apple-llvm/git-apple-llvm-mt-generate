@@ -5,6 +5,7 @@ NONGIT_OK=1
 helper canonicalize_path
 helper mt_llvm_svn
 helper mt_llvm_svn2git
+helper mt_list_commits
 
 usage() {
     printf "%s\n"                                                             \
@@ -464,6 +465,7 @@ mt_setup_repo() {
 
 report_work() {
     printf "work: generate %s %s\n" "$1" "$2"
+    log "found work: generate $*"
     exit 0
 }
 
@@ -618,12 +620,22 @@ fetch_upstream() {
     sync_upstream_destinations || exit 1
 }
 
+does_mtref_match_goal() {
+    # Caller: local mtsha1 work
+    local mtref="$1"
+    local goal_sha1="$2"
+    mtsha1=$(run --dry git rev-parse --verify $mtref^{commit})
+    [ "$mtsha1" = "$goal_sha1" ] || work=1
+    mtsha1="${mtsha1:-$ZERO_SHA1}"
+    [ -z "$work" ]
+}
+
 mt_generate_branch() {
     # Get the branch name and prepend refs/heads/.
     local heads=refs/heads/
     local rawbranch=$1
-    local branch=$rawbranch
-    [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
+    local branch_name=${rawbranch#$heads}
+    local branch=$heads$branch_name
 
     local refdirs repeat
     refdirs="$(print_active_refdirs "$rawbranch")" ||
@@ -634,36 +646,72 @@ mt_generate_branch() {
     [ -n "$refdirs" ] ||
         error "generate $branch: no 'dir' declarations"
 
-    local refdir ref dir dirs
+    local refdir ref dir dirs sha1
+    local mtref mtsha1 work
     for refdir in $refdirs; do
         ref=${refdir%:*}
         dir=${refdir#*:}
         dirs="${dirs}${dirs:+ }$dir"
         [ "$refdir" = "$ref:$dir" ] ||
             error "generate $branch: invalid 'dir' with colon '$refdir'"
-        run --dry git rev-parse $ref^{commit} >/dev/null ||
+        sha1=$(run --dry git rev-parse --verify $ref^{commit}) ||
             error "generate $branch: invalid ref '$ref' in dir '$dir'"
         [ "$dir" = "*" ] &&
             error "generate $branch: invalid dir '$dir' for ref '$ref'"
+
+        # Figure out if there's work to do, if we haven't found it already.
+        [ -z "$work" ] || continue
+        # Caller: local mtsha1 work
+        mtref="mt/$branch_name/$dir/mt-split"
+        mtsha1=$(run --dry git rev-parse --verify $mtref^{commit})
+        [ "$mtsha1" = "$sha1" ] || work=1
+        mtsha1="${mtsha1:-$ZERO_SHA1}"
+        [ -n "$work" ] || continue
+        check_for_work || continue
+
+        # If we found work just report it.
+        report_work branch "$branch: $dir"
+        return 0
     done
-    if [ -n "$repeat" ]; then
-        [ "${repeat:0:${#heads}}" = $heads ] || repeat=$heads$repeat
-        repeat="${repeat%\{*\}}"
-        run --dry git rev-parse $repeat^{commit} >/dev/null ||
-            error "generate $branch: invalid repeat ref '$ref'"
-    fi
 
     refdirs="$(print_all_refdirs "$rawbranch")" ||
         error "failed to extract complete refdirs for $rawbranch"
 
-    if check_for_work; then
-        local work
-        work="$(run git apple-llvm mt translate-branch $branch $refdirs \
-            --check-for-work)" ||
-            error "failed to check for work on branch '$branch'"
-        [ -n "$work" ] && report_work branch "$branch"
+    # Use a loop so we can avoid nesting with "break".
+    local handle_repeat_once=
+    [ -z "$repeat" ] || handle_repeat_once=1
+    while [ -n "$handle_repeat_once" ]; do
+        handle_repeat_once=
+
+        [ "${repeat:0:${#heads}}" = $heads ] || repeat=$heads$repeat
+        repeat="${repeat%\{*\}}"
+        sha1=$(run --dry git rev-parse --verify $repeat^{commit}) ||
+            error "generate $branch: invalid repeat ref '$ref'"
+
+        # Figure out if there's work to do, if we haven't found it already.
+        [ -z "$work" ] || break
+        mtref="mt/$branch_name/mt-repeat"
+        mtsha1=$(run --hide-errors git rev-parse --verify $mtref^{commit})
+        [ ! "$mtsha1" = "$sha1" ] || break
+
+        # Check for changes to relevant paths.
+        local changed
+        changed="$(run mt_list_modified_top_level_paths "$mtsha1" "$sha1" \
+            "$(print_repeat_dirs "$rawbranch")" "$(print_dirs)")"
+        [ -n "$changed" ] || break
+
+        # There's work to do.
+        work=1
+        check_for_work || break
+        report_work branch "$branch: $changed"
         return 0
-    fi
+    done
+
+    # Return early unless there's work to do.
+    [ -n "$work" ] || return 0
+
+    refdirs="$(print_all_refdirs "$rawbranch")" ||
+        error "failed to extract complete refdirs for $rawbranch"
 
     run --dry git apple-llvm mt translate-branch $branch $refdirs ||
         error "failed to generate branch '$branch'"

@@ -44,6 +44,8 @@ struct commit_interleaver {
 
   sha1_ref head;
   sha1_ref repeated_head;
+  sha1_ref repeated_goal;
+  std::vector<const char *> repeated_dir_names;
   dir_list dirs;
   translation_queue q;
 
@@ -63,12 +65,20 @@ struct commit_interleaver {
                      const std::vector<int> &parent_revs,
                      std::vector<git_tree::item_type> &items,
                      sha1_ref &tree_sha1);
+  int finish_making_tree_outside_source(bool is_head, sha1_ref base_commit,
+                                        dir_mask source_dirs,
+                                        bool source_includes_root,
+                                        const std::vector<sha1_ref> &parents,
+                                        const std::vector<int> &parent_revs,
+                                        std::vector<git_tree::item_type> &items,
+                                        sha1_ref &tree_sha1);
   int translate_parents(const commit_source &source, const commit_type &base,
                         std::vector<sha1_ref> &new_parents,
                         std::vector<int> &parent_revs, sha1_ref first_parent,
                         int &new_srev);
   int interleave();
   int interleave_impl();
+  int merge_goals();
   int fast_forward_initial_repeats(progress_reporter &progress);
   int translate_commit(commit_source &source, const commit_type &base,
                        std::vector<sha1_ref> &new_parents,
@@ -77,8 +87,24 @@ struct commit_interleaver {
                        git_cache::commit_tree_buffers &buffers,
                        sha1_ref *head = nullptr);
   void print_heads(FILE *file);
+  void initialize_repeated_dir_names();
 };
 } // end namespace
+
+void commit_interleaver::initialize_repeated_dir_names() {
+  if (!dirs.repeated_dirs.any())
+    return;
+
+  for (auto &source : q.sources) {
+    if (!source.is_repeat)
+      continue;
+
+    for (int d = 0, de = dirs.list.size(); d != de; ++d)
+      if (dirs.repeated_dirs.test(d))
+        repeated_dir_names.push_back(dirs.list[d].name);
+    break;
+  }
+}
 
 int translation_queue::parse_source(const char *&current, const char *end) {
   auto parse_string = [](const char *&current, const char *s) {
@@ -432,6 +458,14 @@ int translation_queue::parse_source(const char *&current, const char *end) {
   return 0;
 }
 
+static void update_revs(int &new_srev, int &max_urev, int srev) {
+  int urev = srev < 0 ? -srev : srev;
+  if (urev > max_urev) {
+    max_urev = urev;
+    new_srev = -int(max_urev);
+  }
+}
+
 int commit_interleaver::translate_parents(const commit_source &source,
                                           const commit_type &base,
                                           std::vector<sha1_ref> &new_parents,
@@ -464,11 +498,7 @@ int commit_interleaver::translate_parents(const commit_source &source,
     int srev = 0;
     cache.compute_rev(p, /*is_split=*/!source.is_repeat, srev);
     parent_revs.push_back(srev);
-    int urev = srev < 0 ? -srev : srev;
-    if (urev > max_urev) {
-      max_urev = urev;
-      new_srev = -int(max_urev);
-    }
+    update_revs(new_srev, max_urev, srev);
   };
 
   // Wait for the worker to dig up information on boundary parents.
@@ -515,17 +545,6 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
                                        std::vector<git_tree::item_type> &items,
                                        sha1_ref &tree_sha1) {
   assert(!base_commit->is_zeros());
-
-  std::array<int, dir_mask::max_size> parent_for_d;
-  parent_for_d.fill(-1);
-
-  constexpr static const size_t max_parents = 128;
-  std::array<git_tree, max_parents> trees;
-  std::bitset<max_parents> contributed;
-  if (parents.size() > max_parents)
-    return error(std::to_string(parents.size()) +
-                 " is too many parents (max: " + std::to_string(max_parents) +
-                 ")");
 
   // Create mask of directories handled by the base commit.
   dir_mask base_dirs;
@@ -597,18 +616,39 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
     items.back().type = git_tree::item_type::tree;
     base_dirs.set(source.dir_index);
   }
+
+  return finish_making_tree_outside_source(
+      is_head, base_commit, base_dirs, /*source_includes_root=*/source.is_root,
+      parents, revs, items, tree_sha1);
+}
+
+int commit_interleaver::finish_making_tree_outside_source(
+    bool is_head, sha1_ref base_commit, dir_mask source_dirs,
+    bool source_includes_root, const std::vector<sha1_ref> &parents,
+    const std::vector<int> &revs, std::vector<git_tree::item_type> &items,
+    sha1_ref &tree_sha1) {
+  constexpr static const size_t max_parents = 128;
+  if (parents.size() > max_parents)
+    return error(std::to_string(parents.size()) +
+                 " is too many parents (max: " + std::to_string(max_parents) +
+                 ")");
+
   if (is_head)
-    dirs.active_dirs.bits |= base_dirs.bits;
+    dirs.active_dirs.bits |= source_dirs.bits;
 
   // Pick parents for all the other directories.
   int inactive_p = -1;
+  std::array<int, dir_mask::max_size> parent_for_d;
+  parent_for_d.fill(-1);
   auto get_dir_p = [&](int d) -> int & {
     return dirs.active_dirs.test(d) ? parent_for_d[d] : inactive_p;
   };
+  std::bitset<max_parents> contributed;
   auto update_p = [&](int &dir_p, int p) {
     dir_p = p;
     contributed.set(p);
   };
+  std::array<git_tree, max_parents> trees;
   for (int p = 0, pe = parents.size(); p != pe; ++p) {
     assert(!parents[p]->is_zeros());
     git_tree &tree = trees[p];
@@ -621,7 +661,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 
       // Optimization: skip the directory lookup if this source is contributing
       // the monorepo root.
-      if (source.is_root && item.type != git_tree::item_type::tree)
+      if (source_includes_root && item.type != git_tree::item_type::tree)
         continue;
 
       int d = dirs.find_dir(item.name);
@@ -641,7 +681,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
       // TODO: add a test where the base directory is possibly inactive,
       // because there are non-first-parent commits that get mapped ahead of
       // time.
-      if (base_dirs.test(d))
+      if (source_dirs.test(d))
         continue;
 
       int &dir_p = get_dir_p(d);
@@ -714,12 +754,12 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
     const git_tree &tree = trees[p];
     for (int i = 0; i < tree.num_items; ++i) {
       auto &item = tree.items[i];
-      if (source.is_root && item.type != git_tree::item_type::tree)
+      if (source_includes_root && item.type != git_tree::item_type::tree)
         continue;
 
       int d = dirs.find_dir(item.name);
       assert(d != -1);
-      if (!base_dirs.test(d))
+      if (!source_dirs.test(d))
         if (p == get_dir_p(d))
           items.push_back(item);
     }
@@ -739,7 +779,9 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   // Make the tree.
   if (items.size() > dir_mask::max_size)
     return error("too many items (max: " + std::to_string(dir_mask::max_size) +
-                 "); constructing tree for " + base_commit.sha1->to_string());
+                 "); constructing tree for " +
+                 (base_commit ? base_commit.sha1->to_string()
+                              : std::string("merge commit")));
   git_tree tree;
   tree.num_items = items.size();
   tree.items = cache.make_items(items.data(), items.data() + items.size());
@@ -751,6 +793,7 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
 }
 
 int commit_interleaver::interleave() {
+  initialize_repeated_dir_names();
   int status = interleave_impl();
 
   // Clean up worker threads.
@@ -858,8 +901,277 @@ int commit_interleaver::interleave_impl() {
   if (progress.report())
     return 1;
 
+  if (merge_goals())
+    return error("failed to merge goals");
+
   if (head)
     print_heads(stdout);
+
+  return 0;
+}
+
+
+int commit_interleaver::merge_goals() {
+  std::vector<sha1_ref> new_parents;
+  std::vector<int> parent_revs;
+
+  // Function for adding parents.
+  int new_srev = 0;
+  int max_urev = 0;
+  git_cache::parsed_metadata::string_ref max_cd;
+  unsigned long long max_ct = 0;
+  std::string first_subject;
+  auto add_parent = [&](sha1_ref mono_p) {
+    new_parents.push_back(mono_p);
+    int srev = 0;
+    cache.compute_rev(mono_p, /*is_split=*/false, srev);
+    parent_revs.push_back(srev);
+    update_revs(new_srev, max_urev, srev);
+
+    // Extract the commit date.
+    git_cache::parsed_metadata parsed;
+    {
+      const char *metadata;
+      bool is_merge;
+      sha1_ref first_parent;
+      if (cache.compute_metadata(mono_p, metadata, is_merge, first_parent))
+        return error("failed to compute commit metadata for goal '" +
+                     mono_p->to_string() + "'");
+      if (cache.parse_commit_metadata_impl(metadata, parsed))
+        return error("failed to parse commit metadata for goal '" +
+                     mono_p->to_string() + "'");
+    }
+    if (head != mono_p && first_subject.empty())
+      if (cache.extract_subject(first_subject, parsed.message))
+        return error("failed to extract subject for goal '" +
+                     mono_p->to_string() + "'");
+
+    // Choose the newest commit date.
+    auto parse_num = [](const char *&current, unsigned long long &num) {
+      char *end = nullptr;
+      unsigned long long parsed_num = strtoull(current, &end, 10);
+      if (current == end)
+        return 1;
+      current = end;
+      num = parsed_num;
+      return 0;
+    };
+    const char *current = parsed.cd.first;
+    unsigned long long ct = 0;
+    if (parse_num(current, ct) || *current != ' ')
+      return error("failed to parse commit date timestamp for goal '" +
+                   mono_p->to_string() + "'");
+    if (ct > max_ct) {
+      max_ct = ct;
+      max_cd = parsed.cd;
+    }
+    return 0;
+  };
+
+  // Add the head as the initial parent.  If this is a new branch and there
+  // were no commits to translate, then we may not have a head yet.
+  if (head)
+    if (add_parent(head))
+      return 1;
+
+  // Add the goal commits for each source where the goal was not reached,
+  // filling up the tree with items as appropriate.
+  bool all_goals_were_reached = true;
+  bool source_includes_root = false;
+  std::vector<git_tree::item_type> items;
+  dir_mask source_dirs;
+  git_tree head_tree;
+
+  std::vector<const char *> source_dir_names;
+  for (commit_source &source : q.sources) {
+    // Set up goal, head, and lambda to detect whether a directory is in
+    // source.
+    sha1_ref goal =
+        source.is_repeat ? repeated_goal : dirs.list[source.dir_index].goal;
+    auto is_dir_in_source = [&](int d) {
+      if (source.is_repeat)
+        return dirs.repeated_dirs.test(d);
+      return d == source.dir_index;
+    };
+
+    // Skip directories where there was no goal specified and where we reached
+    // the goal while interleaving.
+    if (!goal || goal == (source.is_repeat ? repeated_head
+                                           : dirs.list[source.dir_index].head))
+      continue;
+
+    // Probably we need to merge the goal, but not if:
+    //
+    // - the monorepo goal is an ancestor of head AND
+    // - the content is already exactly correct.
+    //
+    // To figure that out, we need to check the tree.  Load it if we haven't
+    // already done so.
+    if (!head_tree.sha1) {
+      head_tree.sha1 = head;
+      if (cache.ls_tree(head_tree))
+        return error("head " + head->to_string() + " has no tree");
+    }
+
+    // Look up the monorepo commit that corresponds to the split commit goal.
+    sha1_ref monogoal;
+    if (source.is_repeat)
+      monogoal = goal;
+    else if (cache.compute_mono(goal, monogoal))
+      return error("goal " + goal->to_string() + " not translated");
+
+    // Keep track of whether the monorepo root is included.
+    bool this_includes_root = source.is_root;
+    int root_d = source.is_root ? source.dir_index : -1;
+    if (!this_includes_root && source.is_repeat) {
+      for (int d = 0; d < int(dirs.list.size()); ++d) {
+        if (!dirs.list[d].is_root)
+          continue;
+
+        this_includes_root |= dirs.repeated_dirs.test(d);
+        root_d = d;
+        break;
+      }
+    }
+
+    // Look up the tree for the monorepo commit.
+    git_tree goal_tree;
+    goal_tree.sha1 = monogoal;
+    if (cache.ls_tree(goal_tree))
+      return error("goal " + monogoal->to_string() + " has no tree");
+
+    // Add tree items owned by this dir.  There will likely be multiple items
+    // for the monorepo root.
+    std::vector<git_tree::item_type> candidate_items;
+    for (int i = 0, ie = goal_tree.num_items; i != ie; ++i) {
+      auto &item = goal_tree.items[i];
+      int d = dirs.find_dir(item.name);
+      if (d == -1)
+        return error("no monorepo root for path '" + std::string(item.name) +
+                     "' in goal '" + monogoal->to_string() + "'");
+
+      if (!is_dir_in_source(d))
+        continue;
+
+      source_dirs.set(d);
+      candidate_items.push_back(item);
+    }
+
+    // Check all items are there and match.
+    bool found_mismatch = false;
+    bool found_mismatched_root = false;
+    int cand_num_root_items = 0;
+    for (auto &cand_item : candidate_items) {
+      int d = dirs.find_dir(cand_item.name);
+      assert(d != -1);
+      if (d == root_d) {
+        ++cand_num_root_items;
+        if (found_mismatched_root)
+          continue;
+      }
+
+      bool found_item = false;
+      for (int i = 0, ie = head_tree.num_items; i != ie; ++i) {
+        auto &head_item = head_tree.items[i];
+        if (d != dirs.find_dir(head_item.name))
+          continue;
+
+        found_item = true;
+        if (cand_item.sha1 != head_item.sha1 ||
+            cand_item.type != head_item.type)
+          found_mismatch = true;
+        break;
+      }
+
+      if (found_item && !found_mismatch)
+        continue;
+
+      found_mismatch = true;
+      if (d == root_d)
+        found_mismatched_root = true;
+    }
+
+    // Check number of root items matches.
+    if (!found_mismatch && this_includes_root) {
+      assert(root_d != -1);
+      int head_num_root_items = 0;
+      for (int i = 0; i < head_tree.num_items; ++i) {
+        auto &head_item = head_tree.items[i];
+        head_num_root_items += int(dirs.find_dir(head_item.name) == root_d);
+      }
+      found_mismatch |= cand_num_root_items != head_num_root_items;
+    }
+
+    // Check ancestry.
+    if (!found_mismatch)
+      found_mismatch |= !cache.merge_base_is_ancestor(monogoal, head);
+
+    // Continue if there's no mismatch.
+    if (!found_mismatch)
+      continue;
+
+    // Okay, we need this one.
+    all_goals_were_reached = false;
+    if (add_parent(monogoal))
+      return 1;
+    items.insert(items.end(), candidate_items.begin(), candidate_items.end());
+    if (source.is_repeat)
+      source_dir_names.insert(source_dir_names.end(),
+                              repeated_dir_names.begin(),
+                              repeated_dir_names.end());
+    else
+      source_dir_names.push_back(dirs.list[source.dir_index].name);
+
+    // Keep track of whether the monorepo root is included.
+    source_includes_root |= this_includes_root;
+  }
+
+  if (all_goals_were_reached)
+    return 0;
+
+  // Add the other tree items.
+  sha1_ref new_tree;
+  if (finish_making_tree_outside_source(/*is_head=*/true,
+                                        /*base_commit=*/sha1_ref(), source_dirs,
+                                        source_includes_root, new_parents,
+                                        parent_revs, items, new_tree))
+    return error("failed to make tree for goals merge");
+
+  // Construct a commit message.
+  git_cache::commit_tree_buffers buffers;
+  buffers.message = "Merge ";
+  cache.apply_dir_names_in_subject(buffers.message,
+                                   dir_name_range(source_dir_names));
+  if (new_parents.size() - (head ? 1 : 0) == 1 && !first_subject.empty()) {
+    git_cache::commit_tree_buffers merged_buffers;
+    buffers.message += ": ";
+    buffers.message += first_subject;
+  } else {
+    buffers.message += '\n';
+  }
+  buffers.message += '\n';
+  cache.apply_dir_name_trailers(buffers.message,
+                                dir_name_range(source_dir_names));
+
+  sha1_ref new_commit;
+  cache.apply_metadata_env_names(buffers);
+  cache.apply_merge_authorship(buffers, max_cd);
+  if (cache.commit_tree_impl(new_tree, new_parents, new_commit, buffers) ||
+      cache.set_base_rev(new_commit, new_srev))
+    return error("failed to merge goals");
+
+  // Update all the heads.
+  head = new_commit;
+  for (commit_source &source : q.sources) {
+    if (source.is_repeat) {
+      if (repeated_goal)
+        repeated_head = repeated_goal;
+      continue;
+    }
+    auto &dir = dirs.list[source.dir_index];
+    if (dir.goal)
+      dir.head = dir.goal;
+  }
 
   return 0;
 }
@@ -905,6 +1217,10 @@ int commit_interleaver::translate_commit(
   dir_type *dir = source.is_repeat ? nullptr : &q.dirs.list[source.dir_index];
   sha1_ref new_tree, new_commit, first_parent_override;
 
+  dir_name_range dir_names =
+      source.is_repeat ? dir_name_range(repeated_dir_names)
+                       : dir_name_range(dirs.list[source.dir_index].name);
+
   // Don't override parents for the first interleaved commit from a directory.
   // We don't want to change the number of parents of the commit (add the
   // head), and the translation of its first parent is probably not going to be
@@ -948,7 +1264,7 @@ int commit_interleaver::translate_commit(
                      /*is_generated_merge=*/base.is_generated_merge,
                      new_parents, parent_revs, items, new_tree) ||
       cache.commit_tree(base.commit, dir, new_tree, new_parents, new_commit,
-                        buffers) ||
+                        buffers, dir_names) ||
       cache.set_base_rev(new_commit, rev))
     return 1;
   if (!head)
@@ -974,7 +1290,7 @@ int commit_interleaver::translate_commit(
                        /*is_generated_merge*/true, new_parents, parent_revs,
                        items, new_tree) ||
         cache.commit_tree(base.commit, /*dir=*/nullptr, new_tree, new_parents,
-                          new_commit, buffers) ||
+                          new_commit, buffers, dir_names) ||
         cache.set_base_rev(new_commit, rev))
       return 1;
   }
