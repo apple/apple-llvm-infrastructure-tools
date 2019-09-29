@@ -108,12 +108,11 @@ repository.
 ## `generate`: What to do, and in what order
 
 ```
-generate <sort> <type> <object>
+generate <type> <object>
 ```
 
 `generate` declares what to do, critically specifying an order of action.  The
-declared actions will be completed in sorted order.  `<sort>` is designed to be
-a `0`-padded number.
+declared actions will be completed in the order found in the file.
 
 The currently supported values for `<type>` are:
 
