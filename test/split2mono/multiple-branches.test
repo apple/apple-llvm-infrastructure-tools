@@ -152,11 +152,13 @@ B2: apple-llvm-split-commit: Y-2
 B2: apple-llvm-split-dir: y/
 B2: A y/y2
 B2: --
-B2: MONO-6 Merge: mkblob: y2 MONO-2 MONO-5
+B2: MONO-6 Merge y: mkblob: y2 MONO-2 MONO-5
+B2: apple-llvm-split-dir: y/
 B2: A y/y1
 B2: A y/y2
 B2: --
-B2: MONO-6 Merge: mkblob: y2 MONO-2 MONO-5
+B2: MONO-6 Merge y: mkblob: y2 MONO-2 MONO-5
+B2: apple-llvm-split-dir: y/
 B2: A x/x2
 B2: D x/x3
 B2: --

@@ -959,13 +959,18 @@ void git_cache::apply_dir_names_in_subject(std::string &message,
   }
 }
 
+static void append_split_dir_trailer(std::string &message, const char *name) {
+  message += "apple-llvm-split-dir: ";
+  message += name;
+  if (strcmp("-", name))
+    message += '/';
+  message += '\n';
+}
+
 void git_cache::apply_dir_name_trailers(std::string &message,
                                         dir_name_range dir_names) {
-  for (auto i = dir_names.begin(), ie = dir_names.end(); i != ie; ++i) {
-    message += "apple-llvm-split-dir: ";
-    message += *i;
-    message += '\n';
-  }
+  for (auto i = dir_names.begin(), ie = dir_names.end(); i != ie; ++i)
+    append_split_dir_trailer(message, *i);
 }
 
 int git_cache::parse_commit_metadata(sha1_ref commit,
@@ -1129,11 +1134,7 @@ static void append_trailers(const char *dir, sha1_ref base_commit,
   message += "apple-llvm-split-commit: ";
   message += sha1.bytes;
   message += '\n';
-  message += "apple-llvm-split-dir: ";
-  message += dir;
-  if (dir[0] != '-' || dir[1])
-    message += '/';
-  message += '\n';
+  append_split_dir_trailer(message, dir);
 }
 
 int git_cache::commit_tree(

@@ -102,10 +102,12 @@ AB: JUST-A-2 JUST-A-1 mkblob: 4
 AB: apple-llvm-split-commit: A-2
 AB: apple-llvm-split-dir: a/
 AB: --
-AB: ADD-B-3 ADD-B-2 JUST-A-2 Merge: mkblob: 4
+AB: ADD-B-3 ADD-B-2 JUST-A-2 Merge a: mkblob: 4
+AB: apple-llvm-split-dir: a/
 AB-BODY: --
 AB-BODY: ADD-B-3
-AB-BODY: Merge: mkblob: 4
+AB-BODY: Merge a: mkblob: 4
+AB-BODY: apple-llvm-split-dir: a/
 RUN: git -C %t-ba log add-a --reverse                  \
 RUN:   --format="--%%n%%H %%P %%s%%n%%(trailers:only)" \
 RUN:   | apply-commit-numbers %t-ba.map | grep -e . | check-diff %s BA %t
@@ -127,19 +129,23 @@ BA: JUST-B-1 mkblob: 2
 BA: apple-llvm-split-commit: B-1
 BA: apple-llvm-split-dir: b/
 BA: --
-BA: ADD-A-2 ADD-A-1 JUST-B-1 Merge: mkblob: 2
+BA: ADD-A-2 ADD-A-1 JUST-B-1 Merge b: mkblob: 2
+BA: apple-llvm-split-dir: b/
 BA-BODY: --
 BA-BODY: ADD-A-2
-BA-BODY: Merge: mkblob: 2
+BA-BODY: Merge b: mkblob: 2
+BA-BODY: apple-llvm-split-dir: b/
 BA: --
 BA: JUST-B-2 JUST-B-1 mkblob: 3
 BA: apple-llvm-split-commit: B-2
 BA: apple-llvm-split-dir: b/
 BA: --
-BA: ADD-A-3 ADD-A-2 JUST-B-2 Merge: mkblob: 3
+BA: ADD-A-3 ADD-A-2 JUST-B-2 Merge b: mkblob: 3
+BA: apple-llvm-split-dir: b/
 BA-BODY: --
 BA-BODY: ADD-A-3
-BA-BODY: Merge: mkblob: 3
+BA-BODY: Merge b: mkblob: 3
+BA-BODY: apple-llvm-split-dir: b/
 BA: --
 BA: ADD-A-4 ADD-A-3 mkblob: 4
 BA: apple-llvm-split-commit: A-2
