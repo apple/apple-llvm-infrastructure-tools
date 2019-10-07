@@ -14,11 +14,11 @@
 namespace {
 struct progress_reporter {
   const long num_fparents_to_translate = 0;
-  const long num_commits_to_translate = 0;
   const long num_merges_to_translate = 0;
+  const long num_side_to_translate = 0;
   long num_fparents_processed = 0;
-  long num_commits_processed = 0;
   long num_merges_processed = 0;
+  long num_side_processed = 0;
 
   static long count_fparents(const translation_queue &q) {
     long num_fparents = 0;
@@ -28,12 +28,12 @@ struct progress_reporter {
   }
   explicit progress_reporter(const translation_queue &q)
       : num_fparents_to_translate(count_fparents(q)),
-        num_commits_to_translate(q.commits.size()),
-        num_merges_to_translate(q.fparents.size() - num_fparents_to_translate) {
-  }
+        num_merges_to_translate(q.fparents.size() - num_fparents_to_translate),
+        num_side_to_translate(q.commits.size() - num_fparents_to_translate) {}
 
+  void report_side();
   void report_merge();
-  void report_fparent(long num_commits);
+  void report_fparent();
   void report();
 };
 
@@ -525,13 +525,15 @@ int commit_interleaver::index_parent_tree_items(
 }
 
 void progress_reporter::report() {
-  long num_side_processed = num_commits_processed - num_fparents_processed;
-  long num_side_to_translate =
-      num_commits_to_translate - num_fparents_to_translate;
   fprintf(stderr,
-          "%8ld / %ld interleaved %8ld / %ld side %8ld / %ld merges\n",
+          "%8ld / %ld interleaved %8ld / %ld side %8ld / %ld generated\n",
           num_fparents_processed, num_fparents_to_translate, num_side_processed,
           num_side_to_translate, num_merges_processed, num_merges_to_translate);
+}
+
+void progress_reporter::report_side() {
+  if (!(++num_side_processed % 50))
+    report();
 }
 
 void progress_reporter::report_merge() {
@@ -539,8 +541,7 @@ void progress_reporter::report_merge() {
     report();
 }
 
-void progress_reporter::report_fparent(long num_commits) {
-  num_commits_processed += num_commits;
+void progress_reporter::report_fparent() {
   if (!(++num_fparents_processed % 50))
     report();
 }
@@ -628,7 +629,6 @@ int commit_interleaver::interleave() {
                    "' but out of commits");
     auto untranslated_first = q.commits.begin() + source.commits.first,
          untranslated_last = untranslated_first + source.commits.count;
-    const auto original_first = untranslated_first;
     while (untranslated_first->commit != fparent.commit) {
       if (translate_commit(source, *untranslated_first, new_parents,
                            parent_revs, items, buffers))
@@ -637,6 +637,7 @@ int commit_interleaver::interleave() {
 
       if (++untranslated_first == untranslated_last)
         return error("first parent missing from side_commits");
+      progress.report_side();
     }
     if (translate_commit(source, *untranslated_first, new_parents, parent_revs,
                          items, buffers, &head, fparent.head_p))
@@ -646,7 +647,7 @@ int commit_interleaver::interleave() {
     ++untranslated_first;
     source.commits.count = untranslated_last - untranslated_first;
     source.commits.first = untranslated_first - q.commits.begin();
-    progress.report_fparent(untranslated_first - original_first);
+    progress.report_fparent();
   }
   progress.report();
 
