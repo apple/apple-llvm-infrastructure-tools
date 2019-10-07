@@ -7,9 +7,11 @@ helper mt_list_commits
 
 usage() {
     printf "%s\n" \
-        "usage: $(print_cmdname) [options] <branch> <ref>:<dir>..."         \
+        "usage: $(print_cmdname) [options] <branch> <start> <ref>:<dir>..." \
         ""                                                                  \
         "   <branch>      the branch to interleave"                         \
+        "   <start>       the start ref (ignored if <branch> exists)"       \
+        "                   this can safely be empty"                       \
         "   <ref>         a ref to interleave commits from"                 \
         "                   '%<ref>[{no-pass}]' to repeat commits"          \
         "                     from <upstream> (optionally, without passing" \
@@ -20,7 +22,7 @@ usage() {
 }
 
 main() {
-    local branch
+    local branch start
     local -a refdirs
     parse_cmdline "$@" || return 1
 
@@ -33,7 +35,8 @@ main() {
 
 parse_cmdline() {
     [ $# -ge 1 ] || usage_error "missing <branch>"
-    [ $# -ge 2 ] || usage_error "missing <ref>:<dir>..."
+    [ $# -ge 2 ] || usage_error "missing <start> (can be empty)"
+    [ $# -ge 3 ] || usage_error "missing <ref>:<dir>..."
     local pos=0
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -43,6 +46,7 @@ parse_cmdline() {
                 ;;
             *:*)
                 [ $pos -ne 0 ] || usage_error "invalid branch name '$1'"
+                [ $pos -ne 1 ] || usage_error "invalid start ref '$1'"
                 refdirs=( "${refdirs[@]}" "$1" )
                 shift
                 ;;
@@ -50,9 +54,10 @@ parse_cmdline() {
                 usage_error "unknown option '$1'"
                 ;;
             *)
-                [ $pos -eq 0 ] || usage_error "unexpected argument '$1'"
-                branch="$1"
-                pos=1
+                [ $pos -lt 2 ] || usage_error "invalid <ref>:<dir> '$1'"
+                [ $pos -ne 1 ] || start="$1"
+                [ $pos -ne 0 ] || branch="$1"
+                pos=$(( $pos + 1 ))
                 shift
                 ;;
         esac
@@ -129,7 +134,14 @@ translate_branch() {
 
     local head
     head=$(run --hide-errors git rev-parse --verify $branch^{commit})
-    [ -n "$head" ] || head=$ZERO_SHA1
+    if [ -z "$head" ]; then
+        if [ -n "$start" ]; then
+            head=$(run --dry git rev-parse --verify "$start"^{commit}) ||
+                error "failed to extract commit from start ref '$start'"
+        else
+            head=$ZERO_SHA1
+        fi
+    fi
 
     # Figure out the latest commit date coming in, if the repeat is "no-pass".
     # This command takes goal_sha1s implicitly and returns via repeat_sha1.

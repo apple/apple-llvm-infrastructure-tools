@@ -58,7 +58,9 @@ int translation_queue::clean_initial_source_heads() {
 int translation_queue::clean_initial_head(sha1_ref &head) {
   for (auto &source : sources)
     if (source.has_changed_head()) {
-      // Discard the monorepo head if any source's head changed.
+      // Discard the monorepo head if any source's head has already changed.
+      // Because of when this function is called, this only happens if a head
+      // was discarded or rewound to a merge-base with the goal.
       head = sha1_ref();
       break;
     }

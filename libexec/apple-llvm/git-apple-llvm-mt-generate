@@ -657,6 +657,8 @@ mt_generate_branch() {
         error "failed to extract active refdirs for $rawbranch"
     repeat="$(print_repeat "$rawbranch")" ||
         error "failed to extract any repeat directive for $rawbranch"
+    start="$(print_start "$rawbranch")" ||
+        error "failed to extract any start directive for $rawbranch"
 
     [ -n "$refdirs" ] ||
         error "generate $branch: no 'dir' declarations"
@@ -693,6 +695,11 @@ mt_generate_branch() {
 
     refdirs="$(print_all_refdirs "$rawbranch")" ||
         error "failed to extract complete refdirs for $rawbranch"
+
+    # Validate the start ref, regardless of whether we need it.
+    [ -z "$start" ] ||
+        run --dry git rev-parse --verify $start^{commit} >/dev/null ||
+        error "invalid start ref '$start'"
 
     # Use a loop so we can avoid nesting with "break".
     local handle_repeat_once=
@@ -735,7 +742,7 @@ mt_generate_branch() {
     refdirs="$(print_all_refdirs "$rawbranch")" ||
         error "failed to extract complete refdirs for $rawbranch"
 
-    run --dry git apple-llvm mt translate-branch $branch $refdirs ||
+    run --dry git apple-llvm mt translate-branch $branch "$start" $refdirs ||
         error "failed to generate branch '$branch'"
 }
 
