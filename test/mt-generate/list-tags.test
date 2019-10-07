@@ -1,0 +1,11 @@
+RUN: %mtgen list --list-tags | check-diff %s TAGS %t
+TAGS: v1.0
+TAGS: v2.1
+
+RUN: %mtgen list-down1 --list-tags | check-diff %s DOWN1 %t
+DOWN1: v3.0
+
+RUN: %mtgen list-down1 --list-merged-tags | check-diff %s DOWN1-MERGED %t
+DOWN1-MERGED: v1.0
+DOWN1-MERGED: v2.1
+DOWN1-MERGED: v3.0

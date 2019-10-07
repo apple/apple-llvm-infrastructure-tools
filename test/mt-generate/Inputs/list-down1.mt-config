@@ -11,3 +11,10 @@ dir    b4 u b2-name/u
 dir    b4 z a-name/z2
 repeat b4 b2
 start b4 b3
+
+generate tag v3.0
+dir    v3.0 x a2-name/v3.0
+dir    v3.0 u b2-name/v3.0
+dir    v3.0 z a-name/v3.0
+repeat v3.0 v2.0
+start v3.0 v2.1

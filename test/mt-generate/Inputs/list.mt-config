@@ -12,11 +12,20 @@ dir b2 y b-name/xyz
 dir b1 w b-name/w
 dir b3 z a-name/z
 
+dir v1.0 x a-name/v1.0
+dir v2.1 y b-name/tags/v2.1
+dir v2.1 w b-name/v2.1.1
+dir v1.0 z a-name/tags/v1.0
+
+repeat v2.1 b3
 repeat b1 b2
 repeat b3 b1
 start b3 b1
+start v2.1 v1.0
 
 generate mapping a-name/master
 generate branch b2
 generate branch b1
+generate tag v2.1
 generate branch b3
+generate tag v1.0

@@ -111,17 +111,17 @@ There are a few tools sketched out so far:
 - Expects split commits from upstream to have been mapped using
   `git apple-llvm mt split2mono-map-llvm`.
 
-`git apple-llvm mt translate-branch` translates commits onto a branch.  It's
-given:
+`git apple-llvm mt translate-ref` translates commits onto a branch or tag.
+It's given:
 
-- `<branch>` the name of the branch to add commits to
-- `<upstream>...` a list of upstream monorepo branches
-- `<skip>...` a list of known-to-already-be-mapped refs to skip looking
-  at in the split repos, as a performance optimization
+- `<branch>`/`<tag>` the name of the branch to add commits to
+- `<start>` an optional start ref
 - `<ref>:<dir>...` a list of refs from split repositories and which
   directory to move them to, where `<ref>:` on its own indicates it
   should go at root (similar to
   [llvm.org/git/monorepo-root.git](http://git.llvm.org/git/monorepo-root.git)).
+
+See `--help` for some more semantics.
 
 
 ## Interleaving commits with `split2mono`

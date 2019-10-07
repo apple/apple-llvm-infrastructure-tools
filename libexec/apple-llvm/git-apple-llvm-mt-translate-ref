@@ -7,10 +7,10 @@ helper mt_list_commits
 
 usage() {
     printf "%s\n" \
-        "usage: $(print_cmdname) [options] <branch> <start> <ref>:<dir>..." \
+        "usage: $(print_cmdname) [options] <target> <start> <ref>:<dir>..." \
         ""                                                                  \
-        "   <branch>      the branch to interleave"                         \
-        "   <start>       the start ref (ignored if <branch> exists)"       \
+        "   <target>      the ref to interleave"                            \
+        "   <start>       the start ref (ignored if <target> exists)"       \
         "                   this can safely be empty"                       \
         "   <ref>         a ref to interleave commits from"                 \
         "                   '%<ref>[{no-pass}]' to repeat commits"          \
@@ -22,19 +22,19 @@ usage() {
 }
 
 main() {
-    local branch start
+    local target start
     local -a refdirs
     parse_cmdline "$@" || return 1
 
     # Only initialize split2mono db if we will interleave commits.
     # Initializing the blob is not free and there's no point.
     mt_split2mono_init || return 1
-    translate_branch "$@" || return 1
+    translate_ref "$@" || return 1
     mt_split2mono_save || return 1
 }
 
 parse_cmdline() {
-    [ $# -ge 1 ] || usage_error "missing <branch>"
+    [ $# -ge 1 ] || usage_error "missing <target>"
     [ $# -ge 2 ] || usage_error "missing <start> (can be empty)"
     [ $# -ge 3 ] || usage_error "missing <ref>:<dir>..."
     local pos=0
@@ -45,7 +45,7 @@ parse_cmdline() {
                 exit 0
                 ;;
             *:*)
-                [ $pos -ne 0 ] || usage_error "invalid branch name '$1'"
+                [ $pos -ne 0 ] || usage_error "invalid target ref '$1'"
                 [ $pos -ne 1 ] || usage_error "invalid start ref '$1'"
                 refdirs=( "${refdirs[@]}" "$1" )
                 shift
@@ -56,24 +56,40 @@ parse_cmdline() {
             *)
                 [ $pos -lt 2 ] || usage_error "invalid <ref>:<dir> '$1'"
                 [ $pos -ne 1 ] || start="$1"
-                [ $pos -ne 0 ] || branch="$1"
+                [ $pos -ne 0 ] || target="$1"
                 pos=$(( $pos + 1 ))
                 shift
                 ;;
         esac
     done
-    [ -n "$branch" ] || usage_error "missing <branch>"
-    branch="${branch#refs/heads/}"
+    [ -n "$target" ] || usage_error "missing <target>"
+    [ "${target:0:5}" = "refs/" ] ||
+        usage_error "<target> must start with 'refs/'"
 
     [ ${#refdirs[@]} -gt 0 ] || usage_error "missing <ref>:<dir>"
 }
 
 is_translated() { mt_split2mono "$1" >/dev/null 2>/dev/null; }
-translate_branch() {
+translate_ref() {
     local current
-    current=$(run --hide-errors git rev-parse --verify \
-        refs/heads/$branch^{commit}) ||
+    current=$(run --hide-errors git rev-parse --verify $target^{commit}) ||
         current=$ZERO_SHA1
+
+    local mtprefix mtname mttype
+    if [ "${target:0:11}" = refs/heads/ ]; then
+        mttype=branch
+        mtname="${target#refs/heads/}"
+        mtprefix=refs/heads/mt/
+    elif [ "${target:0:10}" = refs/tags/ ]; then
+        mttype=tag
+        mtname="${target#refs/tags/}"
+        mtprefix=refs/heads/mt-tag/
+        [ "$current" = $ZERO_SHA1 ] ||
+            error "tag $target already exists at $current"
+    else
+        # For now we just handle tags and branches.
+        error "unsupported target '$target'; must be refs/{heads,tags}/"
+    fi
 
     local r d rd mtref sha1 goal_sha1 start_sha1
     local -a listdirs # refs to list commits of and for which directory
@@ -124,7 +140,7 @@ translate_branch() {
             goal_sha1s=( "${goal_sha1s[@]}" "$goal_sha1" )
         fi
 
-        mtref=refs/heads/mt/$branch/$suffix
+        mtref=$mtprefix$mtname/$suffix
         head_sha1=$(run --hide-errors \
             git rev-parse --verify $mtref^{commit}) ||
             head_sha1=$ZERO_SHA1
@@ -133,7 +149,7 @@ translate_branch() {
     done
 
     local head
-    head=$(run --hide-errors git rev-parse --verify $branch^{commit})
+    head=$(run --hide-errors git rev-parse --verify $target^{commit})
     if [ -z "$head" ]; then
         if [ -n "$start" ]; then
             head=$(run --dry git rev-parse --verify "$start"^{commit}) ||
@@ -200,8 +216,8 @@ process_new_commits() {
 
     local new_sha1dirs
     interleave_commits "${main_sha1dirs[*]}" "${goal_sha1dirs[*]}" ||
-        error "could not update branch"
-    update_refs "$branch" "$current" "${head_sha1dirs[*]}" || exit 1
+        error "could not update target '$target'"
+    update_refs "$current" "${head_sha1dirs[*]}" || exit 1
 }
 
 interleave_commits() {
@@ -211,7 +227,6 @@ interleave_commits() {
     # From parent: local -a head_sha1dirs
     # From parent: local -a other_sha1dirs
     # From parent: local -a goal_sha1dirs
-    local ref=refs/heads/${branch#refs/heads/}
     local result
     result="$(run "$split2mono" interleave-commits \
         "$MT_DB_SPLIT2MONO_DB" "$MT_DB_SVN2GIT_DB" \
@@ -224,51 +239,72 @@ interleave_commits() {
 }
 
 update_refs() {
+    # From parent: local target
     # From parent: local head
     # From parent: local new_sha1dirs
-    local branch="${1#refs/heads/}"
-    local current="$2"
-    local old_sha1dirs="$3"
+    local current="$1"
+    local old_sha1dirs="$2"
 
-    local ref=refs/heads/$branch
-    {
-        log "Updating $branch => $head"
-        run printf "update %s %s %s\n" $ref $head $current
-        local old_sha1 new_sha1 new_sd sd d
+    local -a updates
+    local sha1 sd d mtref update_error
+    if [ "$mttype" = tag ]; then
+        local -a message -a trailers
+        local dslash
+        message=( "Tagging $name" "" )
+        for sd in $new_sha1dirs; do
+            d=${sd#*:}
+            if [ "$d" = % ]; then
+                continue
+            elif [ "$d" = - ]; then
+                dslash=$d
+            else
+                dslash=$d/
+            fi
+
+            sha1=${sd%:*}
+            mtref=$mtprefix$mtname/$d/mt-split
+            updates=( "${updates[@]}" "update $mtref $sha1 $ZERO_SHA1" )
+            message=( "${message[@]}" "  - $sha1: $dslash" )
+            trailers=( "${trailers[@]}" "apple-llvm-split-dir: $dslash" )
+        done
+        message=( "${message[@]}" "" "${trailers[@]}" )
+        log "Tagging $mtname => $head"
+        printf "%s\n" "${message[@]}" | run git tag -a -F - $mtname $head ||
+            error "failed to tag '$mtname' as '$head'"
+        update_error="failed to update $refdirs for $mtname"
+    else
+        log "Updating $target => $head"
+        updates=( "update $target $head $current" )
+        local prev sha1 nsd sd d mtsuffix
         for sd in $old_sha1dirs; do
             d=${sd#*:}
-            old_sha1=${sd%:*}
-            new_sha1=
+            prev=${sd%:*}
+            sha1=
             if [ "$d" = % ]; then
-                ref=refs/heads/mt/$branch/mt-repeat
+                mtsuffix=/mt-repeat
             else
-                ref=refs/heads/mt/$branch/$d/mt-split
+                mtsuffix=/$d/mt-split
             fi
-            for new_sd in $new_sha1dirs; do
-                [ "$d" = "${new_sd#*:}" ] || continue
-                new_sha1=${new_sd%:*}
+            mtref=$mtprefix$mtname$mtsuffix
+            for nsd in $new_sha1dirs; do
+                [ "$d" = "${nsd#*:}" ] || continue
+                sha1=${nsd%:*}
                 break
             done
-            if [ -z "$new_sha1" ]; then
-                printf "poison update-ref\n"
-                error "missing output sha1 for '$d'"
-            fi
-            if [ $new_sha1 = $ZERO_SHA1 -a \
-                ! "$new_sha1" = "$old_sha1" ]; then
-                printf "poison update-ref\n"
-                error "internal: new value for $ref is $new_sha1" \
-                    "but it was $old_sha1"
-            fi
-            if [ "$new_sha1" = "$old_sha1" ]; then
-                log " - ${ref#refs/heads/} == $new_sha1"
-                run printf "verify %s %s\n" $ref $new_sha1
+            if [ "${sha1:-$ZERO_SHA1}" = $ZERO_SHA1 ]; then
+                error "missing sha1 for '$d' in $target => $head"
+            elif [ "$sha1" = "$prev" ]; then
+                updates=( "${updates[@]}" "verify $mtref $sha1" )
             else
-                log " - ${ref#refs/heads/} => $new_sha1"
-                run printf "update %s %s %s\n" $ref $new_sha1 $old_sha1
+                log " - $d: $prev => $sha1"
+                updates=( "${updates[@]}" "update $mtref $sha1 $prev" )
             fi
         done
-    } | run git update-ref --stdin ||
-        error "failed to update $branch and $refdirs"
+        update_error="failed to update $mtname and $refdirs"
+    fi
+
+    printf "%s\n" "${updates[@]}" | run git update-ref --stdin ||
+        error "$update_error"
 }
 
 main "$@"
