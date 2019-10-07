@@ -834,6 +834,8 @@ int commit_interleaver::merge_targets(MergeRequest &merge, sha1_ref &new_commit,
       if (cache.compute_metadata(mono_p, metadata, is_merge, first_parent))
         return error("failed to compute commit metadata for target '" +
                      mono_p->to_string() + "'");
+      fprintf(stderr, "monop=%s\nmetadata = %s\n", mono_p->to_string().c_str(),
+              metadata);
       if (cache.parse_commit_metadata_impl(metadata, parsed))
         return error("failed to parse commit metadata for target '" +
                      mono_p->to_string() + "'");

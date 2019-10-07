@@ -392,6 +392,7 @@ int commit_source::list_first_parents_limit_impl(git_cache &cache,
       "git",
       "log",
       "--first-parent",
+      "--date=raw",
       "--format=tformat:%H %ct %P%x00%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B%x00",
       start.c_str(),
   };
@@ -423,44 +424,21 @@ int commit_source::list_first_parents_limit_impl(git_cache &cache,
     validate_last_ct();
 
     last_first_parent = sha1_ref();
-    bool &is_merge = fparents.back().is_merge;
-    auto store_metadata = [&]() {
-      if (parse_through_null(current, end))
-        return error("failed to find metadata for '" +
-                     fparents.back().commit->to_string() + "'");
-      const char *metadata = current;
-      if (parse_through_null(current, end))
-        return error("failed to skip metadata for '" +
-                     fparents.back().commit->to_string() + "'");
-      assert(!current[-1]);
-      cache.store_metadata_if_new(fparents.back().commit, metadata, current - 1,
-                                  is_merge, last_first_parent);
-      if (parse_newline(current))
-        return error("missing newline after metadata for '" +
-                     fparents.back().commit->to_string() + "'");
-      return 0;
-    };
-
-    if (!*current) {
-      // No parents.
-      if (store_metadata())
-        return error("failed to store metadata for initial commit '" +
-                     fparents.back().commit->to_string() + "'");
-      assert(current == end);
-      last_first_parent = sha1_ref();
-      break;
+    const char *metadata = current;
+    const char *end_metadata = end;
+    if (cache.parse_for_store_metadata(fparents.back().commit, metadata,
+                                       end_metadata, fparents.back().is_merge,
+                                       last_first_parent))
+      return 1;
+    cache.store_metadata_if_new(fparents.back().commit, metadata, end_metadata,
+                                fparents.back().is_merge, last_first_parent);
+    current = end_metadata;
+    if (last_first_parent) {
+      fparents.back().has_parents = true;
+      fparents.back().head_p = 0;
     }
-
-    // We don't care much about the parents, we're just storing the metadata.
-    fparents.back().has_parents = true;
-    fparents.back().head_p = 0;
-    if (cache.pool.parse_sha1(current, last_first_parent))
-      return error("failed to parse first parent of '" +
-                   fparents.back().commit->to_string() + "'");
-    is_merge = !parse_space(current);
-    if (store_metadata())
-      return error("failed to store metadata for commit '" +
-                   fparents.back().commit->to_string() + "'");
+    if (parse_null(current) || parse_newline(current))
+      return 1;
   }
   return 0;
 }
@@ -634,8 +612,15 @@ int commit_source::find_repeat_commits(git_cache &cache, long long earliest_ct,
 
   std::string start_sha1 = goal->to_string();
   std::vector<const char *> argv = {
-      "git", "log", "--first-parent", "--format=%x01%H %ct",
-      "-z",  "-m",  "--name-only",    start_sha1.c_str(),
+      "git",
+      "log",
+      "--first-parent",
+      "--date=raw",
+      "--format=%x01%H %ct %P%x00%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B%x00",
+      "-z",
+      "-m",
+      "--name-only",
+      start_sha1.c_str(),
   };
   std::string stop;
   if (head) {
@@ -657,11 +642,22 @@ int commit_source::find_repeat_commits(git_cache &cache, long long earliest_ct,
     sha1_ref sha1;
     long long ct;
     if (parse_ch(current, 1) || cache.pool.parse_sha1(current, sha1) ||
-        parse_space(current) || parse_num(current, ct) || parse_null(current))
-      return 1;
+        parse_space(current) || parse_num(current, ct) || parse_space(current))
+      return error("failed to parse repeat commit");
 
-    // Keep track of this as we go.
-    last_repeat_sha1_after_start = sha1;
+    // Get the metadata, use it later if useful.
+    const char *metadata = current;
+    const char *end_metadata = end;
+    bool is_merge;
+    if (cache.parse_for_store_metadata(sha1, metadata, end_metadata, is_merge,
+                                       last_repeat_sha1_after_start))
+      return 1;
+    cache.store_metadata_if_new(sha1, metadata, end_metadata, is_merge,
+                                last_repeat_sha1_after_start);
+    current = end_metadata;
+    if (parse_null(current) || parse_null(current))
+      return error("missing null after metadata for repeat commit '" +
+                   sha1->to_string() + "'");
 
     // Ignore -s ours merges.
     if (parse_newline(current))
@@ -698,8 +694,12 @@ int commit_source::find_repeat_commits(git_cache &cache, long long earliest_ct,
     // This commit matters.  Add it.
     fparents.emplace_back(source_index);
     fparents.back().commit = sha1;
+    if (last_repeat_sha1_after_start) {
+      fparents.back().head_p = 0;
+      fparents.back().has_parents = true;
+    }
+    fparents.back().is_merge = is_merge;
     fparents.back().ct = ct;
-    fparents.back().head_p = 0;
     validate_last_ct();
 
     // Break once we're one past the earliest other commit timestamp.
@@ -826,6 +826,7 @@ int commit_source::find_dir_commit_parents_to_translate(
       "log",
       "--reverse",
       "--date-order",
+      "--date=raw",
       "--format=tformat:%m%H %T %P%x00%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B%x00",
       start_sha1.c_str(),
       "--not",
@@ -851,7 +852,7 @@ int commit_source::find_dir_commit_parents_to_translate(
     sha1_ref commit, tree;
     if (parse_boundary(current, is_boundary) ||
         cache.pool.parse_sha1(current, commit) || parse_space(current) ||
-        cache.pool.parse_sha1(current, tree))
+        cache.pool.parse_sha1(current, tree) || parse_space(current))
       return 1;
 
     // Warm the cache.
@@ -890,27 +891,18 @@ int commit_source::find_dir_commit_parents_to_translate(
 int commit_source::parse_boundary_metadata(git_cache &cache, sha1_ref commit,
                                            const char *&current,
                                            const char *end) {
+  const char *metadata = current;
+  const char *end_metadata = end;
   bool is_merge = false;
   sha1_ref first_parent;
-  if (!parse_space(current) && *current) {
-    if (cache.pool.parse_sha1(current, first_parent))
-      return error("invalid first parent of boundary commit");
-
-    // Check for a second parent, but don't parse it.
-    if (*current)
-      is_merge = true;
-  }
-
-  // Grab the metadata, which compute_mono might leverage if this is an
-  // upstream git-svn commit.
-  if (parse_through_null(current, end))
-    return error("missing null character before boundary metadata");
-  const char *metadata = current;
-  if (parse_through_null(current, end))
-    return error("missing null character after boundary metadata");
-  cache.store_metadata_if_new(commit, metadata, current - 1, is_merge,
+  if (cache.parse_for_store_metadata(commit, metadata, end_metadata, is_merge,
+                                     first_parent))
+    return error("failed to store boundary metadata for '" +
+                 commit->to_string() + "'");
+  cache.store_metadata_if_new(commit, metadata, end_metadata, is_merge,
                               first_parent);
-  if (parse_newline(current))
+  current = end_metadata;
+  if (parse_null(current) || parse_newline(current))
     return error("missing newline after commit");
 
   return queue_boundary_commit(cache, commit);

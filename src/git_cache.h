@@ -77,6 +77,9 @@ struct git_cache {
   int compute_rev_with_metadata(sha1_ref commit, bool is_split, int &rev,
                                 const char *raw_metadata, bool is_merge,
                                 sha1_ref first_parent);
+  int parse_for_store_metadata(sha1_ref commit, const char *&metadata,
+                               const char *&end_metadata, bool &is_merge,
+                               sha1_ref &first_parent);
 
   /// Add an entry to the svnbaserev table.
   int set_base_rev(sha1_ref commit, int rev);
@@ -447,13 +450,15 @@ int git_cache::compute_metadata(sha1_ref commit, const char *&metadata,
     return 0;
 
   textual_sha1 sha1(*commit);
-  const char *args[] = {"git",
-                        "log",
-                        "--date=raw",
-                        "-1",
-                        "--format=format:%P%n%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B",
-                        sha1.bytes,
-                        nullptr};
+  const char *args[] = {
+      "git",
+      "log",
+      "--date=raw",
+      "--no-walk",
+      "--format=%P%x00%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B%x00",
+      sha1.bytes,
+      nullptr,
+  };
   git_reply.clear();
   if (call_git(args, nullptr, "", git_reply))
     return error(std::string("failed to read commit metadata for ") +
@@ -461,50 +466,45 @@ int git_cache::compute_metadata(sha1_ref commit, const char *&metadata,
   if (git_reply.empty())
     return error("missing commit metadata for " + sha1.to_string());
 
-  // Parse the parents eagerly to fill in is_merge and first_parent.
-  auto parse_parents = [&](const char *&end_parents) {
-    // Check for a root commit.
-    if (*end_parents == '\n')
-      return 0;
-
-    textual_sha1 text;
-    if (text.from_input(git_reply.data(), &end_parents))
-      return error("invalid first parent for " + sha1.to_string());
-
-    first_parent = pool.lookup(text);
-    if (!first_parent)
-      return error("null first parent for " + sha1.to_string());
-
-    // Check for only one parent.
-    if (*end_parents == '\n')
-      return 0;
-    if (*end_parents != ' ')
-      return error("missing space after first parent of " + sha1.to_string());
-
-    // This is a merge commit with multiple parents.  Skip to the newline,
-    // checking that the parents are well formed.
-    is_merge = true;
-    while (*end_parents == ' ') {
-      ++end_parents;
-      if (text.from_input(end_parents, &end_parents))
-        return error("invalid parent for " + sha1.to_string());
-    }
-    if (*end_parents != '\n')
-      return error("invalid parent metadata for " + sha1.to_string());
-    return 0;
-  };
-
   git_reply.push_back(0);
-  const char *end_parents = git_reply.data();
-  if (parse_parents(end_parents))
-    return 1;
-  assert(*end_parents == '\n');
-  ++end_parents;
-  git_reply.pop_back();
 
-  metadata = store_metadata_impl(commit, end_parents,
-                                 git_reply.data() + git_reply.size(), is_merge,
+  metadata = git_reply.data();
+  const char *end_metadata = metadata + git_reply.size() - 1;
+  if (parse_for_store_metadata(commit, metadata, end_metadata, is_merge,
+                               first_parent))
+    return 1;
+  metadata = store_metadata_impl(commit, metadata, end_metadata, is_merge,
                                  first_parent);
+  return 0;
+}
+
+int git_cache::parse_for_store_metadata(sha1_ref commit, const char *&metadata,
+                                        const char *&end_metadata,
+                                        bool &is_merge,
+                                        sha1_ref &first_parent) {
+  first_parent = sha1_ref();
+  is_merge = false;
+
+  // Parse the parents to fill in is_merge and first_parent.
+  auto parse_parents = [&]() {
+    // Check for a root commit.
+    if (!parse_null(metadata))
+      return 0;
+
+    if (pool.parse_sha1(metadata, first_parent))
+      return error("invalid first parent for " + commit->to_string());
+
+    if (!parse_space(metadata))
+      is_merge = true;
+    return parse_through_null(metadata, end_metadata);
+  };
+  if (parse_parents())
+    return error("failed to parse parents before metadata for '" +
+                 commit->to_string() + "'");
+
+  // Refine the end.
+  end_metadata = metadata;
+  skip_until_null(end_metadata);
   return 0;
 }
 
