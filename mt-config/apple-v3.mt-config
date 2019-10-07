@@ -1,0 +1,69 @@
+
+
+# master
+
+llvm apple/master-llvm/start
+clang apple/master-clang/start
+compiler-rt apple/master-compiler-rt/start
+clang-tools-extra apple/master-clang-tools-extra/start
+# Libcxx doesn't have a master tag.
+
+# apple/stable/20190619
+
+llvm apple/stable/20190619/start
+clang apple/stable/20190619/start
+compiler-rt apple/stable/20190619/start
+clang-tools-extra apple/stable/20190619/start
+libcxx apple/stable/20190619/start
+
+# swift-5.1-branch
+
+llvm apple/swift-5.1-branch/start
+clang apple/swift-5.1-branch/start
+compiler-rt apple/swift-5.1-branch/start
+clang-tools-extra apple/swift-5.1-branch/start
+libcxx apple/swift-5.1-branch/start
+
+# swift-5.0-branch
+
+llvm apple/swift-5.0-branch/start
+clang apple/swift-5.0-branch/start
+compiler-rt apple/swift-5.0-branch/start
+clang-tools-extra apple/swift-5.0-branch/start
+libcxx apple/swift-5.0-branch/start
+
+# apple/20180719/swift-5.0-branch/start
+
+llvm apple/20180719/swift-5.0-branch/start
+clang apple/20180719/swift-5.0-branch/start
+compiler-rt apple/20180719/swift-5.0-branch/start
+
+# apple/swift-4.2-branch/start
+
+llvm apple/swift-4.2-branch/start
+clang apple/swift-4.2-branch/start
+compiler-rt apple/swift-4.2-branch/start
+
+# apple/swift-4.1-branch/start
+
+llvm apple/swift-4.1-branch/start
+clang apple/swift-4.1-branch/start
+compiler-rt apple/swift-4.1-branch/start
+
+# apple/swift-4.0-branch/start
+
+llvm apple/swift-4.0-branch/start
+clang apple/swift-4.0-branch/start
+compiler-rt apple/swift-4.0-branch/start
+
+# apple/swift-3.1-branch/start
+
+llvm apple/swift-3.1-branch/start
+clang apple/swift-3.1-branch/start
+compiler-rt apple/swift-3.1-branch/start
+
+# apple/swift-3.0-branch/start
+
+llvm apple/swift-3.0-branch/start
+clang apple/swift-3.0-branch/start
+compiler-rt apple/swift-3.0-branch/start
