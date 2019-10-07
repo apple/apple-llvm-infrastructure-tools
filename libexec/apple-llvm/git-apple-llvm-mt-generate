@@ -285,7 +285,7 @@ mt_setup() {
         if [ "$name" = "$monodest" ]; then
             remotetags="refs/tags/*"
         else
-            remotetags="refs/remotes/$name/*/tag"
+            remotetags="refs/tags/remotes/$name/*/remote-tag"
         fi
         run $hide git fetch -q $name                \
             "+refs/heads/*:refs/remotes/$name/*"    \
@@ -795,21 +795,15 @@ mt_fetch_ref() {
     mt_ref_init_helper
 
     # Fetch from local mirror.
-    local monodest repeat
-    monodest="$(show_monorepo_destination)" || exit 1
-    repeat="$(print_repeat "$rawtarget")" ||
-        error "failed to extract any repeat directive for $rawtarget"
-    mt_fetch_one_branch "$monodest" "$target"
-    [ $mttype = tag ] ||
-        mt_fetch_one_branch "$monodest" "$mtprefix$mtname/mt-repeat"
+    if [ ! $mttype = tag ]; then
+        local monodest repeat
+        repeat="$(print_repeat "$rawtarget")" ||
+            error "failed to extract any repeat directive for $rawtarget"
 
-    local splitdest refdirs
-    splitdest="$(show_splitref_destination)" || exit 1
-    refdirs="$(print_active_refdirs "$rawtarget")" || exit 1
-    for refdir in $refdirs; do
-        d=${refdir#*:}
-        mt_fetch_one_branch "$splitdest" "$mttarget$mtname/$d/mt-split"
-    done
+        monodest="$(show_monorepo_destination)" || exit 1
+        mt_fetch_one_branch "$monodest" "$target"
+        mt_fetch_one_branch "$monodest" "$mtprefix$mtname/mt-repeat"
+    fi
 
     mt_fetch_splitrefs "$rawtarget"
 }
@@ -834,12 +828,7 @@ mt_fetch_one_branch() {
     local remote="$1"
     local ref="$2"
 
-    local remote_ref
-    if [ "${ref:0:10}" = refs/tags/ ]; then
-        remote_ref="refs/remote-tags/$remote/${ref#refs/tags/}^{tag}"
-    else
-        remote_ref="refs/remotes/$remote/${ref#refs/heads/}^{commit}"
-    fi
+    local remote_ref="refs/remotes/$remote/${ref#refs/heads/}^{commit}"
     local sha1
     sha1="$(run --hide-errors git rev-parse --verify "$remote_ref")" ||
         return 0
