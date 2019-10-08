@@ -156,8 +156,12 @@ static int call_git(char *argv[], char *envp[], const std::string &input,
   if (!argv)
     return 0;
 
+  // Do a dance to keep the check above working.
+  const char *original = argv[0];
   argv[0] = const_cast<char *>(git.c_str());
-  return call_git_impl(argv, envp, input, reply, ignore_errors);
+  int status = call_git_impl(argv, envp, input, reply, ignore_errors);
+  argv[0] = const_cast<char *>(original);
+  return status;
 }
 
 static int call_git_init() {

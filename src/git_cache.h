@@ -29,6 +29,20 @@ struct git_tree {
     constexpr static const char *get_type(type_enum type);
     const char *get_mode() const { return get_mode(type); }
     const char *get_type() const { return get_type(type); }
+
+    bool operator<(const item_type &x) const {
+      assert(name);
+      assert(x.name);
+      if (sha1 < x.sha1)
+        return true;
+      if (x.sha1 < sha1)
+        return false;
+      if (type < x.type)
+        return true;
+      if (x.type < type)
+        return false;
+      return strcmp(name, x.name) < 0;
+    }
   };
 
   git_tree() = default;
@@ -440,7 +454,8 @@ int git_cache::compute_commit_tree(sha1_ref commit, sha1_ref &tree) {
   if (text.from_input(&git_reply[0], &end) || *end++ != '\n' || *end)
     return 1;
 
-  note_commit_tree(commit, pool.lookup(text));
+  tree = pool.lookup(text);
+  note_commit_tree(commit, tree);
   return 0;
 }
 
@@ -873,7 +888,7 @@ int git_cache::merge_base(sha1_ref a, sha1_ref b, sha1_ref &base) {
   const char *argv[] = {"git", "merge-base", a_text.bytes, b_text.bytes,
                         nullptr};
   git_reply.clear();
-  if (call_git(argv, nullptr, "", git_reply))
+  if (call_git(argv, nullptr, "", git_reply, /*ignore_errors=*/true))
     return 1;
   git_reply.push_back(0);
 
@@ -961,7 +976,8 @@ int git_cache::parse_commit_metadata_impl(const char *metadata,
   return 0;
 }
 
-void git_cache::apply_metadata_env_names(git_cache::commit_tree_buffers &buffers) {
+void git_cache::apply_metadata_env_names(
+    git_cache::commit_tree_buffers &buffers) {
   const char *prefixes[] = {
       "GIT_AUTHOR_NAME=",    "GIT_COMMITTER_NAME=", "GIT_AUTHOR_DATE=",
       "GIT_COMMITTER_DATE=", "GIT_AUTHOR_EMAIL=",   "GIT_COMMITTER_EMAIL="};

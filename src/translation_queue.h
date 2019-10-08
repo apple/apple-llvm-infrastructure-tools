@@ -16,9 +16,6 @@ struct translation_queue {
   std::vector<commit_type> commits;
   long long first_untranslated_ct = LLONG_MAX;
 
-  // This can include sha1s that don't affect repeated dirs.
-  sha1_ref last_repeat_sha1_after_start;
-
   explicit translation_queue(git_cache &cache, dir_list &dirs)
       : cache(cache), pool(cache.pool), dirs(dirs) {}
 
@@ -31,7 +28,7 @@ struct translation_queue {
   int find_dir_commits(sha1_ref head);
   int find_dir_commit_parents_to_translate();
   int find_repeat_head(commit_source *repeat);
-  int find_repeat_commits(commit_source *repeat);
+  int find_repeat_commits_and_head(commit_source *repeat);
   int interleave_repeat_commits(commit_source *repeat);
 };
 }
@@ -180,23 +177,7 @@ int translation_queue::ff_translated_dir_commits() {
   return 0;
 }
 
-int translation_queue::find_repeat_head(commit_source *repeat) {
-  if (!repeat)
-    return 0;
-  assert(repeat->is_repeat);
-  assert(repeat->goal && "logic error, should have exited with error sooner");
-
-  // Nothing to refine if we have a head already, since this was already
-  // checked and potentially discarded.
-  if (repeat->head)
-    return 0;
-
-  return repeat->find_repeat_head(cache, last_repeat_sha1_after_start
-                                             ? last_repeat_sha1_after_start
-                                             : repeat->goal);
-}
-
-int translation_queue::find_repeat_commits(commit_source *repeat) {
+int translation_queue::find_repeat_commits_and_head(commit_source *repeat) {
   if (!repeat)
     return 0;
   assert(repeat->is_repeat);
@@ -205,7 +186,7 @@ int translation_queue::find_repeat_commits(commit_source *repeat) {
 
   // Try finding the earliest_ct.  It's tempting to use --since, but we
   // actually want to go back a little earlier.  See how earliest_ct is used
-  // in commit_source::find_repeat_commits.
+  // in commit_source::find_repeat_commits_and_head.
   long long earliest_ct = LLONG_MAX;
   if (!fparents.empty())
     earliest_ct = fparents.back().ct;
@@ -227,8 +208,7 @@ int translation_queue::find_repeat_commits(commit_source *repeat) {
         return 1;
     earliest_ct = std::min(earliest_ct, ct);
   }
-  return repeat->find_repeat_commits(cache, earliest_ct,
-                                     last_repeat_sha1_after_start);
+  return repeat->find_repeat_commits_and_head(cache, earliest_ct);
 }
 
 int translation_queue::interleave_repeat_commits(commit_source *repeat) {

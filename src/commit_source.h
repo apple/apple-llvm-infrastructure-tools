@@ -125,12 +125,18 @@ struct commit_source {
   int find_dir_commits_to_match_and_update_head(git_cache &cache,
                                                 const std::string &since);
   int find_dir_commits(git_cache &cache);
-  int find_repeat_commits(git_cache &cache, long long earliest_ct,
-                          sha1_ref &last_repeat_sha1_after_start);
+  int find_repeat_commits_and_head(git_cache &cache, long long earliest_ct);
+  int find_repeat_commits_and_head_impl(git_cache &cache, long long earliest_ct,
+                                        std::vector<const char *> &argv,
+                                        sha1_ref &next);
   int find_repeat_head(git_cache &cache, sha1_ref descendent);
   int find_earliest_ct(git_cache &cache, const std::vector<sha1_ref> &sha1s,
                        long long &earliest_ct);
   int skip_repeat_commits();
+
+  int add_repeat_search_names(git_cache &cache, sha1_ref start,
+                              std::vector<const char *> &argv);
+
   int list_first_ancestry_path(git_cache &cache);
   int list_first_parents(git_cache &cache);
   int list_first_parents_limit(git_cache &cache, int limit);
@@ -504,6 +510,7 @@ int commit_source::list_first_ancestry_path(git_cache &cache) {
     fparents.back().commit = an.commit;
     fparents.back().ct = an.ct;
     fparents.back().has_parents = true;
+    validate_last_ct();
 
     // Should always have at least one parent.
     const char *current = an.parents;
@@ -601,8 +608,8 @@ int commit_source::find_earliest_ct(git_cache &cache,
   return 0;
 }
 
-int commit_source::find_repeat_commits(git_cache &cache, long long earliest_ct,
-                                       sha1_ref &last_repeat_sha1_after_start) {
+int commit_source::find_repeat_commits_and_head(git_cache &cache,
+                                                long long earliest_ct) {
   assert(is_repeat);
   assert(head != goal && "logic error, should have skipped instead");
   assert(goal);
@@ -617,97 +624,31 @@ int commit_source::find_repeat_commits(git_cache &cache, long long earliest_ct,
       "--first-parent",
       "--date=raw",
       "--format=%x01%H %ct %P%x00%an%n%cn%n%ad%n%cd%n%ae%n%ce%n%B%x00",
-      "-z",
-      "-m",
-      "--name-only",
+      "-1000",
       start_sha1.c_str(),
   };
+  int start_index = argv.size() - 1;
   std::string stop;
   if (head) {
     stop = head->to_string();
     argv.push_back("--not");
     argv.push_back(stop.c_str());
   }
+  argv.push_back("--");
+  if (add_repeat_search_names(cache, goal, argv))
+    return error("failed to add search terms for repeat head");
   argv.push_back(nullptr);
 
-  auto &git_reply = cache.git_reply;
-  git_reply.clear();
-  if (call_git(argv.data(), nullptr, "", git_reply))
-    return 1;
-  git_reply.push_back(0);
-
-  const char *current = git_reply.data();
-  const char *end = git_reply.data() + git_reply.size() - 1;
-  while (current != end) {
-    sha1_ref sha1;
-    long long ct;
-    if (parse_ch(current, 1) || cache.pool.parse_sha1(current, sha1) ||
-        parse_space(current) || parse_num(current, ct) || parse_space(current))
-      return error("failed to parse repeat commit");
-
-    // Get the metadata, use it later if useful.
-    const char *metadata = current;
-    const char *end_metadata = end;
-    bool is_merge;
-    if (cache.parse_for_store_metadata(sha1, metadata, end_metadata, is_merge,
-                                       last_repeat_sha1_after_start))
-      return 1;
-    cache.store_metadata_if_new(sha1, metadata, end_metadata, is_merge,
-                                last_repeat_sha1_after_start);
-    current = end_metadata;
-    if (parse_null(current) || parse_null(current))
-      return error("missing null after metadata for repeat commit '" +
-                   sha1->to_string() + "'");
-
-    // Ignore -s ours merges.
-    if (parse_newline(current))
+  sha1_ref next;
+  while (!find_repeat_commits_and_head_impl(cache, earliest_ct, argv, next)) {
+    if (next) {
+      start_sha1 = next->to_string();
+      argv[start_index] = start_sha1.c_str();
       continue;
-
-    bool any_repeats = false;
-    while (current != end && *current != 1) {
-      const char *name = current;
-
-      // Only futz with the path if we haven't found a repeat yet.
-      if (!any_repeats)
-        if (!skip_until(current, '/')) {
-          // Null-terminate after the first path component, and advance current
-          // to skip over that null character.
-          const_cast<char &>(*current++) = 0;
-        }
-      if (parse_through_null(current, end))
-        return error("bad format listing repeats");
-
-      // Unless we've already found something, check if this changes a repeated
-      // dir.
-      if (any_repeats)
-        continue;
-
-      int d = cache.dirs.find_dir(name);
-      if (d == -1)
-        return error("found root path in '" + sha1->to_string() +
-                     "' but no root declared");
-      any_repeats |= cache.dirs.repeated_dirs.test(d);
     }
-    if (!any_repeats)
-      continue;
 
-    // This commit matters.  Add it.
-    fparents.emplace_back(source_index);
-    fparents.back().commit = sha1;
-    if (last_repeat_sha1_after_start) {
-      fparents.back().head_p = 0;
-      fparents.back().has_parents = true;
-    }
-    fparents.back().is_merge = is_merge;
-    fparents.back().ct = ct;
-    validate_last_ct();
-
-    // Break once we're one past the earliest other commit timestamp.
-    if (earliest_ct < LLONG_MAX && ct < earliest_ct)
-      break;
-  }
-
-  if (!fparents.empty()) {
+    if (fparents.empty())
+      return 0;
     assert(std::is_sorted(fparents.begin(), fparents.end(),
                           by_non_increasing_commit_timestamp));
 
@@ -716,14 +657,94 @@ int commit_source::find_repeat_commits(git_cache &cache, long long earliest_ct,
     return 0;
   }
 
-  // Set the goal back to the head, if it exists.
-  if (head) {
-    goal = head;
-    return 0;
+  return error("failed to find repeat commits");
+}
+
+int commit_source::find_repeat_commits_and_head_impl(
+    git_cache &cache, long long earliest_ct,
+    std::vector<const char *> &argv, sha1_ref &next) {
+  auto &git_reply = cache.git_reply;
+  git_reply.clear();
+  if (call_git(argv.data(), nullptr, "", git_reply))
+    return 1;
+  git_reply.push_back(0);
+
+  // Unset "next", in case there are no search results.
+  next = sha1_ref();
+
+  const char *current = git_reply.data();
+  const char *end = git_reply.data() + git_reply.size() - 1;
+  while (current != end) {
+    fparents.emplace_back(source_index);
+    if (parse_ch(current, 1) ||
+        cache.pool.parse_sha1(current, fparents.back().commit) ||
+        parse_space(current) || parse_num(current, fparents.back().ct) ||
+        parse_space(current))
+      return error("failed to parse repeat commit");
+    long long real_ct = fparents.back().ct;
+    validate_last_ct();
+
+    // Reinitialize "next"; it'll be left unset if there's no first-parent.
+    next = sha1_ref();
+
+    // Save the metadata.
+    const char *metadata = current;
+    const char *end_metadata = end;
+    if (cache.parse_for_store_metadata(fparents.back().commit, metadata,
+                                       end_metadata, fparents.back().is_merge,
+                                       next))
+      return error("failed to parse metadata in repeat commit '" +
+                   fparents.back().commit->to_string() + "'");
+    cache.store_metadata_if_new(fparents.back().commit, metadata, end_metadata,
+                                fparents.back().is_merge,
+                                next);
+    current = end_metadata;
+    if (parse_null(current) || parse_newline(current))
+      return error("missing terminator for repeat commit '" +
+                   fparents.back().commit->to_string() + "'");
+
+    // Break once we're one past the earliest other commit timestamp.
+    if (earliest_ct < LLONG_MAX && real_ct < earliest_ct) {
+      // Rewind the search by one and set the head if it's not already set.
+      if (!head)
+        head = fparents.back().commit;
+      fparents.pop_back();
+      next = sha1_ref();
+      return 0;
+    }
+
+    if (!next)
+      return 0;
+
+    // Point out which parent to override.
+    fparents.back().head_p = 0;
+    fparents.back().has_parents = true;
   }
 
-  // Something is wrong.
-  return error("found no changes to the repeat dirs");
+  return 0;
+}
+
+int commit_source::add_repeat_search_names(git_cache &cache, sha1_ref start,
+                                           std::vector<const char *> &argv) {
+  assert(is_repeat);
+  assert(start);
+
+  // Be approximate, and look only for changes to currently known paths.  This
+  // will miss deletions but that's fine.  The goal will ensure the final
+  // content is correct anyway.
+  git_tree tree;
+  tree.sha1 = start;
+  if (cache.ls_tree(tree))
+    return error("could not ls-tree repeat '" + start->to_string() + "'");
+  for (int i = 0, ie = tree.num_items; i != ie; ++i) {
+    const char *name = tree.items[i].name;
+    int d = cache.dirs.find_dir(name);
+    if (d == -1)
+      return error("unexpected root item in '" + start->to_string() + "'");
+    if (cache.dirs.repeated_dirs.test(d))
+      argv.push_back(name);
+  }
+  return 0;
 }
 
 int commit_source::find_repeat_head(git_cache &cache, sha1_ref descendent) {
@@ -735,29 +756,12 @@ int commit_source::find_repeat_head(git_cache &cache, sha1_ref descendent) {
   // That's effectively impossible since the repeated branches will always be
   // downstream of llvm.org, and we're not going to a have a goal commit of
   // r1... except tests care.  If the rev-parse fails, that's okay.
-  sha1_ref start_sha1;
-  if (cache.rev_parse(descendent->to_string() + "^", start_sha1))
-    return 0;
-  std::string start = start_sha1->to_string();
+  std::string start = descendent->to_string();
   std::vector<const char *> argv = {
-      "git", "rev-list", "-1", "-m", "--first-parent", start.c_str(), "--",
+      "git", "rev-list", "-2", "-m", "--first-parent", start.c_str(), "--",
   };
-
-  // Be approximate, and look only for changes to currently known paths.  This
-  // will miss deletions but that's fine.  The goal will ensure the final
-  // content is correct anyway.
-  git_tree tree;
-  tree.sha1 = descendent;
-  if (cache.ls_tree(tree))
-    return error("could not 'ls-tree " + descendent->to_string() + "'");
-  for (int i = 0, ie = tree.num_items; i != ie; ++i) {
-    const char *name = tree.items[i].name;
-    int d = cache.dirs.find_dir(name);
-    if (d == -1)
-      return error("unexpected root item in '" + descendent->to_string() + "'");
-    if (cache.dirs.repeated_dirs.test(d))
-      argv.push_back(name);
-  }
+  if (add_repeat_search_names(cache, descendent, argv))
+    return error("failed to add search terms for repeat head");
   argv.push_back(nullptr);
 
   auto &git_reply = cache.git_reply;
@@ -766,7 +770,7 @@ int commit_source::find_repeat_head(git_cache &cache, sha1_ref descendent) {
     return 1;
   git_reply.push_back(0);
 
-  // There will be 0 or 1 commits.  Either is fine.
+  // There will be 1 or 2 commits.  Either is fine.
   const char *current = git_reply.data();
   (void)cache.pool.parse_sha1(current, head);
   return 0;
@@ -852,10 +856,12 @@ int commit_source::find_dir_commit_parents_to_translate(
     sha1_ref commit, tree;
     if (parse_boundary(current, is_boundary) ||
         cache.pool.parse_sha1(current, commit) || parse_space(current) ||
-        cache.pool.parse_sha1(current, tree) || parse_space(current))
+        cache.pool.parse_sha1(current, tree))
       return 1;
 
     // Warm the cache.
+    assert(commit);
+    assert(tree);
     cache.note_commit_tree(commit, tree);
     if (is_boundary) {
       // If this is a boundary commit, skip ahead after warming the cache.
@@ -895,7 +901,8 @@ int commit_source::parse_boundary_metadata(git_cache &cache, sha1_ref commit,
   const char *end_metadata = end;
   bool is_merge = false;
   sha1_ref first_parent;
-  if (cache.parse_for_store_metadata(commit, metadata, end_metadata, is_merge,
+  if (parse_space(current) ||
+      cache.parse_for_store_metadata(commit, metadata, end_metadata, is_merge,
                                      first_parent))
     return error("failed to store boundary metadata for '" +
                  commit->to_string() + "'");
