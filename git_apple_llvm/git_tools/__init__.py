@@ -97,6 +97,11 @@ def get_current_checkout_directory() -> Optional[str]:
     return git_output('rev-parse', '--show-toplevel', ignore_error=True)
 
 
+def read_file_or_none(ref_name: str, path: str) -> Optional[str]:
+    """ Return the contents of the file in the given ref, or none if the given path doesn't exist """
+    return git_output('cat-file', '-p', f'{ref_name}:{path}', ignore_error=True)
+
+
 def commit_exists(hash: str) -> bool:
     """ Return true if the specified commit exists """
     result = git_output('rev-parse', hash, ignore_error=True)
