@@ -386,7 +386,7 @@ int git_cache::lookup_metadata(sha1_ref commit, const char *&metadata,
 }
 
 int git_cache::set_mono(sha1_ref split, sha1_ref mono) {
-  if (commits_query(*split).insert_data(db.commits, *mono))
+  if (commits_query(*split).insert_data_or_check_equal(db.commits, *mono))
     return error("failed to map split " + split->to_string() + " to mono " +
                  mono->to_string());
   note_mono(split, mono, /*is_based_on_rev=*/false);
@@ -568,7 +568,7 @@ int git_cache::set_base_rev(sha1_ref commit, int rev) {
   // motivation to change now.
   svnbaserev dbrev;
   dbrev.set_rev(rev);
-  if (svnbase_query(*commit).insert_data(db.svnbase, dbrev))
+  if (svnbase_query(*commit).insert_data_or_check_equal(db.svnbase, dbrev))
     return error("failed to map commit " + commit->to_string() + " to rev " +
                  std::to_string(rev));
   note_rev(commit, rev);
