@@ -269,7 +269,15 @@ update_refs() {
         done
         message=( "${message[@]}" "" "${trailers[@]}" )
         log "Tagging $mtname => $head"
-        printf "%s\n" "${message[@]}" | run git tag -a -F - $mtname $head ||
+        local cn="apple-llvm-mt"
+        local ce="mt @ apple-llvm"
+        local cd="$(git log --no-walk $head --format=%cd --date=raw)"
+        printf "%s\n" "${message[@]}" |
+        run env \
+            GIT_COMMITER_NAME="$cn"  GIT_AUTHOR_NAME="$cn" \
+            GIT_COMMITER_DATE="$cd"  GIT_AUTHOR_DATE="$cd" \
+            GIT_COMMITER_EMAIL="$ce" GIT_AUTHOR_EMAIL="$ce" \
+            git tag -a -F - $mtname $head ||
             error "failed to tag '$mtname' as '$head'"
         update_error="failed to update $refdirs for $mtname"
     else

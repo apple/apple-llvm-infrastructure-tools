@@ -89,17 +89,15 @@ This can be useful to generate consistent histories "as if" an automerger had
 been pulling in all changes from an upstream branch, when in fact some
 repositories had a single branch being used for two purposes.
 
-If `{no-pass}
-` is added as a suffix,
-    then repeated commits will only be
-        added if there's another non-repeat to process.  In other words, the generated merges will not"pass" the
-            commits translated by `dir` directives.
+If `{no-pass}` is added as a suffix, then repeated commits will only be added
+if there's another non-repeat to process.  In other words, the generated merges
+will not"pass" the commits translated by `dir` directives.
 
-    ## # `dir`: Generating commits from a split repo
+### `dir`: Generating commits from a split repo
 
-``` dir<branch>(<name> | '-')<source>
-                    dir<tag>(<name> | '-')<source>
-                        dir<tags - id>(<name> | '-')<source>/*
+```
+dir <branch>  (<name> | '-') <source> dir<tag>(<name> | '-')<source>
+dir <tags-id> (<name> | '-') <source>/*
 ```
 
 `dir` declares the repositories to interleave to generate `<branch>`.  The

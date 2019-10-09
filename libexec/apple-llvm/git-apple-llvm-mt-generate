@@ -690,11 +690,17 @@ mt_generate_ref() {
     local mtname refsprefix mtprefix target rawtarget="$1" mttype="$action"
     mt_ref_init_helper
 
-    if check_for_work && [ $mttype = tag ]; then
-        run --hide-errors git rev-parse --verify $target^{tag} ||
-            report_work $mttype "$mtname"
+    # Check if the ref exists already.
+    run --hide-errors git rev-parse --verify $target >/dev/null || work=1
+
+    # If the ref doesn't exist then there's work to do.  Return early.
+    if check_for_work && [ -n "$work" ]; then
+        report_work $mttype "$mtname"
         return 0;
     fi
+
+    # For tags, return early if it already exists.
+    [ -n "$work" -o ! $mttype = tag ] || return 0
 
     local refdirs repeat start
     refdirs="$(print_active_refdirs "$rawtarget")" ||
