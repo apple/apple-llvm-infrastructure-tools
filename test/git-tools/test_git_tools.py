@@ -5,6 +5,7 @@
 import os
 import pytest
 from git_apple_llvm.git_tools import git, git_output, get_current_checkout_directory, commit_exists, GitError
+from git_apple_llvm.git_tools import read_file_or_none
 
 
 def test_git_invocation(tmp_path):
@@ -54,3 +55,8 @@ def test_git_invocation(tmp_path):
     dir_b = get_current_checkout_directory()
     os.chdir(cwd)
     assert dir_a == dir_b
+
+    assert read_file_or_none('HEAD', 'initial') == 'initial'
+    assert read_file_or_none(hash, 'initial') == 'initial'
+    assert read_file_or_none('HEAD', 'path/does-not-exist') is None
+    assert read_file_or_none('foo', 'initial') is None
