@@ -71,6 +71,7 @@ struct git_cache {
   const char *store_metadata_impl(sha1_ref commit, const char *metadata,
                                   const char *metadata_end, bool is_merge,
                                   sha1_ref first_parent);
+  int compute_ct(sha1_ref commit, long long &ct);
 
   /// Check whether the given commit is going to be (and/or has been)
   /// translated and stored in the commits table.
@@ -950,6 +951,19 @@ int git_cache::merge_base_independent(std::vector<sha1_ref> &commits) {
     commits.push_back(pool.lookup(text));
   }
   return 0;
+}
+
+int git_cache::compute_ct(sha1_ref commit, long long &ct) {
+  const char *metadata = nullptr;
+  sha1_ref first_parent;
+  bool is_merge;
+  parsed_metadata result;
+  if (compute_metadata(commit, metadata, is_merge, first_parent) ||
+      parse_commit_metadata_impl(metadata, result))
+    return error("no commit metadata for '" + commit->to_string() + "'");
+
+  const char *current = result.cd.first;
+  return !current || parse_num(current, ct) || parse_space(current);
 }
 
 int git_cache::parse_commit_metadata_impl(const char *metadata,

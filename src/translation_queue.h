@@ -14,7 +14,7 @@ struct translation_queue {
   std::deque<commit_source> sources;
   std::vector<fparent_type> fparents;
   std::vector<commit_type> commits;
-  long long first_untranslated_ct = LLONG_MAX;
+  long long earliest_ct = LLONG_MAX;
 
   explicit translation_queue(git_cache &cache, dir_list &dirs)
       : cache(cache), pool(cache.pool), dirs(dirs) {}
@@ -27,8 +27,7 @@ struct translation_queue {
   int clean_initial_source_heads();
   int find_dir_commits(sha1_ref head);
   int find_dir_commit_parents_to_translate();
-  int find_repeat_head(commit_source *repeat);
-  int find_repeat_commits_and_head(commit_source *repeat);
+  int find_repeat_commits_and_head(commit_source *repeat, sha1_ref &head);
   int interleave_repeat_commits(commit_source *repeat);
 };
 }
@@ -72,44 +71,53 @@ int translation_queue::find_dir_commits(sha1_ref head) {
     if (source.find_dir_commits(cache))
       return error("failed to find commits for '" +
                    std::string(dirs.list[source.dir_index].name) + "'");
-    first_untranslated_ct =
-        std::min(first_untranslated_ct, source.first_untranslated_ct);
+    earliest_ct = std::min(earliest_ct, source.earliest_ct);
   }
 
   // Nothing to do if we have no untranslated commits.
-  if (first_untranslated_ct == LLONG_MAX)
+  if (earliest_ct == LLONG_MAX)
     return 0;
 
-  std::string since = "--since=" + std::to_string(first_untranslated_ct);
   for (auto &source : sources) {
     if (source.is_repeat)
       continue;
-
-    // If there's a monorepo head, use the head/start commit verbatim.
-    if (head) {
-      // Check if we have a start commit.
-      if (source.head) {
-        source.lock_in_start_dir_commits();
-        continue;
-      }
-
-      // No start commit is weird here, but it can happen if the mt-config file
-      // is modified to add a new source directory.
+    if (source.fparents.empty())
       continue;
-    }
+    if (!source.head)
+      continue;
 
-    // Otherwise, extend into already translated commits to match the most
-    // recent untranslated one.
-    if (source.find_dir_commits_to_match_and_update_head(cache, since))
-      return error("failed to find commits to match head for '" +
-                   std::string(dirs.list[source.dir_index].name) + "'");
-    continue;
+    // Lock in existing already translated commits (to be merged onto this
+    // branch) if there is a dir head, which means this tool already ran on
+    // this branch.  We have a precise ancestry path so we should typically
+    // use it, merging in commits that have been translated on other branches.
+    //
+    // However, if it would be possible to fast-forward the monorepo head into
+    // this directory, do not lock anything in.  We don't want to start
+    // generating merges until we actually have different content.
+    //
+    // Look at the first commit in the queue.  Note that it's not clear how
+    // the main head could be missing here, but certainly you can
+    // fast-forward from nothing.
+    sha1_ref mono;
+    if (!head || (!cache.compute_mono(source.fparents.back().commit, mono) &&
+                  !cache.merge_base_is_ancestor(head, mono))) {
+      // Locking these in means we'll generate merges from them, even though
+      // they've been translated on *some* branch already.
+      source.lock_in_start_dir_commits();
+      earliest_ct = std::min(earliest_ct, fparents.back().ct);
+    }
   }
 
+  // For every other dir, look back further past commits to translate.  We want
+  // a head that matches the commit date of the earliest other commit we're
+  // handling.
+  std::string since = "--since=" + std::to_string(earliest_ct);
   for (auto &source : sources) {
     if (source.is_repeat)
       continue;
-    if (source.list_first_parents_limit(cache, since))
+    if (source.head)
+      continue;
+    if (source.find_dir_commits_to_match_and_update_head(cache, since))
       return error("failed to list first parents limit for '" +
                    std::string(dirs.list[source.dir_index].name) + "'");
   }
@@ -177,38 +185,51 @@ int translation_queue::ff_translated_dir_commits() {
   return 0;
 }
 
-int translation_queue::find_repeat_commits_and_head(commit_source *repeat) {
+int translation_queue::find_repeat_commits_and_head(commit_source *repeat,
+                                                    sha1_ref &head) {
   if (!repeat)
     return 0;
   assert(repeat->is_repeat);
+
+  // Nothing to do.
   if (repeat->goal == repeat->head)
     return repeat->skip_repeat_commits();
 
-  // Try finding the earliest_ct.  It's tempting to use --since, but we
-  // actually want to go back a little earlier.  See how earliest_ct is used
-  // in commit_source::find_repeat_commits_and_head.
-  long long earliest_ct = LLONG_MAX;
-  if (!fparents.empty())
-    earliest_ct = fparents.back().ct;
-  std::vector<sha1_ref> monoheads;
-  for (auto &source : sources) {
-    if (source.is_repeat)
-      continue;
-    if (!source.head)
-      continue;
-    monoheads.emplace_back();
-    if (cache.compute_mono(source.head, monoheads.back()))
-      return error("failed to lookup monorepo commit for start commit '" +
-                   source.head->to_string() + "'");
+  // If we don't have an independent head yet, figure out how far to fast
+  // forward through repeat commits.
+  long long earliest_independent_ct = LLONG_MAX;
+  if (!head || cache.merge_base_is_ancestor(head, repeat->goal)) {
+    earliest_independent_ct = earliest_ct;
+    if (fparents.empty()) {
+      set_source_head(*repeat, repeat->goal);
+      return repeat->skip_repeat_commits();
+    }
+    for (auto &source : sources) {
+      if (source.is_repeat)
+        continue;
+
+      if (!source.head)
+        continue;
+
+      // If there's a head and it's not an ancestor of the repeat commit goal,
+      // then we should stretch repeat back to it.
+      sha1_ref mono;
+      if (cache.compute_mono(source.head, mono))
+        return error("could not find monorepo hash for '" +
+                     source.head->to_string() + "'");
+      if (!cache.merge_base_is_ancestor(mono, repeat->goal)) {
+        long long ct;
+        if (cache.compute_ct(source.head, ct))
+          return error("could not grab commit date of '" +
+                       source.head->to_string() + "'");
+        earliest_independent_ct = std::min(earliest_independent_ct, ct);
+        continue;
+      }
+    }
   }
-  {
-    long long ct;
-    if (!monoheads.empty())
-      if (repeat->find_earliest_ct(cache, monoheads, ct))
-        return 1;
-    earliest_ct = std::min(earliest_ct, ct);
-  }
-  return repeat->find_repeat_commits_and_head(cache, earliest_ct);
+
+  // Now extend repeat back further to match the earliest ct.
+  return repeat->find_repeat_commits_and_head(cache, earliest_independent_ct);
 }
 
 int translation_queue::interleave_repeat_commits(commit_source *repeat) {

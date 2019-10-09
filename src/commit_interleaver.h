@@ -220,9 +220,11 @@ int commit_interleaver::prepare_sources() {
   if (q.find_dir_commit_parents_to_translate() ||
       q.clean_initial_source_heads() || q.clean_initial_head(head) ||
       q.find_dir_commits(head) || q.interleave_dir_commits() ||
-      q.ff_translated_dir_commits() || q.find_repeat_commits_and_head(repeat) ||
+      q.ff_translated_dir_commits() ||
+      q.find_repeat_commits_and_head(repeat, head) ||
       q.interleave_repeat_commits(repeat))
     return error("failed to process sources");
+
   return 0;
 }
 
@@ -593,11 +595,12 @@ int commit_interleaver::fast_forward() {
   if (q.fparents.empty())
     return 0;
 
-  // Try to fast-forward a bit.
+  // Try to fast-forward a bit.  Note that repeat commits have is_translated
+  // set.
   auto fparent = q.fparents.back();
   int index = fparent.index;
   auto &source = q.sources[index];
-  if (!fparent.is_translated && !source.is_repeat)
+  if (!fparent.is_translated)
     return 0;
 
   if (head) {
@@ -625,7 +628,7 @@ int commit_interleaver::fast_forward() {
 
     q.fparents.pop_back();
   } while (!q.fparents.empty() && q.fparents.back().index == index &&
-           (q.fparents.back().is_translated || source.is_repeat));
+           q.fparents.back().is_translated);
 
   return 0;
 }
@@ -645,7 +648,7 @@ int commit_interleaver::interleave() {
     auto fparent = q.fparents.back();
     q.fparents.pop_back();
     auto &source = q.sources[fparent.index];
-    if (fparent.is_translated || source.is_repeat) {
+    if (fparent.is_translated) {
       MergeRequest merge(targets, new_parents, parent_revs, items, buffers);
       sha1_ref base, mono;
       if (source.is_repeat) {
@@ -668,6 +671,7 @@ int commit_interleaver::interleave() {
       continue;
     }
 
+    assert(!source.is_repeat);
     if (!source.commits.count)
       return error("need to translate '" + fparent.commit->to_string() +
                    "' but out of commits");
@@ -801,16 +805,11 @@ int commit_interleaver::mark_independent_targets(MergeRequest &merge) {
       return 0;
     }
 
-    // These may be commits from unrelated histories.
-    sha1_ref merge_base;
-    (void)cache.merge_base(head, merge.targets.front().mono, merge_base);
-
-    if (merge_base == merge.targets.front().mono)
-      merge.head_is_independent = true;
-    else if (merge_base == head)
-      merge.targets.front().is_independent = true;
-    else
-      merge.head_is_independent = merge.targets.front().is_independent = true;
+    // Just assume they're independent.  There's work done already when
+    // preparing sources to ensure that generated merges will not be redundant,
+    // only including them if they're newer than some mandatory commit to
+    // merge.  It's too expensive to call git-merge-base on every repeat merge.
+    merge.head_is_independent = merge.targets.front().is_independent = true;
     return 0;
   }
 

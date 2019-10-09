@@ -108,8 +108,9 @@ struct commit_source {
   // Stored here temporarily.
   std::vector<fparent_type> fparents;
   int num_fparents_to_translate = 0;
+  int num_fparents_locked_in = 0;
   int num_fparents_from_start = -1;
-  long long first_untranslated_ct = LLONG_MAX;
+  long long earliest_ct = LLONG_MAX;
 
   std::unique_ptr<monocommit_worker> worker;
 
@@ -129,7 +130,6 @@ struct commit_source {
   int find_repeat_commits_and_head_impl(git_cache &cache, long long earliest_ct,
                                         std::vector<const char *> &argv,
                                         sha1_ref &next);
-  int find_repeat_head(git_cache &cache, sha1_ref descendent);
   int find_earliest_ct(git_cache &cache, const std::vector<sha1_ref> &sha1s,
                        long long &earliest_ct);
   int skip_repeat_commits();
@@ -272,12 +272,16 @@ int commit_source::find_dir_commits_to_match_and_update_head(
 // stable sort to prevent reordering within a source.
 static bool by_non_increasing_commit_timestamp(const fparent_type &lhs,
                                                const fparent_type &rhs) {
+  // Put the earliest commits at the back.  We'll pop them off in timestamp
+  // order.
   if (lhs.ct > rhs.ct)
     return true;
   if (lhs.ct < rhs.ct)
     return false;
-  // Put repeats at the back, to pop off first.
-  return lhs.index > rhs.index;
+
+  // Break ties by putting already-translated commits at the back so they can
+  // be fast-forwarded through.
+  return lhs.is_translated < rhs.is_translated;
 }
 
 int commit_source::find_dir_commits(git_cache &cache) {
@@ -292,6 +296,9 @@ int commit_source::find_dir_commits(git_cache &cache) {
       return error("failed to list first parents");
   }
 
+  if (fparents.empty())
+    return 0;
+
   // Figure out how many need to be translated.
   auto translated =
       find_first_match(fparents.begin(), fparents.end(), [&](fparent_type &fp) {
@@ -300,7 +307,7 @@ int commit_source::find_dir_commits(git_cache &cache) {
       });
   num_fparents_to_translate = translated - fparents.begin();
   if (num_fparents_to_translate)
-    first_untranslated_ct = translated[-1].ct;
+    earliest_ct = translated[-1].ct;
 
   // Mark translated commits, and ensure anything else we pull in is marked
   // that way too.
@@ -315,17 +322,37 @@ int commit_source::find_dir_commits(git_cache &cache) {
   // inconsistencies so that sorting later is legal.
   assert(std::is_sorted(fparents.begin(), fparents.end(),
                         by_non_increasing_commit_timestamp));
+
+  // Untranslated commits are implicitly locked in.
+  num_fparents_locked_in = num_fparents_to_translate;
+  if (translated == fparents.end())
+    return 0;
+
+  // Without a head, translated commits do not get locked in.
+  if (!head)
+    return 0;
+
+  // Figure out how many commits are locked in, which can happen to translated
+  // commits when there's a head.
+  auto locked_in =
+      find_first_match(translated, fparents.end(),
+                       [&](fparent_type &fp) { return !fp.is_locked_in; });
+  if (locked_in == fparents.end())
+    return 0;
+  num_fparents_locked_in = locked_in - fparents.begin();
   return 0;
 }
 
 int commit_source::list_first_parents(git_cache &cache) {
-  // Parse 1000 at a time.
-  constexpr const int limit = 1000;
-
+  // Parse just 50 to start with.
+  int limit = 50;
   size_t prev_fparents_size = fparents.size();
   while (true) {
     if (list_first_parents_limit(cache, limit))
       return 1;
+    // If we run again, parse 1000 at a time to reduce the number of calls to
+    // Git.
+    limit = 1000;
 
     if (prev_fparents_size == fparents.size())
       break;
@@ -649,11 +676,14 @@ int commit_source::find_repeat_commits_and_head(git_cache &cache,
 
     if (fparents.empty())
       return 0;
+
+    // We found them all.
     assert(std::is_sorted(fparents.begin(), fparents.end(),
                           by_non_increasing_commit_timestamp));
 
     // Refine the repeat goal.
     goal = fparents.front().commit;
+    num_fparents_from_start = fparents.size();
     return 0;
   }
 
@@ -686,6 +716,11 @@ int commit_source::find_repeat_commits_and_head_impl(
 
     // Reinitialize "next"; it'll be left unset if there's no first-parent.
     next = sha1_ref();
+
+    // Mark all repeat commits as already translated, so that
+    // by_non_increasing_commit_timestamp will put them at the back of the
+    // pile.
+    fparents.back().is_translated = true;
 
     // Save the metadata.
     const char *metadata = current;
@@ -744,35 +779,6 @@ int commit_source::add_repeat_search_names(git_cache &cache, sha1_ref start,
     if (cache.dirs.repeated_dirs.test(d))
       argv.push_back(name);
   }
-  return 0;
-}
-
-int commit_source::find_repeat_head(git_cache &cache, sha1_ref descendent) {
-  assert(is_repeat);
-  assert(descendent);
-  assert(!head);
-
-  // Note: should be a rev-parse here, in case descendent has no parents.
-  // That's effectively impossible since the repeated branches will always be
-  // downstream of llvm.org, and we're not going to a have a goal commit of
-  // r1... except tests care.  If the rev-parse fails, that's okay.
-  std::string start = descendent->to_string();
-  std::vector<const char *> argv = {
-      "git", "rev-list", "-2", "-m", "--first-parent", start.c_str(), "--",
-  };
-  if (add_repeat_search_names(cache, descendent, argv))
-    return error("failed to add search terms for repeat head");
-  argv.push_back(nullptr);
-
-  auto &git_reply = cache.git_reply;
-  git_reply.clear();
-  if (call_git(argv.data(), nullptr, "", git_reply))
-    return 1;
-  git_reply.push_back(0);
-
-  // There will be 1 or 2 commits.  Either is fine.
-  const char *current = git_reply.data();
-  (void)cache.pool.parse_sha1(current, head);
   return 0;
 }
 
