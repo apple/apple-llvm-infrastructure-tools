@@ -54,19 +54,19 @@ dir github/llvm.org/master lldb              split/llvm.org/lldb/master
 # tags to mark waypoints in history.  Skip LLDB since its branch depends on the
 # 'swift' repo.  See swift/master-next for LLDB's upstream-with-swift branch.
 generate tag apple/master/start
-dir apple/master/start llvm        remotes/split/apple/llvm/apple/master/start/remote-tag
-dir apple/master/start clang       remotes/split/apple/clang/apple/master/start/remote-tag
-dir apple/master/start compiler-rt remotes/split/apple/compiler-rt/apple/master/start/remote-tag
+dir apple/master/start llvm        remotes/split/apple/llvm/apple/master-llvm/start/remote-tag
+dir apple/master/start clang       remotes/split/apple/clang/apple/master-clang/start/remote-tag
+dir apple/master/start compiler-rt remotes/split/apple/compiler-rt/apple/master-compiler-rt/start/remote-tag
 
 # The same fine-grained waypoints would be hard to dig up because of LLDB's
 # non-linear history, but we can create a start tag, and have the branches
 # build on each other.  Most of LLDB's config continues down below.
 generate tag swift/master/start
 start apple/master/start
-dir swift/master/start lldb        remotes/split/apple/lldb/apple/master/start/remote-tag
-dir swift/master/start llvm        remotes/split/apple/llvm/apple/master/start/remote-tag
-dir swift/master/start clang       remotes/split/apple/clang/apple/master/start/remote-tag
-dir swift/master/start compiler-rt remotes/split/apple/compiler-rt/apple/master/start/remote-tag
+dir swift/master/start lldb        remotes/split/apple/lldb/apple/master-lldb/start/remote-tag
+dir swift/master/start llvm        remotes/split/apple/llvm/apple/master-llvm/start/remote-tag
+dir swift/master/start clang       remotes/split/apple/clang/apple/master-clang/start/remote-tag
+dir swift/master/start compiler-rt remotes/split/apple/compiler-rt/apple/master-compiler-rt/start/remote-tag
 
 generate tag apple/stable/20160127/start
 start apple/stable/20160127/start apple/master/start
@@ -115,7 +115,7 @@ dir apple/stable/20180801/start clang-tools-extra remotes/split/apple/clang-tool
 # Started adding commits to clang-tools-extra on master starting November 26th.
 generate tag apple/master/clang-tools-extra-start
 start apple/master/clang-tools-extra-start apple/stable/20180801/start
-dir apple/master/clang-tools-extra-start clang-tools-extra remotes/split/apple/clang-tools-extra/apple/swift-5.1-branch/start/remote-tag
+dir apple/master/clang-tools-extra-start clang-tools-extra remotes/split/apple/clang-tools-extra/apple/master-clang-tools-extra/start/remote-tag
 dir apple/master/clang-tools-extra-start clang a29bc3228f3eef60128dfb981feb9edcd01aac69
 dir apple/master/clang-tools-extra-start compiler-rt af4bdd662d8b763f6410327b76f556e4ee0966a2
 dir apple/master/clang-tools-extra-start libcxx 8008cf5287543520a3c787079088ff6f54bca022
