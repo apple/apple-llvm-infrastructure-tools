@@ -248,7 +248,7 @@ update_refs() {
     local -a updates
     local sha1 sd d mtref update_error
     if [ "$mttype" = tag ]; then
-        local -a message -a trailers
+        local -a message trailers
         local dslash
         message=( "Tagging $name" "" )
         for sd in $new_sha1dirs; do
