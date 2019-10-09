@@ -63,7 +63,7 @@ dir apple/master/start compiler-rt remotes/split/apple/compiler-rt/apple/master-
 # build on each other.  Most of LLDB's config continues down below.
 generate tag swift/master/start
 start apple/master/start
-dir swift/master/start lldb        remotes/split/apple/lldb/apple/master-lldb/start/remote-tag
+dir swift/master/start lldb        remotes/split/apple/lldb/swift/master-lldb/start/remote-tag
 dir swift/master/start llvm        remotes/split/apple/llvm/apple/master-llvm/start/remote-tag
 dir swift/master/start clang       remotes/split/apple/clang/apple/master-clang/start/remote-tag
 dir swift/master/start compiler-rt remotes/split/apple/compiler-rt/apple/master-compiler-rt/start/remote-tag
