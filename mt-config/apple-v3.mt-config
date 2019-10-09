@@ -1,0 +1,304 @@
+repo github/llvm.org                   https://github.com/llvm/llvm-project.git
+repo split/llvm.org/clang              https://git.llvm.org/git/clang.git
+repo split/llvm.org/clang-tools-extra  https://git.llvm.org/git/clang-tools-extra.git
+repo split/llvm.org/compiler-rt        https://git.llvm.org/git/compiler-rt.git
+repo split/llvm.org/libcxx             https://git.llvm.org/git/libcxx.git
+repo split/llvm.org/lldb               https://git.llvm.org/git/lldb.git
+repo split/llvm.org/llvm               https://git.llvm.org/git/llvm.git
+repo split/apple/clang                 git@github.com:apple/swift-clang.git
+repo split/apple/clang-tools-extra     git@github.com:apple/swift-clang-tools-extra.git
+repo split/apple/compiler-rt           git@github.com:apple/swift-compiler-rt.git
+repo split/apple/libcxx                git@github.com:apple/swift-libcxx.git
+repo split/apple/lldb                  git@github.com:apple/swift-lldb.git
+repo split/apple/llvm                  git@github.com:apple/swift-llvm.git
+repo split/apple/root                  git@github.com:apple/llvm-monorepo-root.git
+repo github/apple/v3                   git@github.com:apple/llvm-project-v3.git
+repo github/apple/v3-split             git@github.com:apple/llvm-project-v3-split.git
+
+destination monorepo github/apple/v3
+destination splitref github/apple/v3-split
+
+declare-dir -
+declare-dir clang-tools-extra
+declare-dir clang
+declare-dir compiler-rt
+declare-dir debuginfo-tests
+declare-dir libclc
+declare-dir libcxx
+declare-dir libcxxabi
+declare-dir libunwind
+declare-dir lld
+declare-dir lldb
+declare-dir llgo
+declare-dir llvm
+declare-dir openmp
+declare-dir parallel-libs
+declare-dir polly
+declare-dir pstl
+
+# Map all the monorepo commits from llvm.org so they can be found (quickly) by
+# revision number.
+generate mapping github/llvm.org
+
+# As an optimization, track which refs in the split repos have already been
+# mapped.
+generate splitrefs github/llvm.org/master
+dir github/llvm.org/master clang             split/llvm.org/clang/master
+dir github/llvm.org/master clang-tools-extra split/llvm.org/clang-tools-extra/master
+dir github/llvm.org/master compiler-rt       split/llvm.org/compiler-rt/master
+dir github/llvm.org/master libcxx            split/llvm.org/libcxx/master
+dir github/llvm.org/master llvm              split/llvm.org/llvm/master
+dir github/llvm.org/master lldb              split/llvm.org/lldb/master
+
+# Generate apple/master from */upstream-with-swift, starting with a series of
+# tags to mark waypoints in history.  Skip LLDB since its branch depends on the
+# 'swift' repo.  See swift/master-next for LLDB's upstream-with-swift branch.
+generate tag apple/master/start
+dir apple/master/start llvm        split/apple/llvm/apple/master/start/remote-tag
+dir apple/master/start clang       split/apple/clang/apple/master/start/remote-tag
+dir apple/master/start compiler-rt split/apple/compiler-rt/apple/master/start/remote-tag
+
+generate tag apple/stable/20160127/start
+start apple/stable/20160127/start apple/master/start
+dir apple/stable/20160127/start llvm        split/apple/llvm/apple/swift-3.0-branch/start/remote-tag
+dir apple/stable/20160127/start clang       split/apple/clang/apple/swift-3.0-branch/start/remote-tag
+dir apple/stable/20160127/start compiler-rt split/apple/compiler-rt/apple/swift-3.0-branch/start/remote-tag
+
+generate tag apple/stable/20160817/start
+start apple/stable/20160817/start apple/stable/20160127/start
+dir apple/stable/20160817/start llvm        split/apple/llvm/apple/swift-3.1-branch/start/remote-tag
+dir apple/stable/20160817/start clang       split/apple/clang/apple/swift-3.1-branch/start/remote-tag
+dir apple/stable/20160817/start compiler-rt split/apple/compiler-rt/apple/swift-3.1-branch/start/remote-tag
+
+generate tag apple/stable/20170116/start
+start apple/stable/20170116/start apple/stable/20160817/start
+dir apple/stable/20170116/start llvm        split/apple/llvm/apple/swift-4.0-branch/start/remote-tag
+dir apple/stable/20170116/start clang       split/apple/clang/apple/swift-4.0-branch/start/remote-tag
+dir apple/stable/20170116/start compiler-rt split/apple/compiler-rt/apple/swift-4.0-branch/start/remote-tag
+
+generate tag apple/stable/20170719/start
+start apple/stable/20170719/start apple/stable/20170116/start
+dir apple/stable/20170719/start llvm        split/apple/llvm/apple/swift-4.1-branch/start/remote-tag
+dir apple/stable/20170719/start clang       split/apple/clang/apple/swift-4.1-branch/start/remote-tag
+dir apple/stable/20170719/start compiler-rt split/apple/compiler-rt/apple/swift-4.1-branch/start/remote-tag
+
+generate tag apple/stable/20180103/start
+start apple/stable/20180103/start apple/stable/20170719/start
+dir apple/stable/20180103/start llvm        split/apple/llvm/apple/swift-4.2-branch/start/remote-tag
+dir apple/stable/20180103/start clang       split/apple/clang/apple/swift-4.2-branch/start/remote-tag
+dir apple/stable/20180103/start compiler-rt split/apple/compiler-rt/apple/swift-4.2-branch/start/remote-tag
+
+generate tag apple/stable/20180719/start
+start apple/stable/20180719/start apple/stable/20180103/start
+dir apple/stable/20180719/start llvm        split/apple/llvm/20180719/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180719/start clang       split/apple/clang/20180719/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180719/start compiler-rt split/apple/compiler-rt/20180719/apple/swift-5.0-branch/start/remote-tag
+
+generate tag apple/stable/20180801/start
+start apple/stable/20180801/start apple/stable/20180719/start
+dir apple/stable/20180801/start llvm        split/apple/llvm/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180801/start clang       split/apple/clang/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180801/start compiler-rt split/apple/compiler-rt/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180801/start libcxx split/apple/libcxx/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180801/start clang-tools-extra split/apple/clang-tools-extra/apple/swift-5.0-branch/start/remote-tag
+
+# Started adding commits to clang-tools-extra on master starting November 26th.
+generate tag apple/master/clang-tools-extra-start
+start apple/master/clang-tools-extra-start apple/stable/20180801/start
+dir apple/master/clang-tools-extra-start clang-tools-extra split/apple/clang-tools-extra/apple/swift-5.1-branch/start/remote-tag
+dir apple/master/clang-tools-extra-start clang a29bc3228f3eef60128dfb981feb9edcd01aac69
+dir apple/master/clang-tools-extra-start compiler-rt af4bdd662d8b763f6410327b76f556e4ee0966a2
+dir apple/master/clang-tools-extra-start libcxx 8008cf5287543520a3c787079088ff6f54bca022
+dir apple/master/clang-tools-extra-start llvm 37aa3bc565ece20f0cbebc478ea955e7549bc799
+
+generate tag apple/stable/20190104/start
+start apple/stable/20190104/start apple/master/20181126/clang-tools-extra-start
+dir apple/stable/20190104/start -           split/apple/root/apple/stable/20190104/start/remote-tag
+dir apple/stable/20190104/start llvm        split/apple/llvm/apple/swift-5.1-branch/start/remote-tag
+dir apple/stable/20190104/start clang       split/apple/clang/apple/swift-5.1-branch/start/remote-tag
+dir apple/stable/20190104/start compiler-rt split/apple/compiler-rt/apple/swift-5.1-branch/start/remote-tag
+dir apple/stable/20190104/start libcxx      split/apple/libcxx/apple/swift-5.1-branch/start/remote-tag
+dir apple/stable/20190104/start clang-tools-extra split/apple/clang-tools-extra/apple/swift-5.1-branch/start/remote-tag
+
+generate tag apple/stable/20190619/start
+start apple/stable/20190619/start apple/stable/20190104/start
+dir apple/stable/20190619/start -           split/apple/root/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start llvm        split/apple/llvm/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start clang       split/apple/clang/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start compiler-rt split/apple/compiler-rt/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start clang-tools-extra split/apple/clang-tools-extra/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start libcxx      split/apple/libcxx/apple/stable/20190619/start/remote-tag
+
+# Started adding commits to the monorepo root on master starting June 27th.
+generate tag apple/master/root-start
+start apple/master/root-start apple/stable/20190619/start
+dir apple/master/root-start -      split/apple/root/apple/master/start/remote-tag
+dir apple/masterroot-start clang-tools-extra e48e71380ee3332764fe0cc5e63bad22dad60cac
+dir apple/master/root-start clang 2debece4de9c0538108b8bf8ea15aa1d0eacae5a
+dir apple/master/root-start compiler-rt 250ac28f18718f7b8ce66b292a1f039ee542a958
+dir apple/master/root-start libcxx 2c2308c5e3646476c64711c2eaf8819cdd5b9e7f
+dir apple/master/root-start llvm 961082bf6cf116d532d88136b9241ea6545deb76
+
+generate branch apple/master
+start apple/master apple/master/root-start
+dir apple/master -                 split/apple/root/apple/master
+dir apple/master clang             split/apple/clang/upstream-with-swift
+dir apple/master clang-tools-extra split/apple/clang-tools-extra/upstream-with-swift
+dir apple/master compiler-rt       split/apple/compiler-rt/upstream-with-swift
+dir apple/master libcxx            split/apple/libcxx/upstream-with-swift
+dir apple/master llvm              split/apple/llvm/upstream-with-swift
+
+# Generate apple/stable/20160127 from swift-3.0-branch, skipping LLDB, and then
+# add LLDB to generate swift/swift-3.0-branch.
+generate branch apple/stable/20160127
+start apple/stable/20160127 apple/stable/20160127/start
+dir apple/stable/20160127 clang       split/apple/clang/swift-3.0-branch
+dir apple/stable/20160127 compiler-rt split/apple/compiler-rt/swift-3.0-branch
+dir apple/stable/20160127 llvm        split/apple/llvm/swift-3.0-branch
+
+generate branch swift/swift-3.0-branch
+start swift/swift-3.0-branch swift/swift-3.0-branch/start
+repeat swift/swift-3.0-branch      apple/stable/20160127
+dir    swift/swift-3.0-branch lldb split/apple/lldb/swift-3.0-branch
+
+# Generate apple/stable/20160817 from swift-3.1-branch, skipping LLDB at first.
+generate branch apple/stable/20160817
+start apple/stable/20160817  apple/stable/20160817/start
+dir apple/stable/20160817 clang       split/apple/clang/swift-3.1-branch
+dir apple/stable/20160817 compiler-rt split/apple/compiler-rt/swift-3.1-branch
+dir apple/stable/20160817 llvm        split/apple/llvm/swift-3.1-branch
+
+generate branch swift/swift-3.1-branch
+start swift/swift-3.1-branch swift/swift-3.1-branch/start
+repeat swift/swift-3.1-branch      apple/stable/20160817
+dir    swift/swift-3.1-branch lldb split/apple/lldb/swift-3.1-branch
+
+# Generate apple/stable/20170116 from swift-4.0-branch, skipping LLDB at first.
+generate branch apple/stable/20170116
+start apple/stable/20170116 apple/stable/20170116/start
+dir apple/stable/20170116 clang       split/apple/clang/swift-4.0-branch
+dir apple/stable/20170116 compiler-rt split/apple/compiler-rt/swift-4.0-branch
+dir apple/stable/20170116 llvm        split/apple/llvm/swift-4.0-branch
+
+generate branch swift/swift-4.0-branch
+start swift/swift-4.0-branch swift/swift-4.0-branch/start
+repeat swift/swift-4.0-branch      apple/stable/20170116
+dir    swift/swift-4.0-branch lldb split/apple/lldb/swift-4.0-branch
+
+# Generate apple/stable/20170719 from swift-4.1-branch, skipping LLDB at first.
+generate branch apple/stable/20170719
+start apple/stable/20170719 apple/stable/20170719/start
+dir apple/stable/20170719 clang       split/apple/clang/swift-4.1-branch
+dir apple/stable/20170719 compiler-rt split/apple/compiler-rt/swift-4.1-branch
+dir apple/stable/20170719 llvm        split/apple/llvm/swift-4.1-branch
+
+# Generate the first part of swift/swift-4.1-branch, which merges in as a
+# second parent when the history gets "fixed".  Use '{no-pass}' to avoid
+# generating merges for clang/llvm/compiler-rt commits that should show up in
+# the next directive.
+generate tag swift/swift-4.1-branch/before-lldb-fix
+start swift/swift-4.1-branch/before-lldb-fix swift/swift-4.1-branch/start
+repeat archive/before-lldb-fix/swift/swift-4.1-branch      apple/stable/20170719{no-pass}
+dir    archive/before-lldb-fix/swift/swift-4.1-branch lldb split/apple/lldb/archive/start/fixed/swift-4.1-branch
+
+# Finally generate swift/swift-4.1-branch with the rest of LLDB's history for
+# that branch.
+generate branch swift/swift-4.1-branch
+start swift/swift-4.1-branch swift/swift-4.1-branch/before-lldb-fix
+repeat swift/swift-4.1-branch      apple/stable/20170719
+dir    swift/swift-4.1-branch lldb split/apple/lldb/swift-4.1-branch
+
+# Generate apple/stable/20180103 from swift-4.2-branch, skipping LLDB at first.
+generate branch apple/stable/20180103
+start apple/stable/20180103 apple/stable/20180103/start
+dir apple/stable/20180103 clang       split/apple/clang/swift-4.2-branch
+dir apple/stable/20180103 compiler-rt split/apple/compiler-rt/swift-4.2-branch
+dir apple/stable/20180103 llvm        split/apple/llvm/swift-4.2-branch
+
+generate branch swift/swift-4.2-branch
+start swift/swift-4.2-branch swift/swift-4.2-branch/start
+repeat swift/swift-4.2-branch      apple/stable/20180103
+dir    swift/swift-4.2-branch lldb split/apple/lldb/swift-4.2-branch
+
+# Generate apple/stable/20180719 from the archive.  This was the original
+# branch point for swift-5.0-branch, before it was recut, and the original
+# branch got hung-off the second parent.  No matching LLDB branch.
+generate branch apple/stable/20180719
+start apple/stable/20180719 apple/stable/20180719/start
+dir apple/stable/20180719 clang       split/apple/clang/archive/original/swift-5.0-branch
+dir apple/stable/20180719 compiler-rt split/apple/compiler-rt/archive/original/swift-5.0-branch
+dir apple/stable/20180719 llvm        split/apple/llvm/archive/original/swift-5.0-branch
+
+# Generate apple/stable/20180912 from swift-5.0-branch, skipping LLDB at first.
+# Note that the libcxx and clang-tools-extra directories gained changes here.
+generate branch apple/stable/20180801
+start apple/stable/20180801 apple/stable/20180801/start
+dir apple/stable/20180801 clang             split/apple/clang/swift-5.0-branch
+dir apple/stable/20180801 clang-tools-extra split/apple/clang-tools-extra/swift-5.0-branch
+dir apple/stable/20180801 compiler-rt       split/apple/compiler-rt/swift-5.0-branch
+dir apple/stable/20180801 libcxx            split/apple/libcxx/swift-5.0-branch
+dir apple/stable/20180801 llvm              split/apple/llvm/swift-5.0-branch
+
+generate branch swift/swift-5.0-branch
+start swift/swift-5.0-branch swift/swift-5.0-branch/start
+repeat swift/swift-5.0-branch      apple/stable/20180801
+dir    swift/swift-5.0-branch lldb split/apple/lldb/swift-5.0-branch
+
+# Generate apple/stable/20190104 from swift-5.1-branch, skipping LLDB at first.
+generate branch apple/stable/20190104
+start apple/stable/20190104 apple/stable/20190104/start
+dir apple/stable/20190104 -                 split/apple/root/apple/stable/20190104
+dir apple/stable/20190104 clang             split/apple/clang/swift-5.1-branch
+dir apple/stable/20190104 clang-tools-extra split/apple/clang-tools-extra/swift-5.1-branch
+dir apple/stable/20190104 compiler-rt       split/apple/compiler-rt/swift-5.1-branch
+dir apple/stable/20190104 libcxx            split/apple/libcxx/swift-5.1-branch
+dir apple/stable/20190104 llvm              split/apple/llvm/swift-5.1-branch
+
+generate branch swift/swift-5.1-branch
+start swift/swift-5.1-branch swift/swift-5.1-branch/start
+repeat swift/swift-5.1-branch      apple/stable/20190104
+dir    swift/swift-5.1-branch lldb split/apple/lldb/swift-5.1-branch
+
+# Generate apple/stable/20190619.
+generate branch apple/stable/20190619
+start apple/stable/20190619 apple/stable/20190619/start
+dir apple/stable/20190619 -                 split/apple/root/apple/stable/20190619
+dir apple/stable/20190619 clang             split/apple/clang/apple/stable/20190619
+dir apple/stable/20190619 clang-tools-extra split/apple/clang-tools-extra/apple/stable/20190619
+dir apple/stable/20190619 compiler-rt       split/apple/compiler-rt/apple/stable/20190619
+dir apple/stable/20190619 libcxx            split/apple/libcxx/apple/stable/20190619
+dir apple/stable/20190619 llvm              split/apple/llvm/apple/stable/20190619
+
+# Generate swift/master from each split repo's stable branch, intended to be
+# paired with swift's master branch.
+#
+# Note: There are merges where the main history hangs off the second parent for
+# clang/llvm/compiler-rt (notably, the rebranches for 3.1, 4.0, and 4.1), but
+# it's hard to generate a meaningful history for those pieces because LLDB's
+# branching strategy differs from the rest.  For now (in this version of the
+# monorepo generation) don't try, but for future reference: these side
+# histories have branches in the split repos at
+# archive/start/stable/swift-3.1-branch, archive/start/stable/swift-4.0-branch,
+# and archive/start/stable/swift-4.1-branch.
+generate branch swift/master
+start swift/master apple/stable/20190619
+dir swift/master lldb              split/apple/lldb/stable
+dir swift/master clang             split/apple/clang/stable
+dir swift/master clang-tools-extra split/apple/clang-tools-extra/stable
+dir swift/master compiler-rt       split/apple/compiler-rt/stable
+dir swift/master libcxx            split/apple/libcxx/stable
+dir swift/master llvm              split/apple/llvm/stable
+
+# Generate swift/master-next from LLDB's upstream-with-swift branch and the
+# pre-existing apple/master branch.  This should give a similar result to
+# interleaving each repo's upstream-with-swift branch.
+#
+# Note: apple/master does not depend on the swift repo in any way, whereas
+# swift/master-next does and is intended to be paired with swift's master-next
+# branch.
+#
+# Note: this is done *last* because LLDB's upstream-with-swift branch is a
+# global merge sink for its other branches.
+generate branch swift/master-next
+repeat swift/master-next      apple/master
+dir    swift/master-next lldb split/apple/lldb/upstream-with-swift
