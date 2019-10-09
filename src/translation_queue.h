@@ -105,7 +105,7 @@ int translation_queue::find_dir_commits(sha1_ref head) {
       // Locking these in means we'll generate merges from them, even though
       // they've been translated on *some* branch already.
       source.lock_in_start_dir_commits();
-      earliest_ct = std::min(earliest_ct, fparents.back().ct);
+      earliest_ct = std::min(earliest_ct, source.fparents.back().ct);
     }
   }
 
