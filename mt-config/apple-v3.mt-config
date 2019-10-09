@@ -54,68 +54,68 @@ dir github/llvm.org/master lldb              split/llvm.org/lldb/master
 # tags to mark waypoints in history.  Skip LLDB since its branch depends on the
 # 'swift' repo.  See swift/master-next for LLDB's upstream-with-swift branch.
 generate tag apple/master/start
-dir apple/master/start llvm        split/apple/llvm/apple/master/start/remote-tag
-dir apple/master/start clang       split/apple/clang/apple/master/start/remote-tag
-dir apple/master/start compiler-rt split/apple/compiler-rt/apple/master/start/remote-tag
+dir apple/master/start llvm        remotes/split/apple/llvm/apple/master/start/remote-tag
+dir apple/master/start clang       remotes/split/apple/clang/apple/master/start/remote-tag
+dir apple/master/start compiler-rt remotes/split/apple/compiler-rt/apple/master/start/remote-tag
 
 # The same fine-grained waypoints would be hard to dig up because of LLDB's
 # non-linear history, but we can create a start tag, and have the branches
 # build on each other.  Most of LLDB's config continues down below.
 generate tag swift/master/start
 start apple/master/start
-dir swift/master/start lldb        split/apple/lldb/apple/master/start/remote-tag
-dir swift/master/start llvm        split/apple/llvm/apple/master/start/remote-tag
-dir swift/master/start clang       split/apple/clang/apple/master/start/remote-tag
-dir swift/master/start compiler-rt split/apple/compiler-rt/apple/master/start/remote-tag
+dir swift/master/start lldb        remotes/split/apple/lldb/apple/master/start/remote-tag
+dir swift/master/start llvm        remotes/split/apple/llvm/apple/master/start/remote-tag
+dir swift/master/start clang       remotes/split/apple/clang/apple/master/start/remote-tag
+dir swift/master/start compiler-rt remotes/split/apple/compiler-rt/apple/master/start/remote-tag
 
 generate tag apple/stable/20160127/start
 start apple/stable/20160127/start apple/master/start
-dir apple/stable/20160127/start llvm        split/apple/llvm/apple/swift-3.0-branch/start/remote-tag
-dir apple/stable/20160127/start clang       split/apple/clang/apple/swift-3.0-branch/start/remote-tag
-dir apple/stable/20160127/start compiler-rt split/apple/compiler-rt/apple/swift-3.0-branch/start/remote-tag
+dir apple/stable/20160127/start llvm        remotes/split/apple/llvm/apple/swift-3.0-branch/start/remote-tag
+dir apple/stable/20160127/start clang       remotes/split/apple/clang/apple/swift-3.0-branch/start/remote-tag
+dir apple/stable/20160127/start compiler-rt remotes/split/apple/compiler-rt/apple/swift-3.0-branch/start/remote-tag
 
 generate tag apple/stable/20160817/start
 start apple/stable/20160817/start apple/stable/20160127/start
-dir apple/stable/20160817/start llvm        split/apple/llvm/apple/swift-3.1-branch/start/remote-tag
-dir apple/stable/20160817/start clang       split/apple/clang/apple/swift-3.1-branch/start/remote-tag
-dir apple/stable/20160817/start compiler-rt split/apple/compiler-rt/apple/swift-3.1-branch/start/remote-tag
+dir apple/stable/20160817/start llvm        remotes/split/apple/llvm/apple/swift-3.1-branch/start/remote-tag
+dir apple/stable/20160817/start clang       remotes/split/apple/clang/apple/swift-3.1-branch/start/remote-tag
+dir apple/stable/20160817/start compiler-rt remotes/split/apple/compiler-rt/apple/swift-3.1-branch/start/remote-tag
 
 generate tag apple/stable/20170116/start
 start apple/stable/20170116/start apple/stable/20160817/start
-dir apple/stable/20170116/start llvm        split/apple/llvm/apple/swift-4.0-branch/start/remote-tag
-dir apple/stable/20170116/start clang       split/apple/clang/apple/swift-4.0-branch/start/remote-tag
-dir apple/stable/20170116/start compiler-rt split/apple/compiler-rt/apple/swift-4.0-branch/start/remote-tag
+dir apple/stable/20170116/start llvm        remotes/split/apple/llvm/apple/swift-4.0-branch/start/remote-tag
+dir apple/stable/20170116/start clang       remotes/split/apple/clang/apple/swift-4.0-branch/start/remote-tag
+dir apple/stable/20170116/start compiler-rt remotes/split/apple/compiler-rt/apple/swift-4.0-branch/start/remote-tag
 
 generate tag apple/stable/20170719/start
 start apple/stable/20170719/start apple/stable/20170116/start
-dir apple/stable/20170719/start llvm        split/apple/llvm/apple/swift-4.1-branch/start/remote-tag
-dir apple/stable/20170719/start clang       split/apple/clang/apple/swift-4.1-branch/start/remote-tag
-dir apple/stable/20170719/start compiler-rt split/apple/compiler-rt/apple/swift-4.1-branch/start/remote-tag
+dir apple/stable/20170719/start llvm        remotes/split/apple/llvm/apple/swift-4.1-branch/start/remote-tag
+dir apple/stable/20170719/start clang       remotes/split/apple/clang/apple/swift-4.1-branch/start/remote-tag
+dir apple/stable/20170719/start compiler-rt remotes/split/apple/compiler-rt/apple/swift-4.1-branch/start/remote-tag
 
 generate tag apple/stable/20180103/start
 start apple/stable/20180103/start apple/stable/20170719/start
-dir apple/stable/20180103/start llvm        split/apple/llvm/apple/swift-4.2-branch/start/remote-tag
-dir apple/stable/20180103/start clang       split/apple/clang/apple/swift-4.2-branch/start/remote-tag
-dir apple/stable/20180103/start compiler-rt split/apple/compiler-rt/apple/swift-4.2-branch/start/remote-tag
+dir apple/stable/20180103/start llvm        remotes/split/apple/llvm/apple/swift-4.2-branch/start/remote-tag
+dir apple/stable/20180103/start clang       remotes/split/apple/clang/apple/swift-4.2-branch/start/remote-tag
+dir apple/stable/20180103/start compiler-rt remotes/split/apple/compiler-rt/apple/swift-4.2-branch/start/remote-tag
 
 generate tag apple/stable/20180719/start
 start apple/stable/20180719/start apple/stable/20180103/start
-dir apple/stable/20180719/start llvm        split/apple/llvm/20180719/apple/swift-5.0-branch/start/remote-tag
-dir apple/stable/20180719/start clang       split/apple/clang/20180719/apple/swift-5.0-branch/start/remote-tag
-dir apple/stable/20180719/start compiler-rt split/apple/compiler-rt/20180719/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180719/start llvm        remotes/split/apple/llvm/20180719/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180719/start clang       remotes/split/apple/clang/20180719/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180719/start compiler-rt remotes/split/apple/compiler-rt/20180719/apple/swift-5.0-branch/start/remote-tag
 
 generate tag apple/stable/20180801/start
 start apple/stable/20180801/start apple/stable/20180719/start
-dir apple/stable/20180801/start llvm        split/apple/llvm/apple/swift-5.0-branch/start/remote-tag
-dir apple/stable/20180801/start clang       split/apple/clang/apple/swift-5.0-branch/start/remote-tag
-dir apple/stable/20180801/start compiler-rt split/apple/compiler-rt/apple/swift-5.0-branch/start/remote-tag
-dir apple/stable/20180801/start libcxx split/apple/libcxx/apple/swift-5.0-branch/start/remote-tag
-dir apple/stable/20180801/start clang-tools-extra split/apple/clang-tools-extra/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180801/start llvm        remotes/split/apple/llvm/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180801/start clang       remotes/split/apple/clang/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180801/start compiler-rt remotes/split/apple/compiler-rt/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180801/start libcxx remotes/split/apple/libcxx/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180801/start clang-tools-extra remotes/split/apple/clang-tools-extra/apple/swift-5.0-branch/start/remote-tag
 
 # Started adding commits to clang-tools-extra on master starting November 26th.
 generate tag apple/master/clang-tools-extra-start
 start apple/master/clang-tools-extra-start apple/stable/20180801/start
-dir apple/master/clang-tools-extra-start clang-tools-extra split/apple/clang-tools-extra/apple/swift-5.1-branch/start/remote-tag
+dir apple/master/clang-tools-extra-start clang-tools-extra remotes/split/apple/clang-tools-extra/apple/swift-5.1-branch/start/remote-tag
 dir apple/master/clang-tools-extra-start clang a29bc3228f3eef60128dfb981feb9edcd01aac69
 dir apple/master/clang-tools-extra-start compiler-rt af4bdd662d8b763f6410327b76f556e4ee0966a2
 dir apple/master/clang-tools-extra-start libcxx 8008cf5287543520a3c787079088ff6f54bca022
@@ -123,26 +123,26 @@ dir apple/master/clang-tools-extra-start llvm 37aa3bc565ece20f0cbebc478ea955e754
 
 generate tag apple/stable/20190104/start
 start apple/stable/20190104/start apple/master/20181126/clang-tools-extra-start
-dir apple/stable/20190104/start -           split/apple/root/apple/stable/20190104/start/remote-tag
-dir apple/stable/20190104/start llvm        split/apple/llvm/apple/swift-5.1-branch/start/remote-tag
-dir apple/stable/20190104/start clang       split/apple/clang/apple/swift-5.1-branch/start/remote-tag
-dir apple/stable/20190104/start compiler-rt split/apple/compiler-rt/apple/swift-5.1-branch/start/remote-tag
-dir apple/stable/20190104/start libcxx      split/apple/libcxx/apple/swift-5.1-branch/start/remote-tag
-dir apple/stable/20190104/start clang-tools-extra split/apple/clang-tools-extra/apple/swift-5.1-branch/start/remote-tag
+dir apple/stable/20190104/start -           remotes/split/apple/root/apple/stable/20190104/start/remote-tag
+dir apple/stable/20190104/start llvm        remotes/split/apple/llvm/apple/swift-5.1-branch/start/remote-tag
+dir apple/stable/20190104/start clang       remotes/split/apple/clang/apple/swift-5.1-branch/start/remote-tag
+dir apple/stable/20190104/start compiler-rt remotes/split/apple/compiler-rt/apple/swift-5.1-branch/start/remote-tag
+dir apple/stable/20190104/start libcxx      remotes/split/apple/libcxx/apple/swift-5.1-branch/start/remote-tag
+dir apple/stable/20190104/start clang-tools-extra remotes/split/apple/clang-tools-extra/apple/swift-5.1-branch/start/remote-tag
 
 generate tag apple/stable/20190619/start
 start apple/stable/20190619/start apple/stable/20190104/start
-dir apple/stable/20190619/start -           split/apple/root/apple/stable/20190619/start/remote-tag
-dir apple/stable/20190619/start llvm        split/apple/llvm/apple/stable/20190619/start/remote-tag
-dir apple/stable/20190619/start clang       split/apple/clang/apple/stable/20190619/start/remote-tag
-dir apple/stable/20190619/start compiler-rt split/apple/compiler-rt/apple/stable/20190619/start/remote-tag
-dir apple/stable/20190619/start clang-tools-extra split/apple/clang-tools-extra/apple/stable/20190619/start/remote-tag
-dir apple/stable/20190619/start libcxx      split/apple/libcxx/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start -           remotes/split/apple/root/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start llvm        remotes/split/apple/llvm/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start clang       remotes/split/apple/clang/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start compiler-rt remotes/split/apple/compiler-rt/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start clang-tools-extra remotes/split/apple/clang-tools-extra/apple/stable/20190619/start/remote-tag
+dir apple/stable/20190619/start libcxx      remotes/split/apple/libcxx/apple/stable/20190619/start/remote-tag
 
 # Started adding commits to the monorepo root on master starting June 27th.
 generate tag apple/master/root-start
 start apple/master/root-start apple/stable/20190619/start
-dir apple/master/root-start -      split/apple/root/apple/master/start/remote-tag
+dir apple/master/root-start -      remotes/split/apple/root/apple/master/start/remote-tag
 dir apple/masterroot-start clang-tools-extra e48e71380ee3332764fe0cc5e63bad22dad60cac
 dir apple/master/root-start clang 2debece4de9c0538108b8bf8ea15aa1d0eacae5a
 dir apple/master/root-start compiler-rt 250ac28f18718f7b8ce66b292a1f039ee542a958
