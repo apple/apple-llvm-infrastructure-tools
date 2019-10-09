@@ -643,8 +643,10 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, bool is_split,
   const char *current = parsed.message;
   while (*current) {
     if (!is_split) {
-      if (try_parse_string(current, "llvm-rev: "))
+      if (try_parse_string(current, "llvm-rev: ")) {
+        parse_through_newline(current);
         continue;
+      }
 
       int parsed_rev;
       if (parse_num(current, parsed_rev) || parse_ch(current, '\n'))
