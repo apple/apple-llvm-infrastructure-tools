@@ -58,6 +58,16 @@ dir apple/master/start llvm        split/apple/llvm/apple/master/start/remote-ta
 dir apple/master/start clang       split/apple/clang/apple/master/start/remote-tag
 dir apple/master/start compiler-rt split/apple/compiler-rt/apple/master/start/remote-tag
 
+# The same fine-grained waypoints would be hard to dig up because of LLDB's
+# non-linear history, but we can create a start tag, and have the branches
+# build on each other.  Most of LLDB's config continues down below.
+generate tag swift/master/start
+start apple/master/start
+dir swift/master/start lldb        split/apple/lldb/apple/master/start/remote-tag
+dir swift/master/start llvm        split/apple/llvm/apple/master/start/remote-tag
+dir swift/master/start clang       split/apple/clang/apple/master/start/remote-tag
+dir swift/master/start compiler-rt split/apple/compiler-rt/apple/master/start/remote-tag
+
 generate tag apple/stable/20160127/start
 start apple/stable/20160127/start apple/master/start
 dir apple/stable/20160127/start llvm        split/apple/llvm/apple/swift-3.0-branch/start/remote-tag
@@ -157,7 +167,7 @@ dir apple/stable/20160127 compiler-rt split/apple/compiler-rt/swift-3.0-branch
 dir apple/stable/20160127 llvm        split/apple/llvm/swift-3.0-branch
 
 generate branch swift/swift-3.0-branch
-start swift/swift-3.0-branch swift/swift-3.0-branch/start
+start swift/swift-3.0-branch       swift/master/start
 repeat swift/swift-3.0-branch      apple/stable/20160127
 dir    swift/swift-3.0-branch lldb split/apple/lldb/swift-3.0-branch
 
@@ -169,7 +179,7 @@ dir apple/stable/20160817 compiler-rt split/apple/compiler-rt/swift-3.1-branch
 dir apple/stable/20160817 llvm        split/apple/llvm/swift-3.1-branch
 
 generate branch swift/swift-3.1-branch
-start swift/swift-3.1-branch swift/swift-3.1-branch/start
+start swift/swift-3.1-branch swift/swift-3.0-branch
 repeat swift/swift-3.1-branch      apple/stable/20160817
 dir    swift/swift-3.1-branch lldb split/apple/lldb/swift-3.1-branch
 
@@ -181,7 +191,7 @@ dir apple/stable/20170116 compiler-rt split/apple/compiler-rt/swift-4.0-branch
 dir apple/stable/20170116 llvm        split/apple/llvm/swift-4.0-branch
 
 generate branch swift/swift-4.0-branch
-start swift/swift-4.0-branch swift/swift-4.0-branch/start
+start swift/swift-4.0-branch swift/swift-3.1-branch
 repeat swift/swift-4.0-branch      apple/stable/20170116
 dir    swift/swift-4.0-branch lldb split/apple/lldb/swift-4.0-branch
 
@@ -197,7 +207,7 @@ dir apple/stable/20170719 llvm        split/apple/llvm/swift-4.1-branch
 # generating merges for clang/llvm/compiler-rt commits that should show up in
 # the next directive.
 generate tag swift/swift-4.1-branch/before-lldb-fix
-start swift/swift-4.1-branch/before-lldb-fix swift/swift-4.1-branch/start
+start swift/swift-4.1-branch/before-lldb-fix swift/swift-4.0-branch
 repeat archive/before-lldb-fix/swift/swift-4.1-branch      apple/stable/20170719{no-pass}
 dir    archive/before-lldb-fix/swift/swift-4.1-branch lldb split/apple/lldb/archive/start/fixed/swift-4.1-branch
 
@@ -216,7 +226,7 @@ dir apple/stable/20180103 compiler-rt split/apple/compiler-rt/swift-4.2-branch
 dir apple/stable/20180103 llvm        split/apple/llvm/swift-4.2-branch
 
 generate branch swift/swift-4.2-branch
-start swift/swift-4.2-branch swift/swift-4.2-branch/start
+start swift/swift-4.2-branch swift/swift-4.1-branch
 repeat swift/swift-4.2-branch      apple/stable/20180103
 dir    swift/swift-4.2-branch lldb split/apple/lldb/swift-4.2-branch
 
@@ -240,7 +250,7 @@ dir apple/stable/20180801 libcxx            split/apple/libcxx/swift-5.0-branch
 dir apple/stable/20180801 llvm              split/apple/llvm/swift-5.0-branch
 
 generate branch swift/swift-5.0-branch
-start swift/swift-5.0-branch swift/swift-5.0-branch/start
+start swift/swift-5.0-branch swift/swift-4.2-branch
 repeat swift/swift-5.0-branch      apple/stable/20180801
 dir    swift/swift-5.0-branch lldb split/apple/lldb/swift-5.0-branch
 
@@ -255,7 +265,7 @@ dir apple/stable/20190104 libcxx            split/apple/libcxx/swift-5.1-branch
 dir apple/stable/20190104 llvm              split/apple/llvm/swift-5.1-branch
 
 generate branch swift/swift-5.1-branch
-start swift/swift-5.1-branch swift/swift-5.1-branch/start
+start swift/swift-5.1-branch swift/swift-5.0-branch
 repeat swift/swift-5.1-branch      apple/stable/20190104
 dir    swift/swift-5.1-branch lldb split/apple/lldb/swift-5.1-branch
 
@@ -281,7 +291,7 @@ dir apple/stable/20190619 llvm              split/apple/llvm/apple/stable/201906
 # archive/start/stable/swift-3.1-branch, archive/start/stable/swift-4.0-branch,
 # and archive/start/stable/swift-4.1-branch.
 generate branch swift/master
-start swift/master apple/stable/20190619
+repeat swift/master apple/stable/20190619
 dir swift/master lldb              split/apple/lldb/stable
 dir swift/master clang             split/apple/clang/stable
 dir swift/master clang-tools-extra split/apple/clang-tools-extra/stable
