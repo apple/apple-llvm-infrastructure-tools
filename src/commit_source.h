@@ -110,7 +110,6 @@ struct commit_source {
   int num_fparents_to_translate = 0;
   int num_fparents_locked_in = 0;
   int num_fparents_from_start = -1;
-  long long earliest_ct = LLONG_MAX;
 
   std::unique_ptr<monocommit_worker> worker;
 
@@ -125,13 +124,12 @@ struct commit_source {
   void lock_in_start_dir_commits();
   int find_dir_commits_to_match_and_update_head(git_cache &cache,
                                                 const std::string &since);
-  int find_dir_commits(git_cache &cache);
-  int find_repeat_commits_and_head(git_cache &cache, long long earliest_ct);
-  int find_repeat_commits_and_head_impl(git_cache &cache, long long earliest_ct,
+  int find_dir_commits(git_cache &cache, long long &earliest_ct);
+  int find_repeat_commits_and_head(git_cache &cache, long long min_ct_to_merge);
+  int find_repeat_commits_and_head_impl(git_cache &cache,
+                                        long long min_ct_to_merge,
                                         std::vector<const char *> &argv,
                                         sha1_ref &next);
-  int find_earliest_ct(git_cache &cache, const std::vector<sha1_ref> &sha1s,
-                       long long &earliest_ct);
   int skip_repeat_commits();
 
   int add_repeat_search_names(git_cache &cache, sha1_ref start,
@@ -284,7 +282,7 @@ static bool by_non_increasing_commit_timestamp(const fparent_type &lhs,
   return lhs.is_translated < rhs.is_translated;
 }
 
-int commit_source::find_dir_commits(git_cache &cache) {
+int commit_source::find_dir_commits(git_cache &cache, long long &earliest_ct) {
   assert(!is_repeat);
 
   // List commits.
@@ -600,43 +598,8 @@ int commit_source::skip_repeat_commits() {
   return 0;
 }
 
-int commit_source::find_earliest_ct(git_cache &cache,
-                                    const std::vector<sha1_ref> &sha1s,
-                                    long long &earliest_ct) {
-  assert(!sha1s.empty());
-  earliest_ct = LLONG_MAX;
-
-  auto &git_reply = cache.git_reply;
-  std::vector<const char *> argv = {
-      "git",
-      "log",
-      "--format=%ct",
-      "--no-walk",
-  };
-  std::vector<std::string> strings;
-  for (auto &sha1 : sha1s)
-    strings.push_back(sha1->to_string());
-  for (auto &sha1 : strings)
-    argv.push_back(sha1.c_str());
-  argv.push_back(nullptr);
-  git_reply.clear();
-  if (call_git(argv.data(), nullptr, "", git_reply))
-    return 1;
-  git_reply.push_back(0);
-
-  const char *current = git_reply.data();
-  const char *end = git_reply.data() + git_reply.size() - 1;
-  while (current != end) {
-    long long ct;
-    if (parse_num(current, ct) || parse_newline(current))
-      return error("failed to parse commit timestamp");
-    earliest_ct = std::min(ct, earliest_ct);
-  }
-  return 0;
-}
-
 int commit_source::find_repeat_commits_and_head(git_cache &cache,
-                                                long long earliest_ct) {
+                                                long long min_ct_to_merge) {
   assert(is_repeat);
   assert(head != goal && "logic error, should have skipped instead");
   assert(goal);
@@ -667,7 +630,8 @@ int commit_source::find_repeat_commits_and_head(git_cache &cache,
   argv.push_back(nullptr);
 
   sha1_ref next;
-  while (!find_repeat_commits_and_head_impl(cache, earliest_ct, argv, next)) {
+  while (
+      !find_repeat_commits_and_head_impl(cache, min_ct_to_merge, argv, next)) {
     if (next) {
       start_sha1 = next->to_string();
       argv[start_index] = start_sha1.c_str();
@@ -691,7 +655,7 @@ int commit_source::find_repeat_commits_and_head(git_cache &cache,
 }
 
 int commit_source::find_repeat_commits_and_head_impl(
-    git_cache &cache, long long earliest_ct,
+    git_cache &cache, long long min_ct_to_merge,
     std::vector<const char *> &argv, sha1_ref &next) {
   auto &git_reply = cache.git_reply;
   git_reply.clear();
@@ -739,7 +703,7 @@ int commit_source::find_repeat_commits_and_head_impl(
                    fparents.back().commit->to_string() + "'");
 
     // Break once we're one past the earliest other commit timestamp.
-    if (earliest_ct < LLONG_MAX && real_ct < earliest_ct) {
+    if (real_ct <= min_ct_to_merge) {
       // Rewind the search by one and set the head if it's not already set.
       if (!head)
         head = fparents.back().commit;
