@@ -100,9 +100,9 @@ dir apple/stable/20180103/start compiler-rt remotes/split/apple/compiler-rt/appl
 
 generate tag apple/stable/20180719/start
 start apple/stable/20180719/start apple/stable/20180103/start
-dir apple/stable/20180719/start llvm        remotes/split/apple/llvm/20180719/apple/swift-5.0-branch/start/remote-tag
-dir apple/stable/20180719/start clang       remotes/split/apple/clang/20180719/apple/swift-5.0-branch/start/remote-tag
-dir apple/stable/20180719/start compiler-rt remotes/split/apple/compiler-rt/20180719/apple/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180719/start llvm        remotes/split/apple/llvm/apple/20180719/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180719/start clang       remotes/split/apple/clang/apple/20180719/swift-5.0-branch/start/remote-tag
+dir apple/stable/20180719/start compiler-rt remotes/split/apple/compiler-rt/apple/20180719/swift-5.0-branch/start/remote-tag
 
 generate tag apple/stable/20180801/start
 start apple/stable/20180801/start apple/stable/20180719/start
