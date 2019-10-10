@@ -208,8 +208,8 @@ dir apple/stable/20170719 llvm        split/apple/llvm/swift-4.1-branch
 # the next directive.
 generate tag swift/swift-4.1-branch/before-lldb-fix
 start swift/swift-4.1-branch/before-lldb-fix swift/swift-4.0-branch
-repeat archive/before-lldb-fix/swift/swift-4.1-branch      apple/stable/20170719{no-pass}
-dir    archive/before-lldb-fix/swift/swift-4.1-branch lldb split/apple/lldb/archive/start/fixed/swift-4.1-branch
+repeat swift/swift-4.1-branch/before-lldb-fix      apple/stable/20170719{no-pass}
+dir    swift/swift-4.1-branch/before-lldb-fix lldb split/apple/lldb/archive/start/fixed/swift-4.1-branch
 
 # Finally generate swift/swift-4.1-branch with the rest of LLDB's history for
 # that branch.
