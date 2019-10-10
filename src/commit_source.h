@@ -739,7 +739,7 @@ int commit_source::find_repeat_commits_and_head_impl(
                    fparents.back().commit->to_string() + "'");
 
     // Break once we're one past the earliest other commit timestamp.
-    if (earliest_ct < LLONG_MAX && real_ct < earliest_ct) {
+    if (earliest_ct < LLONG_MAX && real_ct <= earliest_ct) {
       // Rewind the search by one and set the head if it's not already set.
       if (!head)
         head = fparents.back().commit;
