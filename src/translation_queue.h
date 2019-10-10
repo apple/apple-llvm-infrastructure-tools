@@ -14,7 +14,6 @@ struct translation_queue {
   std::deque<commit_source> sources;
   std::vector<fparent_type> fparents;
   std::vector<commit_type> commits;
-  long long earliest_ct = LLONG_MAX;
 
   explicit translation_queue(git_cache &cache, dir_list &dirs)
       : cache(cache), pool(cache.pool), dirs(dirs) {}
@@ -64,14 +63,16 @@ int translation_queue::clean_initial_head(sha1_ref &head) {
 }
 
 int translation_queue::find_dir_commits(sha1_ref head) {
+  long long earliest_ct = LLONG_MAX;
   for (auto &source : sources) {
     if (source.is_repeat)
       continue;
 
-    if (source.find_dir_commits(cache))
+    long long earliest_ct_for_source = LLONG_MAX;
+    if (source.find_dir_commits(cache, earliest_ct_for_source))
       return error("failed to find commits for '" +
                    std::string(dirs.list[source.dir_index].name) + "'");
-    earliest_ct = std::min(earliest_ct, source.earliest_ct);
+    earliest_ct = std::min(earliest_ct, earliest_ct_for_source);
   }
 
   // Nothing to do if we have no untranslated commits.
@@ -190,20 +191,23 @@ int translation_queue::find_repeat_commits_and_head(commit_source *repeat,
   if (!repeat)
     return 0;
   assert(repeat->is_repeat);
-
-  // Nothing to do.
   if (repeat->goal == repeat->head)
     return repeat->skip_repeat_commits();
 
-  // If we don't have an independent head yet, figure out how far to fast
-  // forward through repeat commits.
-  long long earliest_independent_ct = LLONG_MAX;
+  // Set a lower bound for how far back to create merges.  Note that branches
+  // can have a head from a start directive, without any of the sources having
+  // an appropriate head.
+  long long min_ct_to_merge = 0;
+  if (head)
+    if (cache.compute_ct(head, min_ct_to_merge))
+      return error("failed to %ct of head '" + head->to_string() +
+                   "' for stopping repeat '" + repeat->goal->to_string() + "'");
+
+  // If it's possible to fast forward from head, figure out how far.
+  bool can_ff_head = false;
+  bool any_source_cts = false;
   if (!head || cache.merge_base_is_ancestor(head, repeat->goal)) {
-    earliest_independent_ct = earliest_ct;
-    if (fparents.empty()) {
-      set_source_head(*repeat, repeat->goal);
-      return repeat->skip_repeat_commits();
-    }
+    can_ff_head = true;
     for (auto &source : sources) {
       if (source.is_repeat)
         continue;
@@ -217,19 +221,36 @@ int translation_queue::find_repeat_commits_and_head(commit_source *repeat,
       if (cache.compute_mono(source.head, mono))
         return error("could not find monorepo hash for '" +
                      source.head->to_string() + "'");
-      if (!cache.merge_base_is_ancestor(mono, repeat->goal)) {
-        long long ct;
-        if (cache.compute_ct(source.head, ct))
-          return error("could not grab commit date of '" +
-                       source.head->to_string() + "'");
-        earliest_independent_ct = std::min(earliest_independent_ct, ct);
+      if (cache.merge_base_is_ancestor(mono, repeat->goal))
         continue;
-      }
+
+      long long ct;
+      if (cache.compute_ct(source.head, ct))
+        return error("could not grab commit date of '" +
+                      source.head->to_string() + "'");
+      min_ct_to_merge = std::max(min_ct_to_merge, ct);
+      any_source_cts = true;
     }
   }
 
-  // Now extend repeat back further to match the earliest ct.
-  return repeat->find_repeat_commits_and_head(cache, earliest_independent_ct);
+  // Try harder to fast-forward.
+  if (can_ff_head && !any_source_cts) {
+    if (fparents.empty()) {
+      // If there is nothing to translate and all the heads can fast-forward to
+      // the repeat goal, then we only need to look back far enough to
+      // determine the goal and refine the head.
+      min_ct_to_merge = LLONG_MAX;
+    } else {
+      // Get the real ct, not the ct used for sorting.
+      if (cache.compute_ct(fparents.back().commit, min_ct_to_merge))
+        return error("could not grab commit date of '" +
+                     fparents.back().commit->to_string() + "'");
+    }
+  }
+
+  // We should have found this by now.
+  assert(min_ct_to_merge);
+  return repeat->find_repeat_commits_and_head(cache, min_ct_to_merge);
 }
 
 int translation_queue::interleave_repeat_commits(commit_source *repeat) {
