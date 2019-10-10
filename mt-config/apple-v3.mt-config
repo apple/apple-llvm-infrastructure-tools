@@ -122,7 +122,7 @@ dir apple/master/clang-tools-extra-start libcxx 8008cf5287543520a3c787079088ff6f
 dir apple/master/clang-tools-extra-start llvm 37aa3bc565ece20f0cbebc478ea955e7549bc799
 
 generate tag apple/stable/20190104/start
-start apple/stable/20190104/start apple/master/20181126/clang-tools-extra-start
+start apple/stable/20190104/start apple/master/clang-tools-extra-start
 dir apple/stable/20190104/start -           remotes/split/apple/root/apple/stable/20190104/start/remote-tag
 dir apple/stable/20190104/start llvm        remotes/split/apple/llvm/apple/swift-5.1-branch/start/remote-tag
 dir apple/stable/20190104/start clang       remotes/split/apple/clang/apple/swift-5.1-branch/start/remote-tag
