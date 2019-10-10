@@ -18,8 +18,8 @@ RUN:   | tee %t-mt-configs/check-for-work.mt-config
 
 # Check for work.
 RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs check-for-work \
-RUN:     --check-for-work | check-diff %s MASTER %t
-MASTER: work: generate branch master: a
+RUN:     --check-for-work | check-diff %s DOESNOTEXIST %t
+DOESNOTEXIST: work: generate branch master
 RUN: not git -C %t-mt-repo.git show-ref refs/heads/master | check-empty
 
 # Run generate and check again.
@@ -40,3 +40,4 @@ RUN: env ct=1550000005 mkblob %t.a 5
 RUN: env ct=1550000006 mkblob %t.b 6
 RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs \
 RUN:     check-for-work --check-for-work | check-diff %s MASTER %t
+MASTER: work: generate branch master: a
