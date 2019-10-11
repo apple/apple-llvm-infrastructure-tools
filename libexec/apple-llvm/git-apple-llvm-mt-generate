@@ -702,12 +702,12 @@ mt_generate_ref() {
     # For tags, return early if it already exists.
     [ -n "$work" -o ! $mttype = tag ] || return 0
 
-    local refdirs repeat start
+    local refdirs repeat rawstart
     refdirs="$(print_active_refdirs "$rawtarget")" ||
         error "failed to extract active refdirs for $rawtarget"
     repeat="$(print_repeat "$rawtarget")" ||
         error "failed to extract any repeat directive for $rawtarget"
-    start="$(print_start "$rawtarget")" ||
+    rawstart="$(print_start "$rawtarget")" ||
         error "failed to extract any start directive for $rawtarget"
 
     [ -n "$refdirs" ] ||
@@ -746,10 +746,13 @@ mt_generate_ref() {
     refdirs="$(print_all_refdirs "$rawtarget")" ||
         error "failed to extract complete refdirs for $rawtarget"
 
-    # Validate the start ref, regardless of whether we need it.
-    [ -z "$start" ] ||
-        run --dry git rev-parse --verify $start^{commit} >/dev/null ||
-        error "invalid start ref '$start'"
+    # Validate the start ref, regardless of whether we need it, and then
+    # canonicalize it.
+    [ -z "$rawstart" ] ||
+        run --dry git rev-parse --verify $rawstart^{commit} >/dev/null ||
+        error "invalid start ref '$rawstart'"
+    local start="$(run --dry git rev-parse --symbolic-full-name $rawstart)"
+    [ -n "$start" ] || start="$rawstart"
 
     # Use a loop so we can avoid nesting with "break".
     local handle_repeat_once=
