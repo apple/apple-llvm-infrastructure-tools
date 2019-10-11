@@ -280,15 +280,16 @@ but it's fairly close to what's implemented.)
               if that's in the ancestry path).
         - Else:
             - Look at (all) first parents.
-    - Note each commit's timestamp, fudging it if necessary to be monotonically
-      non-decreasing.
- 2. Mark which commits have been translated.
+    - Note each commit's timestamp for later sorting, fudging it if necessary
+      to be monotonically non-decreasing.
+ 2. Discard HEAD if any of the `dir` or `repeat` heads aren't ancestors.
+ 3. Mark which commits have been translated.
     - For each dir:
         - Do a binary search to find where the transition happens.
- 3. Sort by commit timestamp, interleaving commits (no translation yet).
+ 4. Sort by commit timestamp, interleaving commits (no translation yet).
     - Stable sort will respect topological order because of commit timestamp
       fudging above.
- 4. Fast-forward through the interleaved commits to find the first commit to
+ 5. Fast-forward through the interleaved commits to find the first commit to
     translate, refining the start commits.
     - Keep track of the last commit for each dir before finding the first
       interleaved commit to translate.
@@ -297,36 +298,28 @@ but it's fairly close to what's implemented.)
         - Note whether it's a change from the original start commit.
     - Check for commit timestamp tie-breakers that are already translated,
       and reorder locally as if we had sorted this way above.
- 5. Convert start commits to monorepo commits.
- 6. Find the repeat commits to interleave.
+ 6. Convert start commits to monorepo commits.
+ 7. Find the repeat commits to interleave.
     - If start is not an ancestor of the goal, discard it.
-    - List first parents of the goal, excluding all monorepo start commits,
-      and excluding any commits older than monorepo start commits.
+    - List first parents of the goal, unless there are no commits to translate
+      and all other heads can fast-forward to it.
+        - Stop at timestamps of any monorepo start commits (or goals, if there
+          are no start commits) that are not ancestors of the repeat goal.
+        - Stop of the head of the branch (which could also be an ancestor).
     - Filter out commits that don't modify repeated paths.
- 7. Sort repeat commits, interleaving with other commits by commit timestamp.
- 8. Determine whether to discard HEAD.
-    - Discard if there are no start commits.
-    - Discard if a start commit had to back up to merge base.
-    - Discard if repeat start commit was discarded.
-    - Discard if any content in HEAD is wrong vs. start commits.
- 9. Discard repeat start commit if HEAD was discarded.
-10. Find a repeat start commit if necessary.
-    - List the newest first parent commit of the oldest repeat commit being
-      interleaved that modifies a repeated path.
-11. Create or refine the starting HEAD, unless there are no start commits.
+        - That can mean going back a little further to find a relevant head.
+ 8. Sort repeat commits, interleaving with other commits by commit timestamp.
+ 9. Create or refine the starting HEAD, unless there are no start commits.
     - If HEAD was not discarded earlier, use it as the first parent.
     - Prune parents that are not independent and whose content matches the
       first parent.
     - If there's only one parent left use it.  Otherwise, create a merge
       commit.
-    - Update HEAD.
-12. Look up all untranslated commits.
-    - For each dir:
-        - Leverage `--not $(git show-ref $d/mt-split)` to prune this history.
-13. Work forward translating and merging the interleaved commits onto HEAD.
+10. Work forward translating and merging the interleaved commits onto HEAD.
     - If the commit is already translated, merge it into HEAD.
         - If there are multiple commits at the same commit date, merge them at
           the same time.
     - Else:
         - Translate any untranslated parent commits found in the lookup above.
         - Translate the commit on top of HEAD.
+11. Merge the goal commits, if necessary.
