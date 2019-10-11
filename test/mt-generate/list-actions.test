@@ -2,10 +2,13 @@ RUN: %mtgen list --list-actions | check-diff %s ACTIONS %t
 ACTIONS: mapping a-name/master
 ACTIONS: branch b2
 ACTIONS: branch b1
+ACTIONS: tag v2.1
 ACTIONS: branch b3
+ACTIONS: tag v1.0
 
 RUN: %mtgen list-down1 --list-actions | check-diff %s DOWN1 %t
 DOWN1: branch b4
+DOWN1: tag v3.0
 
 RUN: %mtgen list-down2 --list-actions | check-diff %s DOWN2 %t
 DOWN2: branch b5

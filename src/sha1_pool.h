@@ -70,12 +70,23 @@ struct sha1_ref {
   }
   bool operator==(const sha1_ref &rhs) const { return sha1 == rhs.sha1; }
   bool operator!=(const sha1_ref &rhs) const { return sha1 != rhs.sha1; }
+  bool operator<=(const sha1_ref &rhs) const { return sha1 <= rhs.sha1; }
+  bool operator>=(const sha1_ref &rhs) const { return sha1 >= rhs.sha1; }
+  bool operator<(const sha1_ref &rhs) const { return sha1 < rhs.sha1; }
+  bool operator>(const sha1_ref &rhs) const { return sha1 > rhs.sha1; }
 };
 struct sha1_pool {
   sha1_trie<binary_sha1> root;
 
   sha1_ref lookup(const textual_sha1 &sha1);
   sha1_ref lookup(const binary_sha1 &sha1);
+  int parse_sha1(const char *&current, sha1_ref &sha1, bool allow_zeros);
+  int parse_sha1_or_zeros(const char *&current, sha1_ref &sha1) {
+    return parse_sha1(current, sha1, /*allow_zeros=*/true);
+  }
+  int parse_sha1(const char *&current, sha1_ref &sha1) {
+    return parse_sha1(current, sha1, /*allow_zeros=*/false);
+  }
 };
 } // end namespace
 
@@ -190,4 +201,15 @@ sha1_ref sha1_pool::lookup(const binary_sha1 &sha1) {
   if (sha1.is_zeros())
     return sha1_ref();
   return sha1_ref(root.insert(sha1, was_inserted));
+}
+
+int sha1_pool::parse_sha1(const char *&current, sha1_ref &sha1,
+                          bool allow_zeros) {
+  textual_sha1 text;
+  if (text.from_input(current, &current))
+    return 1;
+  sha1 = lookup(text);
+  if (!sha1)
+    return allow_zeros ? 0 : 1;
+  return 0;
 }

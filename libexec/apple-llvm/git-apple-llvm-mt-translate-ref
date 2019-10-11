@@ -1,0 +1,318 @@
+#!/bin/bash
+
+. "$(dirname "$0")"/helpers/init.sh
+helper mt_split2mono
+helper mt_llvm_svn2git
+helper mt_list_commits
+
+usage() {
+    printf "%s\n" \
+        "usage: $(print_cmdname) [options] <target> <start> <ref>:<dir>..." \
+        ""                                                                  \
+        "   <target>      the ref to interleave"                            \
+        "   <start>       the start ref (ignored if <target> exists)"       \
+        "                   this can safely be empty"                       \
+        "   <ref>         a ref to interleave commits from"                 \
+        "                   '%<ref>[{no-pass}]' to repeat commits"          \
+        "                     from <upstream> (optionally, without passing" \
+        "                     other refs)"                                  \
+        "                   '-' if there is no relevant split repo"         \
+        "   <dir>         the name of the top-level tree to put <ref> into" \
+        "                   '-' for root (splat contents)"
+}
+
+main() {
+    local target start
+    local -a refdirs
+    parse_cmdline "$@" || return 1
+
+    # Only initialize split2mono db if we will interleave commits.
+    # Initializing the blob is not free and there's no point.
+    mt_split2mono_init || return 1
+    translate_ref "$@" || return 1
+    mt_split2mono_save || return 1
+}
+
+parse_cmdline() {
+    [ $# -ge 1 ] || usage_error "missing <target>"
+    [ $# -ge 2 ] || usage_error "missing <start> (can be empty)"
+    [ $# -ge 3 ] || usage_error "missing <ref>:<dir>..."
+    local pos=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --help)
+                usage
+                exit 0
+                ;;
+            *:*)
+                [ $pos -ne 0 ] || usage_error "invalid target ref '$1'"
+                [ $pos -ne 1 ] || usage_error "invalid start ref '$1'"
+                refdirs=( "${refdirs[@]}" "$1" )
+                shift
+                ;;
+            -*)
+                usage_error "unknown option '$1'"
+                ;;
+            *)
+                [ $pos -lt 2 ] || usage_error "invalid <ref>:<dir> '$1'"
+                [ $pos -ne 1 ] || start="$1"
+                [ $pos -ne 0 ] || target="$1"
+                pos=$(( $pos + 1 ))
+                shift
+                ;;
+        esac
+    done
+    [ -n "$target" ] || usage_error "missing <target>"
+    [ "${target:0:5}" = "refs/" ] ||
+        usage_error "<target> must start with 'refs/'"
+
+    [ ${#refdirs[@]} -gt 0 ] || usage_error "missing <ref>:<dir>"
+}
+
+is_translated() { mt_split2mono "$1" >/dev/null 2>/dev/null; }
+translate_ref() {
+    local current
+    current=$(run --hide-errors git rev-parse --verify $target^{commit}) ||
+        current=$ZERO_SHA1
+
+    local mtprefix mtname mttype
+    if [ "${target:0:11}" = refs/heads/ ]; then
+        mttype=branch
+        mtname="${target#refs/heads/}"
+        mtprefix=refs/heads/mt/
+    elif [ "${target:0:10}" = refs/tags/ ]; then
+        mttype=tag
+        mtname="${target#refs/tags/}"
+        mtprefix=refs/heads/mt-tag/
+        [ "$current" = $ZERO_SHA1 ] ||
+            error "tag $target already exists at $current"
+    else
+        # For now we just handle tags and branches.
+        error "unsupported target '$target'; must be refs/{heads,tags}/"
+    fi
+
+    local r d rd mtref sha1 goal_sha1 start_sha1
+    local -a listdirs # refs to list commits of and for which directory
+    local -a repeated # directories getting repeated
+    local repeated_root # the root is getting repeated
+    local -a head_sha1dirs # head sha1 for each active directory
+    local -a goal_sha1dirs # goal sha1 for each active directory
+    local -a goal_sha1s # goal sha1s without the directories
+    local -a other_sha1dirs # other directories as '-:$d' and '%:$d'
+    local repeat suffix
+    local nopass repeat_stripped
+    local declared # all declared directories, except '-'
+    local needs_initial_merge should_reset_head
+    for rd in "${refdirs[@]}"; do
+        r="${rd%:*}"
+        d="${rd##*:}"
+        suffix="$d/mt-split"
+
+        # Gather all the declared directories for list_new_commits, except for
+        # '-'.
+        [ "$d" = - ] || declared="$declared${declared:+ }$d"
+
+        # Return early if there is no ref for this directory.
+        if [ "$r" = - ]; then
+            other_sha1dirs=( "${other_sha1dirs[@]}" "$rd" )
+            continue
+        fi
+
+        if [ "${r:0:1}" = % ]; then
+            # Handle repeat logic for this directory.
+            [ -z "$repeat" ] || [ "$repeat" = "${r:1}" ] ||
+                error "mismatched repeat in '$rd' (expected: '$repeat')"
+            other_sha1dirs=( "${other_sha1dirs[@]}" "%:$d" )
+
+            [ -z "$repeat" ] || continue
+            repeat="${r:1}"
+            suffix=mt-repeat r="$repeat" d=%
+            repeat_stripped="${r%\{no-pass\}}"
+            rd="$repeat_stripped:$d"
+            [ "$rd" = "$r:$d" ] || nopass=1
+        else
+            # Figure out the goal sha1 for this directory.  Note that the
+            # repeat goal is determined below.
+            goal_sha1=$(run --hide-errors \
+                git rev-parse --verify $r^{commit}) ||
+                error "failed to extract goal sha1 from '$r' for dir '$d'"
+            goal_sha1dirs=( "${goal_sha1dirs[@]}" "$goal_sha1:$d" )
+            goal_sha1s=( "${goal_sha1s[@]}" "$goal_sha1" )
+        fi
+
+        mtref=$mtprefix$mtname/$suffix
+        head_sha1=$(run --hide-errors \
+            git rev-parse --verify $mtref^{commit}) ||
+            head_sha1=$ZERO_SHA1
+
+        head_sha1dirs=( "${head_sha1dirs[@]}" "$head_sha1:$d" )
+    done
+
+    local head
+    head=$(run --hide-errors git rev-parse --verify $target^{commit})
+    if [ -z "$head" ]; then
+        if [ -n "$start" ]; then
+            head=$(run --dry git rev-parse --verify "$start"^{commit}) ||
+                error "failed to extract commit from start ref '$start'"
+        else
+            head=$ZERO_SHA1
+        fi
+    fi
+
+    # Figure out the latest commit date coming in, if the repeat is "no-pass".
+    # This command takes goal_sha1s implicitly and returns via repeat_sha1.
+    if [ -n "$repeat" ]; then
+        local repeat_sha1
+        mt_list_first_repeat_sha1 "$repeat"
+        goal_sha1s=( "${goal_sha1s[@]}" "$repeat_sha1" )
+        goal_sha1dirs=( "${goal_sha1dirs[@]}" "$repeat_sha1:%" )
+    fi
+
+    process_new_commits </dev/null ||
+        exit 1
+}
+
+create_initial_merge() {
+    [ "${VERBOSE:-0}" = 0 ] || log "translate: create initial merge"
+
+    # From parent: local head
+    # From parent: local new_sha1dirs
+    # From parent: local -a zero_sha1dirs
+    # From parent: local -a start_sha1dirs
+    # From parent: local -a nonsha1_sha1dirs
+    # Build this here so that build_executable is cached for the pipeline.
+    local split2mono
+    split2mono="$(build_executable split2mono)" ||
+        error "could not build split2mono"
+
+    local output
+    output="$(create_initial_merge_impl)" || exit 1
+    head="${output%% *}"
+    new_sha1dirs="${output#* }"
+}
+
+create_initial_merge_impl() {
+    local -a main_sha1s
+    main_sha1dirs=( "${zero_sha1dirs[@]}" "${nonsha1_sha1dirs[@]}" )
+    list_no_commits "${start_sha1dirs[*]}" |
+    {
+        interleave_commits "${main_sha1dirs[*]}" "${start_sha1dirs[*]}" ||
+            error "could not create initial merge"
+        printf "%s\n" "$head $new_sha1dirs"
+    } || exit 1
+}
+
+process_new_commits() {
+    # From parent: local head
+    # From parent: local -a head_sha1dirs
+    # From parent: local -a other_sha1dirs
+    # From parent: local -a goal_sha1dirs
+    [ "${VERBOSE:-0}" = 0 ] || log "translate: process new commits"
+
+    # Build this here so that build_executable is cached for the pipeline.
+    local split2mono
+    split2mono="$(build_executable split2mono)" ||
+        error "could not build split2mono"
+
+    local new_sha1dirs
+    interleave_commits "${main_sha1dirs[*]}" "${goal_sha1dirs[*]}" ||
+        error "could not update target '$target'"
+    update_refs "$current" "${head_sha1dirs[*]}" || exit 1
+}
+
+interleave_commits() {
+    # From parent: local head
+    # From parent: local split2mono
+    # From parent: local new_sha1dirs
+    # From parent: local -a head_sha1dirs
+    # From parent: local -a other_sha1dirs
+    # From parent: local -a goal_sha1dirs
+    local result
+    result="$(run "$split2mono" interleave-commits \
+        "$MT_DB_SPLIT2MONO_DB" "$MT_DB_SVN2GIT_DB" \
+        "$head" "${head_sha1dirs[@]}" "${other_sha1dirs[@]}" \
+        -- "${goal_sha1dirs[@]}")" ||
+        error "failure interleaving commits"
+    head="${result%% *}"
+    new_sha1dirs="${result#* }"
+    [ "${VERBOSE:-0}" = 0 ] || log "translation: $head $new_sha1dirs"
+}
+
+update_refs() {
+    # From parent: local target
+    # From parent: local head
+    # From parent: local new_sha1dirs
+    local current="$1"
+    local old_sha1dirs="$2"
+
+    local -a updates
+    local sha1 sd d mtref update_error
+    if [ "$mttype" = tag ]; then
+        local -a message trailers
+        local dslash
+        message=( "Tagging $name" "" )
+        for sd in $new_sha1dirs; do
+            d=${sd#*:}
+            if [ "$d" = % ]; then
+                continue
+            elif [ "$d" = - ]; then
+                dslash=$d
+            else
+                dslash=$d/
+            fi
+
+            sha1=${sd%:*}
+            mtref=$mtprefix$mtname/$d/mt-split
+            updates=( "${updates[@]}" "update $mtref $sha1 $ZERO_SHA1" )
+            message=( "${message[@]}" "  - $sha1: $dslash" )
+            trailers=( "${trailers[@]}" "apple-llvm-split-dir: $dslash" )
+        done
+        message=( "${message[@]}" "" "${trailers[@]}" )
+        log "Tagging $mtname => $head"
+        local cn="apple-llvm-mt"
+        local ce="mt @ apple-llvm"
+        local cd="$(git log --no-walk $head --format=%cd --date=raw)"
+        printf "%s\n" "${message[@]}" |
+        run env \
+            GIT_COMMITER_NAME="$cn"  GIT_AUTHOR_NAME="$cn" \
+            GIT_COMMITER_DATE="$cd"  GIT_AUTHOR_DATE="$cd" \
+            GIT_COMMITER_EMAIL="$ce" GIT_AUTHOR_EMAIL="$ce" \
+            git tag -a -F - $mtname $head ||
+            error "failed to tag '$mtname' as '$head'"
+        update_error="failed to update $refdirs for $mtname"
+    else
+        log "Updating $target => $head"
+        updates=( "update $target $head $current" )
+        local prev sha1 nsd sd d mtsuffix
+        for sd in $old_sha1dirs; do
+            d=${sd#*:}
+            prev=${sd%:*}
+            sha1=
+            if [ "$d" = % ]; then
+                mtsuffix=/mt-repeat
+            else
+                mtsuffix=/$d/mt-split
+            fi
+            mtref=$mtprefix$mtname$mtsuffix
+            for nsd in $new_sha1dirs; do
+                [ "$d" = "${nsd#*:}" ] || continue
+                sha1=${nsd%:*}
+                break
+            done
+            if [ "${sha1:-$ZERO_SHA1}" = $ZERO_SHA1 ]; then
+                error "missing sha1 for '$d' in $target => $head"
+            elif [ "$sha1" = "$prev" ]; then
+                updates=( "${updates[@]}" "verify $mtref $sha1" )
+            else
+                log " - $d: $prev => $sha1"
+                updates=( "${updates[@]}" "update $mtref $sha1 $prev" )
+            fi
+        done
+        update_error="failed to update $mtname and $refdirs"
+    fi
+
+    printf "%s\n" "${updates[@]}" | run git update-ref --stdin ||
+        error "$update_error"
+}
+
+main "$@"

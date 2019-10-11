@@ -69,9 +69,11 @@ template <class T> struct data_query : index_query {
   }
 
   int lookup_data_impl(table_streams &ts);
+  int read_data_impl(table_streams &ts, value_type &value);
   int lookup_data(table_streams &ts, value_type &value);
   int insert_data(table_streams &ts, const value_type &value);
   int insert_data_impl(table_streams &ts, const value_type &value);
+  int insert_data_or_check_equal(table_streams &ts, const value_type &value);
 
   int insert_new_entry(table_streams &ts, int new_num) const {
     return index_query::insert_new_entry(ts.index, new_num);
@@ -183,6 +185,12 @@ int data_query<T>::lookup_data(table_streams &ts, value_type &value) {
     return error("problem looking up " + std::string(T::key_name) + " key");
   if (!found_data)
     return 1;
+  return read_data_impl(ts, value);
+}
+
+template <class T>
+int data_query<T>::read_data_impl(table_streams &ts, value_type &value) {
+  assert(found_data);
   if (ts.data.seek_and_read(data_offset + 20, value.bytes, T::value_size) !=
       T::value_size)
     return error("could not extract " + std::string(T::key_name) +
@@ -222,6 +230,24 @@ int data_query<T>::insert_data(table_streams &ts, const value_type &value) {
     return error("sha1 is already mapped");
 
   return insert_data_impl(ts, value);
+}
+
+template <class T>
+int data_query<T>::insert_data_or_check_equal(table_streams &ts,
+                                              const value_type &value) {
+  if (lookup_data_impl(ts))
+    return error("index issue");
+  assert(out.entry_offset);
+
+  if (!found_data)
+    return insert_data_impl(ts, value);
+
+  value_type existing;
+  if (read_data_impl(ts, existing))
+    return error("failed to read existing data");
+  if (memcmp(existing.bytes, value.bytes, T::value_size))
+    return error("mismatch between existing value and inserted");
+  return 0;
 }
 
 template <class T> static int dump_table(table_streams &ts) {

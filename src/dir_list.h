@@ -10,6 +10,7 @@ struct dir_mask {
   static constexpr const int max_size = 64;
   std::bitset<max_size> bits;
 
+  bool any() const { return bits.any(); }
   bool test(int i) const { return bits.test(i); }
   void reset(int i) { bits.reset(i); }
   void set(int i, bool value = true) { bits.set(i, value); }
@@ -30,16 +31,32 @@ struct dir_mask {
       return;
     }
     auto high = bits >> i << i << 1;
-    auto low = bits << max_size - i << max_size - i;
+    auto low = bits << (max_size - i) >> (max_size - i);
     bits = high | low;
     assert(!bits.test(i));
   }
 };
 
+struct dir_name_range {
+  const char *const *first = nullptr;
+  const char *const *last = nullptr;
+  const char *only = nullptr;
+
+  dir_name_range() = delete;
+  explicit dir_name_range(const char *name) : only(name) {}
+  explicit dir_name_range(const std::vector<const char *> &names)
+      : first(names.data()), last(names.data() + names.size()) {}
+
+  const char *const *begin() const { return only ? &only : first; }
+  const char *const *end() const { return only ? &only + 1 : last; }
+};
+
 struct dir_type {
   const char *name = nullptr;
-  sha1_ref head;
+  sha1_ref head, goal;
   bool is_root = false;
+  bool is_repeated = false;
+  int source_index = -1;
 
   explicit dir_type(const char *name) : name(name) {}
 };
@@ -78,6 +95,8 @@ struct dir_list {
     if (head)
       active_dirs.set(d);
   }
+
+  int parse_dir(const char *&current, int &d) const;
 };
 } // end namespace
 

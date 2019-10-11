@@ -1,0 +1,17 @@
+repo a-name file://%t.a
+repo b-name file://%t.b
+repo out/mono file://%t.out.mono
+repo out/split file://%t.out.split
+
+destination splitref out/split
+destination monorepo out/mono
+
+declare-dir a
+declare-dir b
+
+generate tag just-a
+dir          just-a a a/master
+
+generate tag add-b
+repeat       add-b just-a
+dir          add-b b b/master

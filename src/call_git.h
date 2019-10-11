@@ -12,7 +12,7 @@
 #include <vector>
 
 static int call_git_impl(char *argv[], char *envp[], const std::string &input,
-                         std::vector<char> &reply) {
+                         std::vector<char> &reply, bool ignore_errors) {
   reply.clear();
 
   static bool once = false;
@@ -59,6 +59,7 @@ static int call_git_impl(char *argv[], char *envp[], const std::string &input,
   bool needs_to_write = !input.empty();
   if (pipe(fromgit) || posix_spawn_file_actions_init(&file_actions) ||
       cleanup.set(file_actions) ||
+      (ignore_errors && posix_spawn_file_actions_addclose(&file_actions, 2)) ||
       posix_spawn_file_actions_addclose(&file_actions, fromgit[0]) ||
       posix_spawn_file_actions_adddup2(&file_actions, fromgit[1], 1) ||
       (needs_to_write
@@ -122,17 +123,17 @@ static int call_git_impl(char *argv[], char *envp[], const std::string &input,
   if (!WIFEXITED(status))
     return error("call-git: git stopped, but we're done");
   if (int exit_status = WEXITSTATUS(status))
-    return error("call-git: git exited with status " +
-                 std::to_string(exit_status));
+    return ignore_errors || error("call-git: git exited with status " +
+                                  std::to_string(exit_status));
 
-  return failed ? 1 : 0;
+  return 0;
 }
 
 template <class T> static void call_lambda(void *lambda) {
   (*reinterpret_cast<T *>(lambda))();
 }
 static int call_git(char *argv[], char *envp[], const std::string &input,
-                    std::vector<char> &reply) {
+                    std::vector<char> &reply, bool ignore_errors = false) {
   if (argv && strcmp(argv[0], "git"))
     return error("wrong git executable");
 
@@ -140,7 +141,8 @@ static int call_git(char *argv[], char *envp[], const std::string &input,
   if (git.empty()) {
     const char *git_argv[] = {"git", "--exec-path", nullptr};
     char *git_envp[] = {nullptr};
-    if (call_git_impl(const_cast<char **>(git_argv), git_envp, input, reply) ||
+    if (call_git_impl(const_cast<char **>(git_argv), git_envp, input, reply,
+                      /*ignore_errors=*/false) ||
         reply.empty() || reply.back() != '\n')
       return error("call-git: failed to scrape git --exec-path");
     git.reserve(reply.size() + sizeof("/git") - 1);
@@ -154,8 +156,12 @@ static int call_git(char *argv[], char *envp[], const std::string &input,
   if (!argv)
     return 0;
 
+  // Do a dance to keep the check above working.
+  const char *original = argv[0];
   argv[0] = const_cast<char *>(git.c_str());
-  return call_git_impl(argv, envp, input, reply);
+  int status = call_git_impl(argv, envp, input, reply, ignore_errors);
+  argv[0] = const_cast<char *>(original);
+  return status;
 }
 
 static int call_git_init() {
@@ -164,7 +170,8 @@ static int call_git_init() {
 }
 
 static int call_git(const char *argv[], const char *envp[],
-                    const std::string &input, std::vector<char> &reply) {
+                    const std::string &input, std::vector<char> &reply,
+                    bool ignore_errors = false) {
   return call_git(const_cast<char **>(argv), const_cast<char **>(envp), input,
-                  reply);
+                  reply, ignore_errors);
 }

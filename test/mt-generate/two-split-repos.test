@@ -18,7 +18,8 @@ RUN:      generate-branch 2>&1 | tee %t-generate.out
 
 # Ensure arguments are passed correctly to split2mono.
 RUN: cat %t-generate.out \
-RUN:   | grep -E -e 'interleave-commits .* 0+ -:- 0+:a 0+:b -:c'
+RUN:   | grep -E -e      \
+RUN:     'interleave-commits .* 0+ 0+:a 0+:b -:- -:c -- [a-f0-9]+:a [a-f0-9]+:b'
 
 # Running again should be fine, even if there's nothing to do.
 RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs generate-branch

@@ -5,6 +5,7 @@ NONGIT_OK=1
 helper canonicalize_path
 helper mt_llvm_svn
 helper mt_llvm_svn2git
+helper mt_list_commits
 
 usage() {
     printf "%s\n"                                                             \
@@ -16,13 +17,13 @@ usage() {
         "   --[no-]verbose  Use verbose output (default: \$VERBOSE)"          \
         "   --[no-]setup    Set up and update remotes (default: on)"          \
         "   --[no-]clean    Clean local progress (default: off, for now)"     \
-        "   --[no-]generate Generate branches (default: on)"                  \
+        "   --[no-]generate Generate branches/tags/etc. (default: on)"        \
         "   --[no-]push     Push to the destination(s) (default: on)"         \
         "   --push-only     Only push previous results"                       \
         "   --dry-run       Don't actually generate anything, just debug"     \
         "                   commands that would run"                          \
         "   --check-for-work"                                                 \
-        "                   Print the first <branch> that needs work, but"    \
+        "                   Print the first piece of work to do, but"         \
         "                   don't actually do anything"                       \
         "   --sync-destinations"                                              \
         "                   Sync destinations repeatedly until there is no"   \
@@ -44,15 +45,16 @@ usage() {
         "                   List generate actions, including upstream"        \
         "   --list-repos    List repos (and exit)"                            \
         "   --list-branches List branches to generate (and exit)"             \
-        "   --list-merged-branches"                                           \
-        "                   List branches to generate, including upstream"    \
+        "   --list-tags     List tags to generate (and exit)"                 \
+        "   --list-merged-(tags|branches)"                                    \
+        "                   List along with upstream mt-configs (and exit)"   \
         "   --list-dirs     List declared dirs (and exit)"                    \
-        "   --list-(active|inactive|repeat)-dirs=<branch>"                    \
+        "   --list-(active|inactive|repeat)-dirs=(<branch>|<tag>)"            \
         "                   List active, inactive, or repeated dirs for"      \
-        "                   <branch> (and exit)"                              \
-        "   --list-(active|inactive|repeat|all)-refdirs=<branch>"             \
+        "                   <branch> or <tag> (and exit)"                     \
+        "   --list-(active|inactive|repeat|all)-refdirs=(<branch>|<tag>"      \
         "                   List active, inactive, repeated, or all dirs for" \
-        "                   <branch> in <ref>:<dir> format (and exit)"
+        "                   <branch> or <tag> in <ref>:<dir> format (and exit)"
 }
 
 DEFAULT_CONFIG_DIR="$(
@@ -81,24 +83,42 @@ print_actions_impl()   { cat "$1" | awk '$1 == "generate" {print $2, $3}'; }
 print_actions()        { print_actions_impl "$MT_CONFIG"; }
 print_merged_actions() { print_actions_impl "$MERGED_MT_CONFIG"; }
 print_repos() { cat "$MERGED_MT_CONFIG" | awk '$1 == "repo" {print $2, $3}'; }
-print_branches_impl() {
-    print_actions_impl "$1" | awk '$1 == "branch" {print $2}' | sort
+print_refs_impl() {
+    print_actions_impl "$2" | awk -v type="$1" '$1==type{print $2}' |
+    sort --version-sort
 }
-print_branches()        { print_branches_impl "$MT_CONFIG"; }
-print_merged_branches() { print_branches_impl "$MERGED_MT_CONFIG"; }
+print_branches()        { print_refs_impl branch "$MT_CONFIG"; }
+print_tags()            { print_refs_impl tag    "$MT_CONFIG"; }
+print_merged_branches() { print_refs_impl branch "$MERGED_MT_CONFIG"; }
+print_merged_tags()     { print_refs_impl tag    "$MERGED_MT_CONFIG"; }
 print_dirs() {
     cat "$MERGED_MT_CONFIG" | awk '$1 == "declare-dir" {print $2}' | sort
 }
 print_repeat() {
     awk -v branch="$1" '
     $1 == "repeat" && $2 == branch {
-        if (any) {
+        if (x) {
             printf "error: second repeat for branch %s\n", branch >"/dev/stderr"
+            broken = 1
             exit 1
         }
-        print $3
-        any = 1
-    }' "$MERGED_MT_CONFIG"
+        x = $3
+    }
+    END { if (x && !broken) print x }
+    ' "$MERGED_MT_CONFIG"
+}
+print_start() {
+    awk -v branch="$1" '
+    $1 == "start" && $2 == branch {
+        if (x) {
+            printf "error: second start for branch %s\n", branch >"/dev/stderr"
+            broken = 1
+            exit 1
+        }
+        x = $3
+    }
+    END { if (x && !broken) print x }
+    ' "$MERGED_MT_CONFIG"
 }
 print_active_dirs()      { print_dirs_impl "$1" 1 0 0 0 0; }
 print_inactive_dirs()    { print_dirs_impl "$1" 0 1 0 0 0; }
@@ -250,21 +270,31 @@ mt_setup() {
         done
     } || return 1
 
+    # Compute the destination repos.
+    local splitdest monodest
+    splitdest="$(show_splitref_destination)" || exit 1
+    monodest="$(show_monorepo_destination)" || exit 1
+
     log "Combining object databases"
     print_repos |
     while read name url; do
         log "  - $name"
         # Ignore errors here, since often the remote will already exist.
         run --hide-errors git remote add $name $PWD/clones/$name.git >$gitout
-        run $hide git fetch -q --no-tags $name >$gitout ||
+        local remotetags
+        if [ "$name" = "$monodest" ]; then
+            remotetags="refs/tags/*"
+        else
+            remotetags="refs/tags/remotes/$name/*/remote-tag"
+        fi
+        run $hide git fetch -q $name                \
+            "+refs/heads/*:refs/remotes/$name/*"    \
+            "+refs/tags/*:$remotetags"              \
+            >$gitout ||
         error "failed to sync '$GIT_DIR'"
     done || return 1
 
     # Check that the destination repos work.
-    local splitdest monodest
-    splitdest="$(show_splitref_destination)" || exit 1
-    monodest="$(show_monorepo_destination)" || exit 1
-
     run git remote | run grep "$splitdest" >/dev/null ||
         error "splitref destination '$splitdest' is not a repo"
     run git remote | run grep "$monodest" >/dev/null ||
@@ -464,6 +494,7 @@ mt_setup_repo() {
 
 report_work() {
     printf "work: generate %s %s\n" "$1" "$2"
+    log "found work: generate $*"
     exit 0
 }
 
@@ -618,106 +649,204 @@ fetch_upstream() {
     sync_upstream_destinations || exit 1
 }
 
-mt_generate_branch() {
-    # Get the branch name and prepend refs/heads/.
-    local heads=refs/heads/
-    local rawbranch=$1
-    local branch=$rawbranch
-    [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
+does_mtref_match_goal() {
+    # Caller: local mtsha1 work
+    local mtref="$1"
+    local goal_sha1="$2"
+    mtsha1=$(run --dry git rev-parse --verify $mtref^{commit})
+    [ "$mtsha1" = "$goal_sha1" ] || work=1
+    mtsha1="${mtsha1:-$ZERO_SHA1}"
+    [ -z "$work" ]
+}
 
-    local refdirs repeat
-    refdirs="$(print_active_refdirs "$rawbranch")" ||
-        error "failed to extract active refdirs for $rawbranch"
-    repeat="$(print_repeat "$rawbranch")" ||
-        error "failed to extract any repeat directive for $rawbranch"
+mt_ref_init_helper() {
+    # From parent: local rawtarget
+    # From parent: local refsprefix
+    # From parent: local target
+    # From parent: local mttype
+    # From parent: local mtname
+    # From parent: local mtprefix
+    case "$mttype" in
+        branch) refsprefix=refs/heads/ mtprefix=refs/heads/mt/     ;;
+        tag)    refsprefix=refs/tags/  mtprefix=refs/heads/mt-tag/ ;;
+        *) error "unsupported ref type to generate: '$mttype'"
+    esac
+    mtname="${rawtarget#$refsprefix}"
+    [ ! "${mtname:0:5}" = refs/ ] ||
+        error "unrecognized $1 scheme $rawtarget;" \
+              "expected <name> or $refsprefix<name>"
+    target=$refsprefix$mtname
+}
+
+mt_generate_branch() { mt_generate_ref "$@"; }
+mt_generate_tag()    { mt_generate_ref "$@"; }
+mt_fetch_branch()    { mt_fetch_ref "$@"; }
+mt_fetch_tag()       { mt_fetch_ref "$@"; }
+mt_push_branch()     { mt_push_ref "$@"; }
+mt_push_tag()        { mt_push_ref "$@"; }
+
+mt_generate_ref() {
+    # From parent: local action
+    local mtname refsprefix mtprefix target rawtarget="$1" mttype="$action"
+    mt_ref_init_helper
+
+    # Check if the ref exists already.
+    run --hide-errors git rev-parse --verify $target >/dev/null || work=1
+
+    # If the ref doesn't exist then there's work to do.  Return early.
+    if check_for_work && [ -n "$work" ]; then
+        report_work $mttype "$mtname"
+        return 0;
+    fi
+
+    # For tags, return early if it already exists.
+    [ -n "$work" -o ! $mttype = tag ] || return 0
+
+    local refdirs repeat start
+    refdirs="$(print_active_refdirs "$rawtarget")" ||
+        error "failed to extract active refdirs for $rawtarget"
+    repeat="$(print_repeat "$rawtarget")" ||
+        error "failed to extract any repeat directive for $rawtarget"
+    start="$(print_start "$rawtarget")" ||
+        error "failed to extract any start directive for $rawtarget"
 
     [ -n "$refdirs" ] ||
-        error "generate $branch: no 'dir' declarations"
+        error "generate $target: no 'dir' declarations"
 
-    local refdir ref dir dirs
+    local refdir ref dir dirs sha1
+    local mtref mtsha1 work
+    local -a goal_sha1s
     for refdir in $refdirs; do
         ref=${refdir%:*}
         dir=${refdir#*:}
         dirs="${dirs}${dirs:+ }$dir"
         [ "$refdir" = "$ref:$dir" ] ||
-            error "generate $branch: invalid 'dir' with colon '$refdir'"
-        run --dry git rev-parse $ref^{commit} >/dev/null ||
-            error "generate $branch: invalid ref '$ref' in dir '$dir'"
+            error "generate $target: invalid 'dir' with colon '$refdir'"
+        sha1=$(run --dry git rev-parse --verify $ref^{commit}) ||
+            error "generate $target: invalid ref '$ref' in dir '$dir'"
+        goal_sha1s=( "${goal_sha1s[@]}" "$sha1" )
         [ "$dir" = "*" ] &&
-            error "generate $branch: invalid dir '$dir' for ref '$ref'"
-    done
-    if [ -n "$repeat" ]; then
-        [ "${repeat:0:${#heads}}" = $heads ] || repeat=$heads$repeat
-        repeat="${repeat%\{*\}}"
-        run --dry git rev-parse $repeat^{commit} >/dev/null ||
-            error "generate $branch: invalid repeat ref '$ref'"
-    fi
+            error "generate $target: invalid dir '$dir' for ref '$ref'"
 
-    refdirs="$(print_all_refdirs "$rawbranch")" ||
-        error "failed to extract complete refdirs for $rawbranch"
+        # Figure out if there's work to do, if we haven't found it already.
+        [ -z "$work" ] || continue
+        # Caller: local mtsha1 work
+        mtref="mt/$mtname/$dir/mt-split"
+        mtsha1=$(run --hide-errors git rev-parse --verify $mtref^{commit})
+        [ "$mtsha1" = "$sha1" ] || work=1
+        mtsha1="${mtsha1:-$ZERO_SHA1}"
+        [ -n "$work" ] || continue
+        check_for_work || continue
 
-    if check_for_work; then
-        local work
-        work="$(run git apple-llvm mt translate-branch $branch $refdirs \
-            --check-for-work)" ||
-            error "failed to check for work on branch '$branch'"
-        [ -n "$work" ] && report_work branch "$branch"
+        # If we found work just report it.
+        report_work $mttype "$mtname: $dir"
         return 0
-    fi
+    done
 
-    run --dry git apple-llvm mt translate-branch $branch $refdirs ||
-        error "failed to generate branch '$branch'"
+    refdirs="$(print_all_refdirs "$rawtarget")" ||
+        error "failed to extract complete refdirs for $rawtarget"
+
+    # Validate the start ref, regardless of whether we need it.
+    [ -z "$start" ] ||
+        run --dry git rev-parse --verify $start^{commit} >/dev/null ||
+        error "invalid start ref '$start'"
+
+    # Use a loop so we can avoid nesting with "break".
+    local handle_repeat_once=
+    [ -z "$repeat" ] || handle_repeat_once=1
+    while [ -z "$work" -a -n "$handle_repeat_once" ]; do
+        handle_repeat_once=
+
+        # Don't bother checking for repeat work if we already know we have to
+        # do something.
+        [ -z "$work" ] || break
+
+        # Figure out the latest commit date coming in, if the repeat is
+        # "no-pass".  This command takes goal_sha1s implicitly and returns via
+        # repeat_sha1.
+        local repeat_sha1
+        run mt_list_first_repeat_sha1 "$repeat"
+
+        mtref="mt/$mtname/mt-repeat"
+        mtsha1=$(run --hide-errors git rev-parse --verify $mtref^{commit})
+        [ ! "$mtsha1" = "$repeat_sha1" ] || break
+
+        # Check for changes to relevant paths.
+        local changed
+        changed="$(run mt_list_modified_top_level_paths \
+            "$mtsha1" "$repeat_sha1" \
+            "$(print_repeat_dirs "$rawtarget")" "$(print_dirs)")"
+        [ -n "$changed" ] || break
+
+        # There's work to do.
+        work=1
+        check_for_work || break
+        report_work $mttype "$mtname: $changed"
+        return 0
+    done
+
+    # Return early unless there's work to do.
+    [ -n "$work" ] || return 0
+
+    refdirs="$(print_all_refdirs "$rawtarget")" ||
+        error "failed to extract complete refdirs for $rawtarget"
+
+    run --dry git apple-llvm mt translate-ref $target "$start" $refdirs ||
+        error "failed to generate $mttype '$target'"
 }
 
-mt_fetch_branch() {
-    local rawbranch="$1"
-    local branch="$rawbranch"
-    local heads=refs/heads/
-    [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
+mt_fetch_ref() {
+    # From parent: local action
+    local mtname refsprefix mtprefix target rawtarget="$1" mttype="$action"
+    mt_ref_init_helper
 
     # Fetch from local mirror.
-    local monodest repeat
-    monodest="$(show_monorepo_destination)" || exit 1
-    repeat="$(print_repeat "$rawbranch")" ||
-        error "failed to extract any repeat directive for $rawbranch"
-    mt_fetch_one_branch "$monodest" "$branch"
-    mt_fetch_one_branch "$monodest" "refs/heads/mt/$rawbranch/mt-repeat"
+    if [ ! $mttype = tag ]; then
+        local monodest repeat
+        repeat="$(print_repeat "$rawtarget")" ||
+            error "failed to extract any repeat directive for $rawtarget"
 
-    local splitdest refdirs
-    splitdest="$(show_splitref_destination)" || exit 1
-    refdirs="$(print_active_refdirs "$rawbranch")" || exit 1
-    for refdir in $refdirs; do
-        d=${refdir#*:}
-        mt_fetch_one_branch "$splitdest" "refs/heads/mt/$rawbranch/$d/mt-split"
-    done
+        monodest="$(show_monorepo_destination)" || exit 1
+        mt_fetch_one_branch "$monodest" "$target"
+        mt_fetch_one_branch "$monodest" "$mtprefix$mtname/mt-repeat"
+    fi
 
-    mt_fetch_splitrefs "$rawbranch"
+    mt_fetch_splitrefs "$rawtarget"
 }
 
 mt_fetch_splitrefs() {
-    local branch="$1"
+    # Maybe from parent: local mttype
+    local mtname refsprefix mtprefix target rawtarget="$1"
+    [ -n "$mttype" ] || local mttype=branch
+    mt_ref_init_helper
+
     local splitdest refdirs
-    refdirs="$(print_active_refdirs "$branch")" ||
-        error "failed to extract active refdirs for $branch"
+    refdirs="$(print_active_refdirs "$rawtarget")" ||
+        error "failed to extract active refdirs for $rawtarget"
     splitdest="$(show_splitref_destination)" || exit 1
     for refdir in $refdirs; do
         d=${refdir#*:}
-        mt_fetch_one_branch "$splitdest" "refs/heads/mt/$branch/$d/mt-split"
+        mt_fetch_one_branch "$splitdest" "$mtprefix$mtname/$d/mt-split"
     done
 }
 
 mt_fetch_one_branch() {
     local remote="$1"
-    local branch="$2"
+    local ref="$2"
 
-    local remote_ref="refs/remotes/$remote/${branch#refs/heads/}"
+    local remote_ref="refs/remotes/$remote/${ref#refs/heads/}^{commit}"
     local sha1
-    sha1="$(run --hide-errors git rev-parse "$remote_ref"^{commit})" || return 0
-    run --dry git update-ref "$branch" "$sha1" ||
-        error "failed to sync '$branch' from '$remote'"
+    sha1="$(run --hide-errors git rev-parse --verify "$remote_ref")" ||
+        return 0
+    run --dry git update-ref "$ref" "$sha1" ||
+        error "failed to sync '$ref' from '$remote'"
 }
 
-mt_push_branch() {
+mt_push_ref() {
+    # From parent: local mttype
+    local mtname refsprefix mtprefix target rawtarget="$1" mttype="$action"
+    mt_ref_init_helper
+
     local branch="$1"
     local old_mtdb_sha1=$MTDB_SHA1
     MTDB_SHA1=$(run git show-ref $MTDB_REF | awk '{print $1}')
@@ -730,34 +859,37 @@ mt_push_branch() {
     # there to the actual remote.
     local monodest repeat
     monodest="$(show_monorepo_destination)" || exit 1
-    repeat="$(print_repeat "$branch")" ||
-        error "failed to extract any repeat directive for $branch"
+    repeat="$(print_repeat "$rawtarget")" ||
+        error "failed to extract any repeat directive for $rawtarget"
     local repeatref
-    if [ -n "$repeat" ]; then
-        repeatref=refs/heads/mt/$branch/mt-repeat
+    if [ -n "$repeat" -a ! $mttype = tag ]; then
+        repeatref=$mtprefix$mtname/mt-repeat
         run --hide-errors git rev-parse --verify $repeatref^{commit} ||
             repeatref=
     fi
-    run --dry git push $monodest $MTDB_REF:$MTDB_REF $branch $repeatref \
+    run --dry git push $monodest $MTDB_REF:$MTDB_REF $target $repeatref \
         --force-with-lease=$MTDB_REF:$old_mtdb_sha1 ||
         error "failed to push $MTDB_REF to local $monodest"
     run --dry git -C clones/$monodest.git push --atomic origin \
-        $MTDB_REF:$MTDB_REF $branch $repeatref                 \
+        $MTDB_REF:$MTDB_REF $target $repeatref                 \
         --force-with-lease=$MTDB_REF:$old_mtdb_sha1 ||
-        error "failed to push $branch and $MTDB_REF to $monodest"
+        error "failed to push $rawtarget and $MTDB_REF to $monodest"
 
-    mt_push_splitrefs "$branch"
+    mt_push_splitrefs "$rawtarget"
 }
 
 mt_push_splitrefs() {
-    local branch="$1"
+    # Maybe from parent: local mttype
+    local mtname refsprefix mtprefix target rawtarget="$1"
+    [ -n "$mttype" ] || local mttype=branch
+    mt_ref_init_helper
 
     # Push the mt-split refs, which are only needed to optimize the next call.
     local splitdest refdir d ref refs refspec refspecs
     splitdest="$(show_splitref_destination)" || exit 1
-    for refdir in $(print_active_refdirs "$branch"); do
+    for refdir in $(print_active_refdirs "$rawtarget"); do
         d=${refdir#*:}
-        ref="refs/heads/mt/$branch/$d/mt-split"
+        ref="$mtprefix$mtname/$d/mt-split"
         run --hide-errors git rev-parse "$ref"^{commit} >/dev/null ||
             continue
         refs="$refs${refs:+ }$refs"
@@ -774,12 +906,12 @@ mt_push_splitrefs() {
 mt_generate_splitrefs() {
     # Get the branch name and prepend refs/heads/.
     local heads=refs/heads/
-    local rawbranch=$1
-    local branch=$rawbranch
+    local rawtarget=$1
+    local branch=$rawtarget
     [ "${branch:0:${#heads}}" = $heads ] || branch=$heads$branch
 
-    local refdirs="$(print_active_refdirs "$rawbranch")"
-    local repeat="$(print_repeat "$rawbranch")"
+    local refdirs="$(print_active_refdirs "$rawtarget")"
+    local repeat="$(print_repeat "$rawtarget")"
 
     [ -n "$refdirs" ] ||
         error "generate $branch: no 'dir' declarations"
@@ -879,6 +1011,13 @@ while [ $# -gt 0 ]; do
         --list-repeat|--list-repeat=*)
             LIST="$1"
             parse_cmdline_option "--list-repeat" LIST_BRANCH "$@"
+            shift $?
+            [ -n "$LIST_BRANCH" ] ||
+                usage_error "${LIST%=} requires an argument"
+            ;;
+        --list-start|--list-start=*)
+            LIST="$1"
+            parse_cmdline_option "--list-start" LIST_BRANCH "$@"
             shift $?
             [ -n "$LIST_BRANCH" ] ||
                 usage_error "${LIST%=} requires an argument"

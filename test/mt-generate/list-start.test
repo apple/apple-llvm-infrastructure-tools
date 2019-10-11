@@ -1,0 +1,13 @@
+RUN: %mtgen list --list-start b2 | check-empty
+RUN: %mtgen list --list-start b1 | check-empty
+RUN: %mtgen list --list-start b3 | check-diff %s B3 %t
+B3: b1
+
+RUN: %mtgen list-down1 --list-start b3 | check-diff %s B3 %t
+RUN: %mtgen list-down2 --list-start b4 | check-diff %s B4 %t
+B4: b3
+
+RUN: not %mtgen list-extra-start --list-start b3 | check-empty
+RUN: not %mtgen list-extra-start --list-start b3 2>&1 \
+RUN:   | check-diff %s EXTRA %t
+EXTRA: error: second start for branch b3

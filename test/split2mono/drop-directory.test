@@ -70,26 +70,29 @@ RUN: rm -rf %t.split2mono
 RUN: %svn2git create %t.svn2git
 RUN: mkdir %t.split2mono
 RUN: %split2mono create %t.split2mono db
-RUN: git -C %t.mono apple-llvm mt list-commits x x/b1             >%t.b1.in
-RUN: git -C %t.mono apple-llvm mt list-commits y y/b1            >>%t.b1.in
-RUN: git -C %t.mono apple-llvm mt list-commits x x/b2 --not x/b1  >%t.b2-no-y.in
-RUN: git -C %t.mono apple-llvm mt list-commits y y/b2 --not y/b1  >%t.b2-no-x.in
-RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN: git -C %t.mono rev-parse x/b1 | xargs printf "%%s:x\n"  > %t.b1.in
+RUN: git -C %t.mono rev-parse y/b1 | xargs printf "%%s:y\n" >> %t.b1.in
+RUN: git -C %t.mono rev-parse x/b2 | xargs printf "%%s:x\n"  > %t.b2-no-y.in
+RUN: git -C %t.mono rev-parse y/b2 | xargs printf "%%s:y\n"  > %t.b2-no-x.in
+RUN: cat %t.b1.in                                                   \
+RUN:   | xargs %split2mono -C %t.mono interleave-commits            \
 RUN:     %t.split2mono %t.svn2git                                   \
 RUN:     0000000000000000000000000000000000000000                   \
 RUN:     0000000000000000000000000000000000000000:x                 \
 RUN:     0000000000000000000000000000000000000000:y                 \
-RUN:     <%t.b1.in >%t.b1.out
-RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN:     -- >%t.b1.out
+RUN: cat %t.b2-no-x.in                                              \
+RUN:   | xargs %split2mono -C %t.mono interleave-commits            \
 RUN:     %t.split2mono %t.svn2git                                   \
 RUN:     0000000000000000000000000000000000000000                   \
 RUN:     -:x 0000000000000000000000000000000000000000:y             \
-RUN:     <%t.b2-no-x.in >%t.b2-no-x.out
-RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN:     -- >%t.b2-no-x.out
+RUN: cat %t.b2-no-y.in                                              \
+RUN:   | xargs %split2mono -C %t.mono interleave-commits            \
 RUN:     %t.split2mono %t.svn2git                                   \
 RUN:     0000000000000000000000000000000000000000                   \
 RUN:     0000000000000000000000000000000000000000:x -:y             \
-RUN:     <%t.b2-no-y.in >%t.b2-no-y.out
+RUN:     -- >%t.b2-no-y.out
 RUN: cat %t.b1.out | awk '{print $1}' | xargs git -C %t.mono update-ref b1
 RUN: cat %t.b2-no-x.out | awk '{print $1}' \
 RUN:   | xargs git -C %t.mono update-ref b2-no-x

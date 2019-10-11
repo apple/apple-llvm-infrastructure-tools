@@ -99,26 +99,28 @@ RUN: rm -rf %t.split2mono
 RUN: %svn2git create %t.svn2git
 RUN: mkdir %t.split2mono
 RUN: %split2mono create %t.split2mono db
-RUN: git -C %t.mono apple-llvm mt list-commits x x/b1             >%t.b1.in
-RUN: git -C %t.mono apple-llvm mt list-commits y y/b1            >>%t.b1.in
-RUN: git -C %t.mono apple-llvm mt list-commits - r/b1            >>%t.b1.in
-RUN: git -C %t.mono apple-llvm mt list-commits x x/b2 --not x/b1  >%t.b2.in
-RUN: git -C %t.mono apple-llvm mt list-commits y y/b2 --not y/b1 >>%t.b2.in
-RUN: git -C %t.mono apple-llvm mt list-commits - r/b2 --not r/b1 >>%t.b2.in
-RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN: git -C %t.mono rev-parse x/b1 | xargs printf "%%s:x\n"  >%t.b1.in
+RUN: git -C %t.mono rev-parse y/b1 | xargs printf "%%s:y\n" >>%t.b1.in
+RUN: git -C %t.mono rev-parse r/b1 | xargs printf "%%s:-\n" >>%t.b1.in
+RUN: git -C %t.mono rev-parse x/b2 | xargs printf "%%s:x\n"  >%t.b2.in
+RUN: git -C %t.mono rev-parse y/b2 | xargs printf "%%s:y\n" >>%t.b2.in
+RUN: git -C %t.mono rev-parse r/b2 | xargs printf "%%s:-\n" >>%t.b2.in
+RUN: cat %t.b1.in                                                   \
+RUN:   | xargs %split2mono -C %t.mono interleave-commits            \
 RUN:     %t.split2mono %t.svn2git                                   \
 RUN:     0000000000000000000000000000000000000000                   \
 RUN:     0000000000000000000000000000000000000000:x                 \
 RUN:     0000000000000000000000000000000000000000:y                 \
 RUN:     0000000000000000000000000000000000000000:-                 \
-RUN:     <%t.b1.in >%t.b1.out
-RUN: %split2mono -C %t.mono interleave-commits                      \
+RUN:     -- >%t.b1.out
+RUN: cat %t.b2.in                                                   \
+RUN:   | xargs %split2mono -C %t.mono interleave-commits            \
 RUN:     %t.split2mono %t.svn2git                                   \
 RUN:     0000000000000000000000000000000000000000                   \
 RUN:     0000000000000000000000000000000000000000:x                 \
 RUN:     0000000000000000000000000000000000000000:y                 \
 RUN:     0000000000000000000000000000000000000000:-                 \
-RUN:     <%t.b2.in >%t.b2.out
+RUN:     -- >%t.b2.out
 RUN: cat %t.b1.out | awk '{print $1}' | xargs git -C %t.mono update-ref b1
 RUN: cat %t.b2.out | awk '{print $1}' | xargs git -C %t.mono update-ref b2
 
@@ -154,12 +156,12 @@ B1: apple-llvm-split-commit: R-1
 B1: apple-llvm-split-dir: -
 B1: A r1
 B1: --
-B1: MONO-8 mkblob: r/2 MONO-7
+B1: MONO-9 mkblob: r/2 MONO-7
 B1: apple-llvm-split-commit: R-2
 B1: apple-llvm-split-dir: -
 B1: A r/2
 B1: --
-B1: MONO-11 mkblob: x4 MONO-8
+B1: MONO-11 mkblob: x4 MONO-9
 B1: apple-llvm-split-commit: X-4
 B1: apple-llvm-split-dir: x/
 B1: A x/x4
@@ -209,32 +211,34 @@ B2: apple-llvm-split-commit: X-2
 B2: apple-llvm-split-dir: x/
 B2: A x/x2
 B2: --
-B2: MONO-5 mkblob: y2 MONO-4
+B2: MONO-5 Merge y: mkblob: y1 MONO-2 MONO-4
+B2: apple-llvm-split-dir: y/
+B2: A y/y1
+B2: --
+B2: MONO-5 Merge y: mkblob: y1 MONO-2 MONO-4
+B2: apple-llvm-split-dir: y/
+B2: A x/x2
+B2: D x/x3
+B2: --
+B2: MONO-6 mkblob: y2 MONO-5
 B2: apple-llvm-split-commit: Y-2
 B2: apple-llvm-split-dir: y/
 B2: A y/y2
 B2: --
-B2: MONO-6 Merge: mkblob: y2 MONO-2 MONO-5
-B2: A y/y1
-B2: A y/y2
+B2: MONO-8 Merge root: mkblob: r1 MONO-6 MONO-7
+B2: apple-llvm-split-dir: -
+B2: A r1
 B2: --
-B2: MONO-6 Merge: mkblob: y2 MONO-2 MONO-5
+B2: MONO-8 Merge root: mkblob: r1 MONO-6 MONO-7
+B2: apple-llvm-split-dir: -
 B2: A x/x2
 B2: D x/x3
+B2: A y/y2
 B2: --
-B2: MONO-9 mkblob: r3 MONO-7
+B2: MONO-10 mkblob: r3 MONO-8
 B2: apple-llvm-split-commit: R-3
 B2: apple-llvm-split-dir: -
 B2: A r3
-B2: --
-B2: MONO-10 Merge: mkblob: r3 MONO-6 MONO-9
-B2: A r1
-B2: A r3
-B2: --
-B2: MONO-10 Merge: mkblob: r3 MONO-6 MONO-9
-B2: A x/x2
-B2: D x/x3
-B2: A y/y2
 B2: --
 B2: MONO-12 mkblob: r/4 MONO-10
 B2: apple-llvm-split-commit: R-4
@@ -246,12 +250,12 @@ B2: apple-llvm-split-commit: Y-3
 B2: apple-llvm-split-dir: y/
 B2: A y/y3
 B2: --
-B2: MONO-15 mkmerge: r5 MONO-13 MONO-8
+B2: MONO-15 mkmerge: r5 MONO-13 MONO-9
 B2: apple-llvm-split-commit: R-5
 B2: apple-llvm-split-dir: -
 B2: A r/2
 B2: --
-B2: MONO-15 mkmerge: r5 MONO-13 MONO-8
+B2: MONO-15 mkmerge: r5 MONO-13 MONO-9
 B2: apple-llvm-split-commit: R-5
 B2: apple-llvm-split-dir: -
 B2: A r/4

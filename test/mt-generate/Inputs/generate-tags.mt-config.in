@@ -1,0 +1,27 @@
+repo a-name file://%t.a
+repo b-name file://%t.b
+repo out/mono file://%t.out.mono
+repo out/split file://%t.out.split
+
+destination splitref out/split
+destination monorepo out/mono
+
+declare-dir a
+declare-dir b
+
+# Should generate tags at release/name/name-[12]*-RELEASE, picked up from
+# a-name/name-[12]*-RELEASE and b-name/name-[12]*-RELEASE.
+generate tags release-tags
+tags-dest     release-tags release/name/*
+tags-refs     release-tags name-[12]*-RELEASE
+dir           release-tags a a-name/*
+dir           release-tags b b-name/*
+
+# Should generate tags at nested/flat-[12].0-tags, picked up from
+# a-name/nested/flat-[12].0-tags and b-name/nested/flat-[12].0-tags.
+generate tags flat-tags
+tags-dest     flat-tags *
+tags-refs     flat-tags nested/flat-1.0-tags
+tags-refs     flat-tags nested/flat-2.0-tags
+dir           flat-tags a a-name/*
+dir           flat-tags b b-name/*

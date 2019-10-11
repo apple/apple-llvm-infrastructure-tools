@@ -4,46 +4,87 @@
 #include "commit_source.h"
 #include "error.h"
 #include "git_cache.h"
+#include "parsers.h"
 #include "read_all.h"
 #include "sha1_pool.h"
 #include "split2monodb.h"
+#include "translation_queue.h"
 #include <array>
 
 namespace {
-struct translation_queue {
-  bump_allocator parent_alloc;
-  git_cache &cache;
-  sha1_pool &pool;
-  dir_list &dirs;
-  std::vector<commit_source> sources;
-  std::vector<fparent_type> fparents;
-  std::vector<commit_type> commits;
+struct progress_reporter {
+  const long num_fparents_to_translate = 0;
+  const long num_merges_to_translate = 0;
+  const long num_side_to_translate = 0;
+  long num_fparents_processed = 0;
+  long num_merges_processed = 0;
+  long num_side_processed = 0;
 
-  explicit translation_queue(git_cache &cache, dir_list &dirs)
-      : cache(cache), pool(cache.pool), dirs(dirs) {}
-  int parse_source(const char *&current, const char *end);
+  static long count_fparents(const translation_queue &q) {
+    long num_fparents = 0;
+    for (auto &source : q.sources)
+      num_fparents += source.num_fparents_to_translate;
+    return num_fparents;
+  }
+  explicit progress_reporter(const translation_queue &q)
+      : num_fparents_to_translate(count_fparents(q)),
+        num_merges_to_translate(q.fparents.size() - num_fparents_to_translate),
+        num_side_to_translate(q.commits.size() - num_fparents_to_translate) {}
+
+  void report_side();
+  void report_merge();
+  void report_fparent();
+  void report();
 };
 
-struct progress_reporter {
-  const std::vector<fparent_type> &fparents;
-  const std::vector<commit_type> &commits;
-  const long num_first_parents;
-  long num_commits_processed = 0;
+struct MergeTarget {
+  const commit_source *source;
+  sha1_ref base;
+  sha1_ref mono;
+  bool is_independent = false;
+  explicit MergeTarget(const commit_source &source, sha1_ref base,
+                       sha1_ref mono)
+      : source(&source), base(base), mono(mono) {
+    assert(source.is_repeat || base);
+    assert(mono);
+  }
+};
 
-  explicit progress_reporter(const std::vector<fparent_type> &fparents,
-                             const std::vector<commit_type> &commits)
-      : fparents(fparents), commits(commits),
-        num_first_parents(fparents.size()) {}
+struct MergeRequest {
+  bool head_is_independent = false;
+  bool is_octopus = false;
 
-  int report(long count = 0);
+  std::vector<MergeTarget> &targets;
+  std::vector<sha1_ref> &new_parents;
+  std::vector<int> &parent_revs;
+  std::vector<git_tree::item_type> &items;
+  git_cache::commit_tree_buffers &buffers;
+
+  explicit MergeRequest(std::vector<MergeTarget> &targets,
+                        std::vector<sha1_ref> &new_parents,
+                        std::vector<int> &parent_revs,
+                        std::vector<git_tree::item_type> &items,
+                        git_cache::commit_tree_buffers &buffers)
+      : targets(targets), new_parents(new_parents), parent_revs(parent_revs),
+        items(items), buffers(buffers) {
+    targets.clear();
+    new_parents.clear();
+    parent_revs.clear();
+    items.clear();
+  }
 };
 
 struct commit_interleaver {
+  constexpr static const size_t max_parents = 128;
   sha1_pool sha1s;
   git_cache cache;
 
+  bool has_changed_any_heads = false;
+  sha1_ref cmdline_start;
   sha1_ref head;
   sha1_ref repeated_head;
+  commit_source *repeat = nullptr;
+  std::vector<const char *> repeated_dir_names;
   dir_list dirs;
   translation_queue q;
 
@@ -54,389 +95,153 @@ struct commit_interleaver {
     dirs.list.reserve(64);
   }
 
-  int read_queue_from_stdin();
-  void set_head(const textual_sha1 &sha1) { head = sha1s.lookup(sha1); }
+  void set_source_head(commit_source &source, sha1_ref sha1) {
+    q.set_source_head(source, sha1);
+  }
 
-  int construct_tree(bool is_head, commit_source &source, sha1_ref base_commit,
-                     bool is_generated_merge,
+  void set_initial_head(const textual_sha1 &sha1) {
+    head = cmdline_start = sha1s.lookup(sha1);
+  }
+
+  int construct_tree(int head_p, commit_source &source, sha1_ref base_commit,
                      const std::vector<sha1_ref> &parents,
                      const std::vector<int> &parent_revs,
                      std::vector<git_tree::item_type> &items,
                      sha1_ref &tree_sha1);
+  int make_partial_tree(const commit_source &source, sha1_ref base,
+                        sha1_ref mono, std::vector<git_tree::item_type> &items,
+                        dir_mask &source_dirs);
+  int finish_making_tree_outside_source(int head_p, sha1_ref base_commit,
+                                        dir_mask source_dirs,
+                                        bool source_includes_root,
+                                        const std::vector<sha1_ref> &parents,
+                                        const std::vector<int> &parent_revs,
+                                        std::vector<git_tree::item_type> &items,
+                                        sha1_ref &tree_sha1);
+  int index_parent_tree_items(int head_p, int p, dir_mask source_dirs,
+                              bool source_includes_root, int &inactive_p,
+                              sha1_ref parent, git_tree &tree,
+                              std::array<int, dir_mask::max_size> &parent_for_d,
+                              std::bitset<max_parents> &contributed,
+                              const std::vector<int> &revs);
   int translate_parents(const commit_source &source, const commit_type &base,
                         std::vector<sha1_ref> &new_parents,
-                        std::vector<int> &parent_revs, sha1_ref first_parent,
-                        int &new_srev);
-  int interleave();
-  int interleave_impl();
+                        std::vector<int> &parent_revs, sha1_ref parent_override,
+                        int override_p, int &new_srev);
   int fast_forward_initial_repeats(progress_reporter &progress);
   int translate_commit(commit_source &source, const commit_type &base,
                        std::vector<sha1_ref> &new_parents,
                        std::vector<int> &parent_revs,
                        std::vector<git_tree::item_type> &items,
                        git_cache::commit_tree_buffers &buffers,
-                       sha1_ref *head = nullptr);
+                       sha1_ref *head = nullptr, int head_p = -1);
   void print_heads(FILE *file);
+
+  void initialize_sources();
+  int run();
+  int run_impl();
+  int prepare_sources();
+  int merge_heads();
+  int fast_forward();
+  int interleave();
+  int merge_goals();
+
+  int merge_targets(MergeRequest &targets, sha1_ref &new_commit);
+  int mark_independent_targets(MergeRequest &targets);
 };
 } // end namespace
 
-int translation_queue::parse_source(const char *&current, const char *end) {
-  auto parse_string = [](const char *&current, const char *s) {
-    for (; *current && *s; ++current, ++s)
-      if (*current != *s)
-        return 1;
-    return *s ? 1 : 0;
-  };
+void commit_interleaver::initialize_sources() {
+  assert(q.sources.empty());
+  int repeated_source_index = -1;
+  if (dirs.repeated_dirs.any()) {
+    q.sources.emplace_back(q.sources.size(), repeated_head);
+    repeated_source_index = 0;
+  }
+  for (int d = 0, de = dirs.list.size(); d != de; ++d) {
+    if (!dirs.tracked_dirs.test(d))
+      continue;
 
-  auto try_parse_string = [&parse_string](const char *&current, const char *s) {
-    const char *temp = current;
-    if (parse_string(temp, s))
-      return 1;
-    current = temp;
-    return 0;
-  };
-
-  auto try_parse_space = [](const char *&current) {
-    if (*current != ' ')
-      return 1;
-    ++current;
-    return 0;
-  };
-
-  auto parse_space = [try_parse_space](const char *&current) {
-    if (try_parse_space(current))
-      return error("expected space");
-    return 0;
-  };
-
-  auto parse_dir = [&](const char *&current, int &d) {
-    for (const char *end = current; *end; ++end)
-      if (*end == '\n') {
-        bool found = false;
-        if (current + 1 == end && *current == '%') {
-          if (dirs.repeated_dirs.bits.none())
-            return error("undeclared '%' in start directive");
-          current = end;
-          d = -1;
-          return 0;
-        }
-        d = dirs.lookup_dir(current, end, found);
-        if (!found)
-          return error("undeclared directory '" + std::string(current, end) +
-                       "' in start directive");
-        if (!dirs.tracked_dirs.test(d))
-          return error("untracked directory '" + std::string(current, end) +
-                       "' in start directive");
-        current = end;
-        return 0;
-      }
-    return error("missing newline");
-  };
-
-  if (try_parse_string(current, "start"))
-    return *current ? error("invalid start directive") : EOF;
-
-  auto parse_newline = [](const char *&current) {
-    if (*current != '\n')
-      return error("expected newline");
-    ++current;
-    return 0;
-  };
-
-  auto parse_through_null = [end](const char *&current) {
-    while (*current)
-      ++current;
-    if (current == end)
-      return 1;
-    ++current;
-    return 0;
-  };
-
-  sources.emplace_back();
-  commit_source &source = sources.back();
-  {
-    int d = -1;
-    if (parse_space(current) || parse_dir(current, d) || parse_newline(current))
-      return 1;
-
-    if (d == -1) {
-      source.is_repeat = true;
-    } else {
-      source.dir_index = d;
-      source.is_root = !strcmp("-", dirs.list[d].name);
+    auto &dir = dirs.list[d];
+    if (dirs.repeated_dirs.test(d)) {
+      dir.source_index = repeated_source_index;
+      q.sources[repeated_source_index].has_root |= dir.is_root;
+      repeated_dir_names.push_back(dir.name);
+      continue;
     }
+    dir.source_index = q.sources.size();
+    q.sources.emplace_back(q.sources.size(), dir, d);
+  }
+  if (repeated_source_index != -1)
+    repeat = &q.sources[repeated_source_index];
+}
+
+int commit_interleaver::run() {
+  assert(!q.sources.empty());
+
+  // Initialize call_git, before launching threads.
+  call_git_init();
+
+  int status = run_impl();
+
+  // Clean up worker threads.
+  for (auto &source : q.sources)
+    if (source.worker)
+      source.worker->should_cancel = true;
+  for (auto &source : q.sources)
+    if (source.worker)
+      if (source.worker->thread)
+        source.worker->thread->join();
+
+  if (!status) {
+    print_heads(stdout);
+    return 0;
   }
 
-  auto parse_boundary = [](const char *&current, bool &is_boundary) {
-    switch (*current) {
-    default:
-      return 1;
-    case '-':
-      is_boundary = true;
-    case '>':
-      break;
-    }
-    ++current;
-    return 0;
-  };
+  fprintf(stderr, "interleave-progress: \n");
+  print_heads(stderr);
+  return status;
+}
 
-  auto parse_sha1 = [this](const char *&current, sha1_ref &sha1) {
-    textual_sha1 text;
-    if (text.from_input(current, &current))
-      return error("invalid sha1");
-    sha1 = pool.lookup(text);
-    if (!sha1)
-      return error("unexpected all-0 sha1 " + text.to_string());
-    return 0;
-  };
+int commit_interleaver::run_impl() {
+  // This is split out for better error reporting of interleave.
+  if (prepare_sources() || merge_heads())
+    return 1; // Has a good error already.
+  if (fast_forward())
+    return error("failed to fast-forward");
+  if (interleave())
+    return error("failed to interleave");
+  // Has a good error already.
+  return merge_goals();
+}
 
-  auto parse_ct = [](const char *&current, long long &ct) {
-    char *end = nullptr;
-    ct = strtol(current, &end, 10);
-    if (end == current || ct < 0)
-      return error("invalid timestamp");
-    current = end;
-    return 0;
-  };
+int commit_interleaver::prepare_sources() {
+  assert(!q.sources.empty());
+  if (q.find_dir_commit_parents_to_translate() ||
+      q.clean_initial_source_heads() || q.clean_initial_head(head) ||
+      q.find_dir_commits(head) || q.interleave_dir_commits() ||
+      q.ff_translated_dir_commits() ||
+      q.find_repeat_commits_and_head(repeat, head) ||
+      q.interleave_repeat_commits(repeat))
+    return error("failed to process sources");
 
-  const size_t num_fparents_before = fparents.size();
-  const int source_index = sources.size() - 1;
-  while (true) {
-    if (!try_parse_string(current, "all\n"))
-      break;
-
-    fparents.emplace_back();
-    fparents.back().index = source_index;
-    if (parse_sha1(current, fparents.back().commit) || parse_space(current) ||
-        parse_ct(current, fparents.back().ct) || parse_newline(current))
-      return 1;
-
-    if (fparents.size() == 1 + num_fparents_before)
-      continue;
-
-    const long long last_ct = fparents.rbegin()[1].ct;
-    if (fparents.back().ct <= last_ct)
-      continue;
-
-    // Fudge commit timestamp for future sorting purposes, ensuring that
-    // fparents is monotonically non-increasing by commit timestamp within each
-    // source.  We should never get here since (a) these are seconds since
-    // epoch in UTC and (b) they get updated on rebase.  However, in theory a
-    // committer could have significant clock skew.
-    fprintf(stderr,
-            "warning: apparent clock skew in %s\n"
-            "   note: ancestor %s has earlier commit timestamp\n"
-            "   note: using timestamp %lld instead of %lld for sorting\n",
-            fparents.back().commit->to_string().c_str(),
-            fparents.rbegin()[1].commit->to_string().c_str(), last_ct,
-            fparents.back().ct);
-    fparents.back().ct = last_ct;
-  }
-
-  sha1_trie<git_cache::sha1_single> skipped;
-  source.commits.first = commits.size();
-  std::vector<sha1_ref> parents;
-  while (true) {
-    if (!try_parse_string(current, "done\n"))
-      break;
-
-    // line ::= ( GT | MINUS ) commit SP tree ( SP parent )*
-    bool is_boundary = false;
-    sha1_ref commit, tree;
-    if (parse_boundary(current, is_boundary) || parse_sha1(current, commit) ||
-        parse_space(current) || parse_sha1(current, tree))
-      return 1;
-
-    // Warm the cache.
-    cache.note_commit_tree(commit, tree);
-    if (is_boundary || source.is_repeat) {
-      bool is_merge = false;
-      sha1_ref first_parent;
-
-      // Get the first parent of the first repeat commit, to decide whether to
-      // fast forward.
-      if (!try_parse_space(current)) {
-        if (*current) {
-          if (parse_sha1(current, first_parent))
-            return error("invalid first parent of boundary or repeat commit");
-
-          // Check for a second parent, but don't parse it.
-          if (*current)
-            is_merge = true;
-        }
-      }
-
-      if (!is_boundary)
-        if (commits.size() == size_t(source.commits.first))
-          source.first_repeat_first_parent = first_parent;
-
-      // Grab the metadata, which compute_mono might leverage if this is an
-      // upstream git-svn commit.
-      if (parse_through_null(current))
-        return error("missing null charactor before boundary metadata");
-      const char *metadata = current;
-      if (parse_through_null(current))
-        return error("missing null charactor after boundary metadata");
-      cache.note_metadata(commit, metadata, is_merge, first_parent);
-      if (parse_newline(current))
-        return 1;
-
-      if (source.is_repeat) {
-        if (is_boundary)
-          continue;
-
-        assert(source.is_repeat);
-        commits.emplace_back();
-        commits.back().commit = commit;
-        commits.back().tree = tree;
-        commits.back().is_generated_merge = true;
-        continue;
-      }
-
-      if (!source.worker)
-        source.worker.reset(new monocommit_worker);
-
-      // Look up the monorepo commit.  Needs to be after noting the metadata to
-      // avoid needing to shell out to git-log.
-      sha1_ref mono;
-      if (cache.compute_mono(commit, mono))
-        return error("cannot find monorepo commit for boundary parent " +
-                     commit->to_string());
-
-      // Mark it as a boundary commit and tell the worker about it.
-      bool was_inserted = false;
-      boundary_commit *bc =
-          source.worker->boundary_index_map.insert(*mono, was_inserted);
-      if (!bc)
-        return error("failure to log a commit as a monorepo commit");
-      bc->index = source.worker->futures.size();
-      source.worker->futures.emplace_back();
-      source.worker->futures.back().commit = mono;
-
-      // No need for rev-heroics if source.is_repeat, since then this is a
-      // monorepo commit already.
-      if (source.is_repeat)
-        continue;
-
-      // Get the rev.
-      int rev = 0;
-      if (cache.lookup_rev(commit, rev) || !rev) {
-        // This can't be an upstream SVN commit or compute_mono would have
-        // cached the rev.  Just check the svnbaserev table.
-        if (cache.compute_base_rev(mono, rev))
-          return error("cannot get rev for boundary parent " +
-                       commit->to_string());
-        (void)rev;
-      } else {
-        // compute_mono above filled this in.  Note it in the monorepo commit
-        // as well.
-        //
-        // TODO: add a testcase where a second-level branch needs the
-        // rev from a parent on a first-level branch.
-        cache.note_rev(mono, rev);
-      }
-      continue;
-    }
-
-    assert(!source.is_repeat);
-    commits.emplace_back();
-    commits.back().commit = commit;
-    commits.back().tree = tree;
-    while (!try_parse_space(current)) {
-      // Check for a null character after the space, in case there are no
-      // parents at all.
-      if (!*current) {
-        if (parents.empty())
-          break;
-        return error("expected another parent after space");
-      }
-
-      parents.emplace_back();
-      if (parse_sha1(current, parents.back()))
-        return error("failed to parse parent");
-
-      if (!source.worker)
-        continue;
-
-      sha1_ref mono;
-      if (cache.lookup_mono(parents.back(), mono))
-        continue;
-      const boundary_commit *bc =
-          source.worker->boundary_index_map.lookup(*mono);
-      if (!bc)
-        continue;
-
-      // Mark how long to wait.
-      commits.back().has_boundary_parents = true;
-      if (bc->index > commits.back().last_boundary_parent)
-        commits.back().last_boundary_parent = bc->index;
-    }
-
-    if (parse_through_null(current))
-      return error("missing null charactor before metadata");
-    const char *metadata = current;
-    if (parse_through_null(current))
-      return error("missing null charactor after metadata");
-    cache.note_metadata(commit, metadata, /*is_merge=*/parents.size() > 1,
-                        parents.empty() ? sha1_ref() : parents.front());
-
-    if (parse_newline(current))
-      return 1;
-
-    // Now that we have metadata (necessary for an SVN revision, if relevant),
-    // check if commit has already been translated.
-    sha1_ref mono;
-    if (!cache.compute_mono(commit, mono)) {
-      assert(mono);
-      commits.pop_back();
-      parents.clear();
-      bool was_inserted = false;
-      skipped.insert(*commit, was_inserted);
-      continue;
-    }
-
-    // We're committed to translating this commit.
-    cache.note_being_translated(commit);
-    commits.back().num_parents = parents.size();
-    if (!parents.empty()) {
-      commits.back().parents = new (parent_alloc) sha1_ref[parents.size()];
-      std::copy(parents.begin(), parents.end(), commits.back().parents);
-    }
-    parents.clear();
-  }
-
-  // Clear out first parents we skipped over.
-  if (!skipped.empty())
-    fparents.erase(std::remove_if(fparents.begin(), fparents.end(),
-                                  [&](const fparent_type &fparent) {
-                                    return skipped.lookup(*fparent.commit) !=
-                                           nullptr;
-                                  }),
-                   fparents.end());
-
-  source.commits.count = commits.size() - source.commits.first;
-  if (source.commits.count < fparents.size() - num_fparents_before)
-    return error("first parents missing from commits");
-
-  // Every commit should be a first parent commit.
-  if (source.is_repeat)
-    if (source.commits.count != fparents.size() - num_fparents_before)
-      return error("unexpected non-first-parent repeat commits in stdin (" +
-                   std::to_string(source.commits.count) + " commits; " +
-                   std::to_string(fparents.size() - num_fparents_before) +
-                   " fparents)");
-
-  // Start looking up the tree data.
-  if (source.worker)
-    source.worker->start();
   return 0;
+}
+
+static void update_revs(int &new_srev, int &max_urev, int srev) {
+  int urev = srev < 0 ? -srev : srev;
+  if (urev > max_urev) {
+    max_urev = urev;
+    new_srev = -int(max_urev);
+  }
 }
 
 int commit_interleaver::translate_parents(const commit_source &source,
                                           const commit_type &base,
                                           std::vector<sha1_ref> &new_parents,
                                           std::vector<int> &parent_revs,
-                                          sha1_ref first_parent,
+                                          sha1_ref parent_override,
+                                          int override_p,
                                           int &new_srev) {
   new_srev = 0;
   int max_urev = 0;
@@ -464,11 +269,7 @@ int commit_interleaver::translate_parents(const commit_source &source,
     int srev = 0;
     cache.compute_rev(p, /*is_split=*/!source.is_repeat, srev);
     parent_revs.push_back(srev);
-    int urev = srev < 0 ? -srev : srev;
-    if (urev > max_urev) {
-      max_urev = urev;
-      new_srev = -int(max_urev);
-    }
+    update_revs(new_srev, max_urev, srev);
   };
 
   // Wait for the worker to dig up information on boundary parents.
@@ -477,26 +278,20 @@ int commit_interleaver::translate_parents(const commit_source &source,
       if (bool(source.worker->has_error))
         return 1;
 
-  if (first_parent) {
-    add_parent(first_parent);
-
-    // Check for generated merges, which could be from a repeat or from the
-    // first interleaved commit on a branch.
-    if (base.is_generated_merge) {
-      add_parent(base.commit);
-      return 0;
-    }
+  if (parent_override && override_p == -1) {
+    assert(!base.num_parents);
+    add_parent(parent_override);
+    return 0;
   }
-  assert(!source.is_repeat);
 
   for (int i = 0; i < base.num_parents; ++i) {
-    // fprintf(stderr, "  - parent = %s\n",
-    //         base.parents[i]->to_string().c_str());
     assert(!base.parents[i]->is_zeros());
 
     // Override the first parent.
-    if (first_parent && i == 0)
+    if (i == override_p) {
+      add_parent(parent_override);
       continue;
+    }
 
     sha1_ref mono;
     if (cache.compute_mono(base.parents[i], mono))
@@ -507,204 +302,114 @@ int commit_interleaver::translate_parents(const commit_source &source,
   return 0;
 }
 
-int commit_interleaver::construct_tree(bool is_head, commit_source &source,
+int commit_interleaver::make_partial_tree(
+    const commit_source &source, sha1_ref base, sha1_ref mono,
+    std::vector<git_tree::item_type> &items, dir_mask &source_dirs) {
+  // Fill in source_dirs as we go.
+  if (source.has_root || source.is_repeat) {
+    if (source.is_repeat) {
+      assert(mono);
+      assert(!base);
+      assert(source.dir_index == -1);
+      source_dirs.bits |= dirs.repeated_dirs.bits;
+    } else {
+      assert(base);
+      assert(source.dir_index != -1);
+      assert(dirs.list[source.dir_index].is_root);
+      source_dirs.set(source.dir_index);
+    }
+    git_tree tree;
+    tree.sha1 = source.is_repeat ? mono : base;
+    if (cache.ls_tree(tree))
+      return 1;
+
+    if (source.is_repeat) {
+      for (int i = 0; i < tree.num_items; ++i) {
+        assert(tree.items[i].sha1);
+        if (int d = dirs.find_dir(tree.items[i].name))
+          if (dirs.repeated_dirs.test(d))
+            items.push_back(tree.items[i]);
+      }
+      return 0;
+    }
+
+    assert(base);
+    items.reserve(items.size() + tree.num_items);
+    for (int i = 0; i < tree.num_items; ++i) {
+      auto &item = tree.items[i];
+      if (dirs.is_dir(item.name))
+        return error("root dir '-' conflicts with tracked dir '" +
+                     base->to_string() + "'");
+      items.push_back(item);
+    }
+    return 0;
+  }
+
+  assert(base);
+  sha1_ref base_tree;
+  if (cache.compute_commit_tree(base, base_tree))
+    return error("failed to look up tree for '" + base->to_string() + "'");
+  assert(base_tree);
+  items.emplace_back();
+  items.back().sha1 = base_tree;
+  items.back().name = dirs.list[source.dir_index].name;
+  items.back().type = git_tree::item_type::tree;
+  source_dirs.set(source.dir_index);
+
+  return 0;
+}
+
+int commit_interleaver::construct_tree(int head_p, commit_source &source,
                                        sha1_ref base_commit,
-                                       bool is_generated_merge,
                                        const std::vector<sha1_ref> &parents,
                                        const std::vector<int> &revs,
                                        std::vector<git_tree::item_type> &items,
                                        sha1_ref &tree_sha1) {
-  assert(!base_commit->is_zeros());
+  dir_mask source_dirs;
+  return make_partial_tree(source, base_commit, sha1_ref(), items,
+                           source_dirs) ||
+         finish_making_tree_outside_source(
+             head_p, base_commit, source_dirs,
+             /*source_includes_root=*/source.has_root, parents, revs, items,
+             tree_sha1);
+}
 
-  std::array<int, dir_mask::max_size> parent_for_d;
-  parent_for_d.fill(-1);
-
-  constexpr static const size_t max_parents = 128;
-  std::array<git_tree, max_parents> trees;
-  std::bitset<max_parents> contributed;
+int commit_interleaver::finish_making_tree_outside_source(
+    int head_p, sha1_ref base_commit, dir_mask source_dirs,
+    bool source_includes_root, const std::vector<sha1_ref> &parents,
+    const std::vector<int> &revs, std::vector<git_tree::item_type> &items,
+    sha1_ref &tree_sha1) {
   if (parents.size() > max_parents)
     return error(std::to_string(parents.size()) +
                  " is too many parents (max: " + std::to_string(max_parents) +
                  ")");
 
-  // Create mask of directories handled by the base commit.
-  dir_mask base_dirs;
-  assert((source.dir_index == -1) == source.is_repeat);
-  assert(!source.is_root || !source.is_repeat);
-  assert(!source.is_repeat || is_generated_merge);
-  if (is_generated_merge) {
-    // Check that this is a first parent commit.
-    if (!is_head)
-      return error("unexpected non-first-parent repeat commit " +
-                   base_commit->to_string());
-
-    // Head should have been fast-forwarded to base_commit instead of calling
-    // construct_tree if nothing has happened yet.  Similarly, if this is the
-    // first commit for a directory, we only need a merge if another directory
-    // beat us to the punch.
-    assert(head);
-
-    git_tree tree;
-    tree.sha1 = base_commit;
-    if (cache.ls_tree(tree))
-      return 1;
-
-    for (int i = 0; i < tree.num_items; ++i) {
-      auto &item = tree.items[i];
-      int d = dirs.find_dir(item.name);
-      if (d == -1)
-        return error("no monorepo root for path '" + std::string(item.name) +
-                     "' in " + base_commit->to_string());
-
-      if (source.is_repeat) {
-        // Only pull in repeated directories up front.
-        if (!dirs.repeated_dirs.test(d))
-          continue;
-      } else {
-        // Only pull in the source directory up front.
-        if (d != source.dir_index)
-          continue;
-      }
-
-      base_dirs.set(d);
-      items.push_back(item);
-    }
-
-    // Confirm commit has relevant dirs to repeat.
-    if (base_dirs.bits.none())
-      return error("base commit " + base_commit->to_string() +
-                   " has no directories to merge");
-  } else if (source.is_root) {
-    base_dirs.set(source.dir_index);
-    git_tree tree;
-    tree.sha1 = base_commit;
-    if (cache.ls_tree(tree))
-      return 1;
-
-    for (int i = 0; i < tree.num_items; ++i)
-      if (dirs.is_dir(tree.items[i].name))
-        return error("root dir '-' conflicts with tracked dir '" +
-                     base_commit->to_string() + "'");
-    items.resize(tree.num_items);
-    std::copy(tree.items, tree.items + tree.num_items, items.begin());
-  } else {
-    sha1_ref base_tree;
-    if (cache.compute_commit_tree(base_commit, base_tree))
-      return 1;
-    items.emplace_back();
-    items.back().sha1 = base_tree;
-    items.back().name = dirs.list[source.dir_index].name;
-    items.back().type = git_tree::item_type::tree;
-    base_dirs.set(source.dir_index);
-  }
-  if (is_head)
-    dirs.active_dirs.bits |= base_dirs.bits;
+  if (head_p != -1)
+    dirs.active_dirs.bits |= source_dirs.bits;
 
   // Pick parents for all the other directories.
+  std::array<int, dir_mask::max_size> parent_for_d;
+  parent_for_d.fill(-1);
+  std::bitset<max_parents> contributed;
+  std::array<git_tree, max_parents> trees;
+
+  // Index the head first so that its content takes precedence.
   int inactive_p = -1;
-  auto get_dir_p = [&](int d) -> int & {
+  if (head_p != -1)
+    if (index_parent_tree_items(
+            head_p, head_p, source_dirs, source_includes_root, inactive_p,
+            parents[head_p], trees[head_p], parent_for_d, contributed, revs))
+      return 1;
+  for (int p = 0, pe = parents.size(); p != pe; ++p)
+    if (p != head_p)
+      if (index_parent_tree_items(head_p, p, source_dirs, source_includes_root,
+                                  inactive_p, parents[p], trees[p],
+                                  parent_for_d, contributed, revs))
+        return 1;
+
+  auto get_dir_p = [&](int d) -> const int & {
     return dirs.active_dirs.test(d) ? parent_for_d[d] : inactive_p;
   };
-  auto update_p = [&](int &dir_p, int p) {
-    dir_p = p;
-    contributed.set(p);
-  };
-  for (int p = 0, pe = parents.size(); p != pe; ++p) {
-    assert(!parents[p]->is_zeros());
-    git_tree &tree = trees[p];
-    tree.sha1 = parents[p];
-    if (cache.ls_tree(tree))
-      return 1;
-
-    for (int i = 0; i < tree.num_items; ++i) {
-      auto &item = tree.items[i];
-
-      // Optimization: skip the directory lookup if this source is contributing
-      // the monorepo root.
-      if (source.is_root && item.type != git_tree::item_type::tree)
-        continue;
-
-      int d = dirs.find_dir(item.name);
-      if (d == -1)
-        return error("no monorepo root to claim undeclared directory '" +
-                     std::string(item.name) + "' in " +
-                     parents[p]->to_string());
-      if (!dirs.list[d].is_root)
-        if (item.type != git_tree::item_type::tree)
-          return error("invalid non-tree for directory '" +
-                       std::string(item.name) + "' in " +
-                       parents[p]->to_string());
-
-      // The base commit takes priority even if we haven't seen it in a
-      // first-parent commit yet.
-      //
-      // TODO: add a test where the base directory is possibly inactive,
-      // because there are non-first-parent commits that get mapped ahead of
-      // time.
-      if (base_dirs.test(d))
-        continue;
-
-      int &dir_p = get_dir_p(d);
-
-      // Check for a second object from the monorepo root.
-      if (dir_p == p)
-        continue;
-
-      // Use the first parent found that has content for a directory.
-      if (dir_p == -1) {
-        update_p(dir_p, p);
-        continue;
-      }
-      assert(p > 0);
-
-      // First parent wins for tracked directories.
-      //
-      // TODO: add a testcase where a side-history commit (i.e., is_head is
-      // false) has a second parent with a higher rev than the first parent and
-      // different content for a tracked directory.  Confirm the first parent's
-      // version of the directory is used.
-      //
-      // FIXME: this logic is insufficient to make the following case sane:
-      //
-      //  - branch A is LLVM upstream
-      //  - branch B tracks llvm and clang; is downstream of A
-      //  - branch C tracks llvm (only)   ; is downstream of B
-      //  - branch C sometimes merges directly from A
-      //
-      // since the clang in branch C will swing seemingly arbitrarily between a
-      // version from A and a version from B, depending on the last merge.
-      //
-      // Instead, we'd want C to always pick the most recent B for its clang.
-      // But we don't currently have a way to distinguish that.  Maybe there's
-      // a way to annotate the LLVM svnbaserev with a branch depth, extending
-      // the concept that a negative svnbaserev takes priority over a positive
-      // one.
-      if (dirs.active_dirs.test(d))
-        continue;
-
-      // Look up revs to pick a winner.
-      //
-      // Revs are stored signed, where negative indicates the parent itself is
-      // not a commit from upstream LLVM (positive indicates that it is).
-      const int old_srev = revs[dir_p];
-      const int new_srev = revs[p];
-      const int new_rev = new_srev < 0 ? -new_srev : new_srev;
-      const int old_rev = old_srev < 0 ? -old_srev : old_srev;
-
-      // Newer base SVN revision wins.
-      if (old_rev > new_rev)
-        continue;
-
-      // If it's the same revision, prefer downstream content, then prior
-      // parents.  Return early if we're not changing anything.
-      if (old_rev == new_rev)
-        if (old_srev <= 0 || new_srev >= 0)
-          continue;
-
-      // Change the parent.
-      update_p(dir_p, p);
-    }
-  }
 
   // Fill up the items for the tree.
   for (int p = 0, pe = parents.size(); p != pe; ++p) {
@@ -714,12 +419,12 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
     const git_tree &tree = trees[p];
     for (int i = 0; i < tree.num_items; ++i) {
       auto &item = tree.items[i];
-      if (source.is_root && item.type != git_tree::item_type::tree)
+      if (source_includes_root && item.type != git_tree::item_type::tree)
         continue;
 
       int d = dirs.find_dir(item.name);
       assert(d != -1);
-      if (!base_dirs.test(d))
+      if (!source_dirs.test(d))
         if (p == get_dir_p(d))
           items.push_back(item);
     }
@@ -739,7 +444,9 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   // Make the tree.
   if (items.size() > dir_mask::max_size)
     return error("too many items (max: " + std::to_string(dir_mask::max_size) +
-                 "); constructing tree for " + base_commit.sha1->to_string());
+                 "); constructing tree for " +
+                 (base_commit ? base_commit.sha1->to_string()
+                              : std::string("merge commit")));
   git_tree tree;
   tree.num_items = items.size();
   tree.items = cache.make_items(items.data(), items.data() + items.size());
@@ -750,118 +457,634 @@ int commit_interleaver::construct_tree(bool is_head, commit_source &source,
   return 0;
 }
 
-int commit_interleaver::interleave() {
-  int status = interleave_impl();
+int commit_interleaver::index_parent_tree_items(
+    int head_p, int p, dir_mask source_dirs, bool source_includes_root,
+    int &inactive_p, sha1_ref parent, git_tree &tree,
+    std::array<int, dir_mask::max_size> &parent_for_d,
+    std::bitset<max_parents> &contributed, const std::vector<int> &revs) {
+  assert(!parent->is_zeros());
+  tree.sha1 = parent;
+  if (cache.ls_tree(tree))
+    return 1;
 
-  // Clean up worker threads.
-  for (auto &source : q.sources)
-    if (source.worker)
-      source.worker->should_cancel = true;
-  for (auto &source : q.sources)
-    if (source.worker)
-      if (source.worker->thread)
-        source.worker->thread->join();
+  auto update_p = [&](int &dir_p, int p) {
+    dir_p = p;
+    contributed.set(p);
+  };
+  auto get_dir_p = [&](int d) -> int & {
+    return dirs.active_dirs.test(d) ? parent_for_d[d] : inactive_p;
+  };
+  for (int i = 0; i < tree.num_items; ++i) {
+    auto &item = tree.items[i];
 
-  if (!status)
-    return 0;
+    // Optimization: skip the directory lookup if this source is contributing
+    // the monorepo root.
+    if (source_includes_root && item.type != git_tree::item_type::tree)
+      continue;
 
-  fprintf(stderr, "interleave-progress: \n");
-  print_heads(stderr);
-  return status;
-}
+    int d = dirs.find_dir(item.name);
+    if (d == -1)
+      return error("no monorepo root to claim undeclared directory '" +
+                    std::string(item.name) + "' in " +
+                    parent->to_string());
+    if (!dirs.list[d].is_root)
+      if (item.type != git_tree::item_type::tree)
+        return error("invalid non-tree for directory '" +
+                      std::string(item.name) + "' in " +
+                      parent->to_string());
 
-int progress_reporter::report(long count) {
-  num_commits_processed += count;
-  long num_first_parents_processed = num_first_parents - fparents.size();
-  bool is_finished = count == 0;
-  bool is_periodic = !(num_first_parents_processed % 50);
-  if (is_finished == is_periodic)
-    return 0;
-  return fprintf(stderr,
-                 "   %9ld / %ld first-parents mapped (%9ld / %ld commits)\n",
-                 num_first_parents_processed, num_first_parents,
-                 num_commits_processed, commits.size()) < 0
-             ? 1
-             : 0;
-}
+    // The base commit takes priority even if we haven't seen it in a
+    // first-parent commit yet.
+    //
+    // TODO: add a test where the base directory is possibly inactive,
+    // because there are non-first-parent commits that get mapped ahead of
+    // time.
+    if (source_dirs.test(d))
+      continue;
 
-int commit_interleaver::fast_forward_initial_repeats(
-    progress_reporter &progress) {
-  auto repeats_index = q.fparents.back().index;
-  auto &repeats = q.sources[repeats_index];
-  assert(repeats.commits.count != 0);
+    int &dir_p = get_dir_p(d);
 
-  // If this branch has started, double-check that this will actually be a fast
-  // forward.
-  if (head)
-    if (head != repeats.first_repeat_first_parent)
-      return 0;
+    // Check for a second object from the monorepo root.
+    if (dir_p == p)
+      continue;
 
-  // Don't generate merge commits if we can just fast-forward.
-  auto first = q.commits.begin() + repeats.commits.first,
-       last = first + repeats.commits.count;
-  while (!q.fparents.empty()) {
-    const auto &fparent = q.fparents.back();
-    if (fparent.index != repeats_index)
-      break;
+    // Use the first parent found that has content for a directory.
+    if (dir_p == -1) {
+      update_p(dir_p, p);
+      continue;
+    }
+    if (head_p == -1)
+      assert(p > 0);
+    else
+      assert(p != head_p);
 
-    assert(first->commit == fparent.commit);
-    head = fparent.commit;
-    q.fparents.pop_back();
-    progress.report(1);
-    ++first;
+    // The first parent processed (which is the head, if any) wins for tracked
+    // directories.
+    //
+    // TODO: add a testcase where a side-history commit (i.e., head_p is -1)
+    // has a second parent with a higher rev than the first parent and
+    // different content for a tracked directory.  Confirm the first parent's
+    // version of the directory is used.
+    //
+    // FIXME: this logic is insufficient to make the following case sane:
+    //
+    //  - branch A is LLVM upstream
+    //  - branch B tracks llvm and clang; is downstream of A
+    //  - branch C tracks llvm (only)   ; is downstream of B
+    //  - branch C sometimes merges directly from A
+    //
+    // since the clang in branch C will swing seemingly arbitrarily between a
+    // version from A and a version from B, depending on the last merge.
+    //
+    // Instead, we'd want C to always pick the most recent B for its clang.
+    // But we don't currently have a way to distinguish that.  Maybe there's
+    // a way to annotate the LLVM svnbaserev with a branch depth, extending
+    // the concept that a negative svnbaserev takes priority over a positive
+    // one.
+    if (dirs.active_dirs.test(d))
+      continue;
+
+    // Look up revs to pick a winner.
+    //
+    // Revs are stored signed, where negative indicates the parent itself is
+    // not a commit from upstream LLVM (positive indicates that it is).
+    const int old_srev = revs[dir_p];
+    const int new_srev = revs[p];
+    const int new_rev = new_srev < 0 ? -new_srev : new_srev;
+    const int old_rev = old_srev < 0 ? -old_srev : old_srev;
+
+    // Newer base SVN revision wins.
+    if (old_rev > new_rev)
+      continue;
+
+    // If it's the same revision, prefer downstream content, then prior
+    // parents.  Return early if we're not changing anything.
+    if (old_rev == new_rev)
+      if (old_srev <= 0 || new_srev >= 0)
+        continue;
+
+    // Change the parent.
+    update_p(dir_p, p);
   }
-  assert(head);
-  repeats.commits.count = last - first;
-  repeats.commits.first = first - q.commits.begin();
-  repeated_head = head;
   return 0;
 }
 
-int commit_interleaver::interleave_impl() {
-  // Construct trees and commit them.
+void progress_reporter::report() {
+  fprintf(stderr,
+          "%8ld / %ld interleaved %8ld / %ld side %8ld / %ld generated\n",
+          num_fparents_processed, num_fparents_to_translate, num_side_processed,
+          num_side_to_translate, num_merges_processed, num_merges_to_translate);
+}
+
+void progress_reporter::report_side() {
+  if (!(++num_side_processed % 50))
+    report();
+}
+
+void progress_reporter::report_merge() {
+  if (!(++num_merges_processed % 50))
+    report();
+}
+
+void progress_reporter::report_fparent() {
+  if (!(++num_fparents_processed % 50))
+    report();
+}
+
+int commit_interleaver::fast_forward() {
+  if (q.fparents.empty())
+    return 0;
+
+  // Try to fast-forward a bit.  Note that repeat commits have is_translated
+  // set.
+  auto fparent = q.fparents.back();
+  int index = fparent.index;
+  auto &source = q.sources[index];
+  if (!fparent.is_translated)
+    return 0;
+
+  if (head) {
+    sha1_ref ff_sha1;
+    if (source.is_repeat)
+      ff_sha1 = source.head;
+    else if (commit_source::get_next_fparent_impl(fparent, cache, ff_sha1))
+      return error("failed to get next fparent for fast-forward");
+    if (head != ff_sha1)
+      return 0;
+  }
+
+  // Fast-forward.
+  do {
+    fparent = q.fparents.back();
+    sha1_ref mono;
+    if (source.is_repeat)
+      mono = fparent.commit;
+    else if (cache.compute_mono(fparent.commit, mono))
+      return error("expected '" + fparent.commit->to_string() +
+                   "' to be translated already");
+
+    set_source_head(source, fparent.commit);
+    head = mono;
+
+    q.fparents.pop_back();
+  } while (!q.fparents.empty() && q.fparents.back().index == index &&
+           q.fparents.back().is_translated);
+
+  return 0;
+}
+
+int commit_interleaver::interleave() {
+  // Persistent buffers.
+  std::vector<MergeTarget> targets;
   std::vector<sha1_ref> new_parents;
   std::vector<int> parent_revs;
   std::vector<git_tree::item_type> items;
   git_cache::commit_tree_buffers buffers;
 
-  progress_reporter progress(q.fparents, q.commits);
-  if (!q.fparents.empty() && q.sources[q.fparents.back().index].is_repeat)
-    if (fast_forward_initial_repeats(progress))
-      return 1;
+  // Construct trees and commit them.
+  progress_reporter progress(q);
+  progress.report();
   while (!q.fparents.empty()) {
     auto fparent = q.fparents.back();
     q.fparents.pop_back();
     auto &source = q.sources[fparent.index];
-    assert(source.commits.count);
-    auto first = q.commits.begin() + source.commits.first,
-         last = first + source.commits.count;
-    const auto original_first = first;
-    while (first->commit != fparent.commit) {
-      if (translate_commit(source, *first, new_parents, parent_revs, items,
-                           buffers))
-        return 1;
+    if (fparent.is_translated) {
+      MergeRequest merge(targets, new_parents, parent_revs, items, buffers);
+      sha1_ref base, mono;
+      if (source.is_repeat) {
+        mono = fparent.commit;
+      } else {
+        base = fparent.commit;
+        if (cache.compute_mono(fparent.commit, mono))
+          return error("expected '" + fparent.commit->to_string() +
+                       "' to be translated already");
+      }
 
-      if (++first == last)
-        return error("first parent missing from all");
+      targets.emplace_back(source, base, mono);
+      sha1_ref new_commit;
+      if (merge_targets(merge, new_commit))
+        return error("failed to generate merge of '" +
+                     fparent.commit->to_string() + "'");
+      set_source_head(source, fparent.commit);
+      head = new_commit;
+      progress.report_merge();
+      continue;
     }
-    if (translate_commit(source, *first, new_parents, parent_revs, items,
-                         buffers, &head))
-      return 1;
 
-    ++first;
-    source.commits.count = last - first;
-    source.commits.first = first - q.commits.begin();
-    if (progress.report(first - original_first))
-      return 1;
+    assert(!source.is_repeat);
+    if (!source.commits.count)
+      return error("need to translate '" + fparent.commit->to_string() +
+                   "' but out of commits");
+    auto untranslated_first = q.commits.begin() + source.commits.first,
+         untranslated_last = untranslated_first + source.commits.count;
+    while (untranslated_first->commit != fparent.commit) {
+      if (translate_commit(source, *untranslated_first, new_parents,
+                           parent_revs, items, buffers))
+        return error("failed to translate side commit '" +
+                     untranslated_first->commit->to_string() + "'");
+
+      if (++untranslated_first == untranslated_last)
+        return error("first parent missing from side_commits");
+      progress.report_side();
+    }
+    if (translate_commit(source, *untranslated_first, new_parents, parent_revs,
+                         items, buffers, &head, fparent.head_p))
+      return error("failed to translate commit '" +
+                   untranslated_first->commit->to_string() + "'");
+    set_source_head(source, fparent.commit);
+    ++untranslated_first;
+    source.commits.count = untranslated_last - untranslated_first;
+    source.commits.first = untranslated_first - q.commits.begin();
+    progress.report_fparent();
   }
-  if (progress.report())
-    return 1;
-
-  if (head)
-    print_heads(stdout);
+  progress.report();
 
   return 0;
+}
+
+int commit_interleaver::merge_heads() {
+  std::vector<MergeTarget> targets;
+  std::vector<sha1_ref> new_parents;
+  std::vector<int> parent_revs;
+  std::vector<git_tree::item_type> items;
+  git_cache::commit_tree_buffers buffers;
+
+  //fprintf(stderr, "merge heads\n");
+  //fprintf(stderr, " - %s (head)\n",
+  //        head ? head->to_string().c_str()
+  //             : "0000000000000000000000000000000000000000");
+
+  MergeRequest merge(targets, new_parents, parent_revs, items, buffers);
+  merge.is_octopus = true;
+  for (commit_source &source : q.sources) {
+    //fprintf(stderr, " - %s (%s)\n",
+    //        source.head ? source.head->to_string().c_str()
+    //                    : "0000000000000000000000000000000000000000",
+    //        source.is_repeat ? "repeat" : dirs.list[source.dir_index].name);
+    if (!source.head)
+      continue;
+
+    // Look up the monorepo commit that corresponds to the split commit goal.
+    sha1_ref monohead;
+    if (source.is_repeat)
+      monohead = source.head;
+    else if (cache.compute_mono(source.head, monohead))
+      return error("head " + source.head->to_string() + " not translated");
+
+    merge.targets.emplace_back(
+        source, source.is_repeat ? sha1_ref() : source.head, monohead);
+  }
+
+  if (merge.targets.empty())
+    return 0;
+
+  sha1_ref new_commit;
+  if (merge_targets(merge, new_commit))
+    return error("failed to merge heads");
+
+  // Update all the head.
+  head = new_commit;
+  return 0;
+}
+
+int commit_interleaver::merge_goals() {
+  std::vector<MergeTarget> targets;
+  std::vector<sha1_ref> new_parents;
+  std::vector<int> parent_revs;
+  std::vector<git_tree::item_type> items;
+  git_cache::commit_tree_buffers buffers;
+
+  MergeRequest merge(targets, new_parents, parent_revs, items, buffers);
+  merge.is_octopus = true;
+  for (commit_source &source : q.sources) {
+    // Set up goal, head, and lambda to detect whether a directory is in
+    // source.
+    sha1_ref goal = source.goal;
+
+    // Skip directories where there was no goal specified and where we reached
+    // the goal while interleaving.
+    if (!goal || goal == source.head)
+      continue;
+
+    // Look up the monorepo commit that corresponds to the split commit goal.
+    sha1_ref monogoal;
+    if (source.is_repeat)
+      monogoal = goal;
+    else if (cache.compute_mono(goal, monogoal))
+      return error("goal " + goal->to_string() + " not translated");
+
+    merge.targets.emplace_back(source, source.is_repeat ? sha1_ref() : goal,
+                               monogoal);
+  }
+
+  if (targets.empty())
+    return 0;
+
+  sha1_ref new_commit;
+  if (merge_targets(merge, new_commit))
+    return error("failed to merge goals");
+
+  // Update all the heads.
+  head = new_commit;
+  for (commit_source &source : q.sources)
+    if (source.goal)
+      set_source_head(source, source.goal);
+
+  return 0;
+}
+
+int commit_interleaver::mark_independent_targets(MergeRequest &merge) {
+  if (!merge.is_octopus) {
+    assert(merge.targets.size() == 1);
+    if (!head) {
+      merge.targets.front().is_independent = true;
+      return 0;
+    }
+    if (head == merge.targets.front().mono) {
+      merge.head_is_independent = true;
+      return 0;
+    }
+
+    // Just assume they're independent.  There's work done already when
+    // preparing sources to ensure that generated merges will not be redundant,
+    // only including them if they're newer than some mandatory commit to
+    // merge.  It's too expensive to call git-merge-base on every repeat merge.
+    merge.head_is_independent = merge.targets.front().is_independent = true;
+    return 0;
+  }
+
+  // fprintf(stderr, "mark independent targets\n");
+  assert(!merge.targets.empty());
+
+  // Figure out which ones are independent.
+  merge.head_is_independent = false;
+  std::vector<sha1_ref> commits;
+  if (head)
+    commits.push_back(head);
+  for (const MergeTarget &target : merge.targets)
+    if (target.mono != head)
+      commits.push_back(target.mono);
+  if (commits.size() > 1)
+    if (cache.merge_base_independent(commits))
+      return error("failed to find independent target commits");
+
+  // There should be at least one, or we have a logic bug.
+  assert(!commits.empty());
+
+  // Update the flags.
+  std::sort(commits.begin(), commits.end());
+  if (head)
+    if (std::binary_search(commits.begin(), commits.end(), head))
+      merge.head_is_independent = true;
+  for (MergeTarget &target : merge.targets)
+    if (target.mono != head)
+      if (std::binary_search(commits.begin(), commits.end(), target.mono))
+        target.is_independent = true;
+
+  // Put the independent targets first.
+  std::stable_sort(merge.targets.begin(), merge.targets.end(),
+                   [](const MergeTarget &lhs, const MergeTarget &rhs) {
+                     if (lhs.is_independent > rhs.is_independent)
+                       return true;
+                     if (lhs.is_independent < rhs.is_independent)
+                       return false;
+
+                     // Prefer putting a repeat commit first, since it makes
+                     // the first commit from a new branch land better.
+                     return lhs.source->is_repeat > rhs.source->is_repeat;
+                   });
+
+  // There should be at least one, or we have a logic bug.
+  assert(merge.head_is_independent || merge.targets.front().is_independent);
+  // fprintf(stderr, "sorted targets\n");
+  // for (auto &target : merge.targets)
+  //   fprintf(stderr, " - %s (independent = %d)\n",
+  //           target.commit->to_string().c_str(), target.is_independent);
+  return 0;
+}
+
+int commit_interleaver::merge_targets(MergeRequest &merge,
+                                      sha1_ref &new_commit) {
+  if (mark_independent_targets(merge))
+    return 1;
+
+  if (!merge.head_is_independent && !merge.is_octopus) {
+    new_commit = merge.targets.front().mono;
+    return 0;
+  }
+
+  // Function for adding parents.
+  int new_srev = 0;
+  int max_urev = 0;
+  git_cache::parsed_metadata::string_ref max_cd;
+  unsigned long long max_ct = 0;
+  std::string first_subject;
+  auto add_parent = [&](sha1_ref base, sha1_ref mono) {
+    merge.new_parents.push_back(mono);
+    int srev = 0;
+    cache.compute_rev(mono, /*is_split=*/false, srev);
+    merge.parent_revs.push_back(srev);
+    update_revs(new_srev, max_urev, srev);
+
+    if (!merge.is_octopus)
+      return 0;
+
+    // Extract the commit date.
+    git_cache::parsed_metadata parsed;
+    {
+      const char *metadata;
+      bool is_merge;
+      sha1_ref first_parent;
+      if (cache.compute_metadata(base ? base : mono, metadata, is_merge,
+                                 first_parent))
+        return error("failed to compute commit metadata for target '" +
+                     mono->to_string() + "'");
+      if (cache.parse_commit_metadata_impl(metadata, parsed))
+        return error("failed to parse commit metadata for target '" +
+                     mono->to_string() + "'");
+    }
+    if (head != mono && first_subject.empty())
+      if (cache.extract_subject(first_subject, parsed.message))
+        return error("failed to extract subject for target '" +
+                     mono->to_string() + "'");
+
+    // Choose the newest commit date.
+    const char *current = parsed.cd.first;
+    unsigned long long ct = 0;
+    if (parse_num(current, ct) || *current != ' ')
+      return error("failed to parse commit date timestamp for target '" +
+                   mono->to_string() + "'");
+    // fprintf(stderr, "   + ct = %llu\n", ct);
+    if (ct > max_ct) {
+      max_ct = ct;
+      max_cd = parsed.cd;
+    }
+    return 0;
+  };
+
+  // Add the head as the initial parent.  If this is a new branch and there
+  // were no commits to translate, then we may not have a head yet.  Also skip
+  // it if somehow it's a descendent of one of the other commits.
+  sha1_ref primary_parent;
+  if (merge.head_is_independent) {
+    primary_parent = head;
+    if (add_parent(sha1_ref(), head))
+      return 1;
+  }
+
+  // Add the target commits for each source where the target was not reached,
+  // filling up the tree with items as appropriate.
+  bool source_includes_root = false;
+  dir_mask source_dirs;
+
+  git_tree head_tree;
+
+  std::vector<const char *> source_dir_names;
+  for (const MergeTarget &target : merge.targets) {
+    const commit_source &source = *target.source;
+    if (make_partial_tree(source, target.base, target.mono, merge.items,
+                          source_dirs))
+      return error("failed to add items to merge");
+
+    auto add_target_as_parent = [&]() {
+      if (add_parent(target.base, target.mono))
+        return 1;
+      if (source.is_repeat)
+        source_dir_names.insert(source_dir_names.end(),
+                                repeated_dir_names.begin(),
+                                repeated_dir_names.end());
+      else
+        source_dir_names.push_back(dirs.list[source.dir_index].name);
+
+      // Keep track of whether the monorepo root is included.
+      source_includes_root |= source.has_root;
+      return 0;
+    };
+
+    if (target.is_independent) {
+      if (add_target_as_parent())
+        return 1;
+      if (!primary_parent)
+        head = primary_parent = target.mono;
+      continue;
+    } else if (!merge.is_octopus) {
+      // We don't need to analyze this too much.
+      add_target_as_parent();
+      continue;
+    }
+
+    // Look up the head tree if we don't have it yet.
+    if (!head_tree.sha1) {
+      assert(primary_parent);
+      head_tree.sha1 = primary_parent;
+      if (cache.ls_tree(head_tree))
+        return 1;
+    }
+
+    // This commit is in the ancestry of the head, but we still need to add it
+    // if the content doesn't match up.  Compare content against the head.
+    if (source.has_root || source.is_repeat) {
+      git_tree tree;
+      tree.sha1 = source.is_repeat ? target.mono : target.base;
+      if (cache.ls_tree(tree))
+        return 1;
+
+      std::vector<git_tree::item_type> items;
+      for (int i = 0; i < tree.num_items; ++i)
+        if (int d = dirs.find_dir(tree.items[i].name))
+          if (source.is_repeat ? dirs.repeated_dirs.test(d)
+                               : dirs.list[d].is_root)
+            items.push_back(tree.items[i]);
+      for (int i = 0; i < head_tree.num_items; ++i)
+        if (int d = dirs.find_dir(head_tree.items[i].name))
+          if (source.is_repeat ? dirs.repeated_dirs.test(d)
+                               : dirs.list[d].is_root)
+            items.push_back(head_tree.items[i]);
+      // Sort and see if we're matched up pairwise.
+      std::sort(items.begin(), items.end());
+      if (items.size() % 2) {
+        add_target_as_parent();
+        continue;
+      }
+      bool found_mismatch = false;
+      for (int i = 0, ie = items.size(); i < ie; i += 2)
+        if (items[i] < items[i + 1]) {
+          found_mismatch = true;
+          break;
+        }
+      if (found_mismatch)
+        if (add_target_as_parent())
+          return 1;
+      continue;
+    }
+
+    // Just look up the one item in the head tree.
+    sha1_ref base_tree;
+    if (cache.compute_commit_tree(target.base, base_tree))
+      return 1;
+    assert(base_tree);
+    bool found = false;
+    for (int i = 0, ie = head_tree.num_items; i != ie; ++i) {
+      auto &item = head_tree.items[i];
+      if (item.sha1 != base_tree)
+        continue;
+      if (item.type != git_tree::item_type::tree)
+        continue;
+      if (strcmp(item.name, dirs.list[source.dir_index].name))
+        continue;
+      found = true;
+      break;
+    }
+    if (!found)
+      if (add_target_as_parent())
+        return 1;
+  }
+
+  // Check whether we can skip the merge.
+  assert(!merge.new_parents.empty());
+  if (merge.new_parents.size() == 1) {
+    new_commit = merge.new_parents.front();
+    return 0;
+  }
+
+  // Add the other tree items.
+  sha1_ref new_tree;
+  if (finish_making_tree_outside_source(
+          /*head_p=*/0, /*base_commit=*/sha1_ref(), source_dirs,
+          source_includes_root, merge.new_parents, merge.parent_revs,
+          merge.items, new_tree))
+    return error("failed to make tree for targets merge");
+
+  if (merge.is_octopus) {
+    // Construct a commit message.
+    git_cache::commit_tree_buffers &buffers = merge.buffers;
+    buffers.message = "Merge ";
+    cache.apply_dir_names_in_subject(buffers.message,
+                                     dir_name_range(source_dir_names));
+    if (merge.head_is_independent && merge.new_parents.size() == 2 &&
+        !first_subject.empty()) {
+      git_cache::commit_tree_buffers merged_buffers;
+      buffers.message += ": ";
+      buffers.message += first_subject;
+    } else {
+      buffers.message += '\n';
+    }
+    buffers.message += '\n';
+    cache.apply_dir_name_trailers(buffers.message,
+                                  dir_name_range(source_dir_names));
+    cache.apply_metadata_env_names(buffers);
+    cache.apply_merge_authorship(buffers, max_cd);
+  } else {
+    if (cache.parse_commit_metadata(
+            merge.targets.front().base ? merge.targets.front().base
+                                       : merge.targets.front().mono,
+            merge.buffers, /*is_merge=*/true, dir_name_range(source_dir_names)))
+      return 1;
+  }
+
+  return cache.commit_tree_impl(new_tree, merge.new_parents, new_commit,
+                                merge.buffers) ||
+         cache.set_base_rev(new_commit, new_srev);
 }
 
 void commit_interleaver::print_heads(FILE *file) {
@@ -898,140 +1121,32 @@ int commit_interleaver::translate_commit(
     commit_source &source, const commit_type &base,
     std::vector<sha1_ref> &new_parents, std::vector<int> &parent_revs,
     std::vector<git_tree::item_type> &items,
-    git_cache::commit_tree_buffers &buffers, sha1_ref *head) {
+    git_cache::commit_tree_buffers &buffers, sha1_ref *head, int head_p) {
+  assert(!head == (head_p == -1) || (head && !base.num_parents));
+  assert(!source.is_repeat);
   new_parents.clear();
   parent_revs.clear();
   items.clear();
-  dir_type *dir = source.is_repeat ? nullptr : &q.dirs.list[source.dir_index];
-  sha1_ref new_tree, new_commit, first_parent_override;
+  dir_type &dir = q.dirs.list[source.dir_index];
+  sha1_ref new_tree, new_commit;
 
-  // Don't override parents for the first interleaved commit from a directory.
-  // We don't want to change the number of parents of the commit (add the
-  // head), and the translation of its first parent is probably not going to be
-  // in the ancestry.  We'll fix up head below, after translation.
-  bool should_override_first_parent = [&]() {
-    if (!head)
-      return false;
-    if (!*head)
-      return false;
-    if (!dir)
-      return true;
-    if (dir->head)
-      return true;
-
-    // The first parent could be in the ancestry after all.  This happens at
-    // most once per generated branch per split repo, so we can afford to check
-    // and prune those edges.
-    if (!base.num_parents)
-      return true;
-
-    // TODO: --is-ancestor would be faster than a full merge-base.
-    sha1_ref split_fparent = base.parents[0], mono_fparent, merge_base;
-    if (!cache.lookup_mono(split_fparent, mono_fparent))
-      if (!cache.merge_base(mono_fparent, *head, merge_base))
-        if (merge_base == mono_fparent)
-          return true;
-    return false;
-  }();
-
-  // Okay, override it.
-  if (should_override_first_parent)
-    first_parent_override = *head;
+  dir_name_range dir_names(dirs.list[source.dir_index].name);
 
   int rev = 0;
-  // fprintf(stderr, "translate-commit = %s, tree = %s, num-parents = %d\n",
-  //         base.commit->to_string().c_str(),
-  //         base.tree->to_string().c_str(), base.num_parents);
   if (translate_parents(source, base, new_parents, parent_revs,
-                        first_parent_override, rev) ||
-      construct_tree(/*is_head=*/head, source, base.commit,
-                     /*is_generated_merge=*/base.is_generated_merge,
-                     new_parents, parent_revs, items, new_tree) ||
-      cache.commit_tree(base.commit, dir, new_tree, new_parents, new_commit,
-                        buffers) ||
-      cache.set_base_rev(new_commit, rev))
+                        /*parent_override=*/head ? *head : sha1_ref(), head_p,
+                        rev) ||
+      construct_tree(head_p, source, base.commit, new_parents, parent_revs,
+                     items, new_tree) ||
+      cache.commit_tree(base.commit, &dir, new_tree, new_parents, new_commit,
+                        buffers, dir_names) ||
+      cache.set_base_rev(new_commit, rev) ||
+      cache.set_mono(base.commit, new_commit))
     return 1;
+
   if (!head)
-    return cache.set_mono(base.commit, new_commit);
-
-  if (!should_override_first_parent && *head) {
-    // Prepare to generate a merge to interleave the first commit.
-    new_parents.clear();
-    parent_revs.clear();
-    items.clear();
-    rev = 0;
-    commit_type translated;
-    translated.commit = new_commit;
-    translated.tree = new_tree;
-    translated.has_boundary_parents = false;
-    translated.is_generated_merge = true;
-
-    // Merge the just-translated commit into head.
-    new_tree = new_commit = sha1_ref();
-    if (translate_parents(source, translated, new_parents, parent_revs,
-                          *head, rev) ||
-        construct_tree(/*is_head=*/true, source, translated.commit,
-                       /*is_generated_merge*/true, new_parents, parent_revs,
-                       items, new_tree) ||
-        cache.commit_tree(base.commit, /*dir=*/nullptr, new_tree, new_parents,
-                          new_commit, buffers) ||
-        cache.set_base_rev(new_commit, rev))
-      return 1;
-  }
-
-  if (!source.is_repeat && cache.set_mono(base.commit, new_commit))
-    return 1;
-
-  *head = new_commit;
-  if (source.is_repeat)
-    repeated_head = base.commit;
-  else
-    dir->head = base.commit;
-  return 0;
-}
-
-int commit_interleaver::read_queue_from_stdin() {
-  // We will interleave first parent commits, sorting by commit timestamp,
-  // putting the earliest at the back of the vector and top of the stack.  Use
-  // stable sort to prevent reordering within a source.
-  auto by_non_increasing_commit_timestamp = [](const fparent_type &lhs,
-                                               const fparent_type &rhs) {
-    // Within a source, rely entirely on initial topological
-    // sort.
-    if (lhs.index == rhs.index)
-      return false;
-    return lhs.ct > rhs.ct;
-  };
-
-  if (read_all(/*fd=*/0, stdin_bytes))
-    return 1;
-
-  // Initialize call_git, before launching threads.
-  call_git_init();
-
-  stdin_bytes.push_back(0);
-  const char *current = stdin_bytes.data();
-  const char *end = stdin_bytes.data() + stdin_bytes.size() - 1;
-  {
-    int status = 0;
-    while (!status) {
-      size_t orig_num_fparents = q.fparents.size();
-      status = q.parse_source(current, end);
-
-      // We can assert here since parse_source is supposed to fudge any
-      // inconsistencies so that sorting later is legal.
-      assert(std::is_sorted(q.fparents.begin() + orig_num_fparents,
-                            q.fparents.end(),
-                            by_non_increasing_commit_timestamp));
-    }
-    if (status != EOF)
-      return 1;
-  }
-  if (q.sources.empty())
     return 0;
 
-  // Interleave first parents.
-  std::stable_sort(q.fparents.begin(), q.fparents.end(),
-                   by_non_increasing_commit_timestamp);
+  *head = new_commit;
   return 0;
 }
