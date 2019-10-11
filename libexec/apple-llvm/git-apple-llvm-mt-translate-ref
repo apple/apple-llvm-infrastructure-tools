@@ -306,7 +306,16 @@ update_refs() {
         local prev sha1 nsd sd d mtsuffix
         for sd in $old_sha1dirs; do
             d=${sd#*:}
-            prev=${sd%:*}
+
+            # Only use the sha1 from prev if this is an existing branch.  For
+            # new branches, we could have an existing mt-split sha1 from a
+            # different tag.
+            if [ "$current" = $ZERO_SHA1 ]; then
+                prev=$ZERO_SHA1
+            else
+                prev=${sd%:*}
+            fi
+
             sha1=
             if [ "$d" = % ]; then
                 mtsuffix=/mt-repeat
