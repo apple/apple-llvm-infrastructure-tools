@@ -13,7 +13,7 @@ lit_testdirs := $(filter-out ./,$(sort \
 	| awk -f $(testdir)/bin/extract-targets-from-test-directories.awk)))
 lit_targets := $(patsubst ./%/,check-%,$(lit_testdirs))
 
-pytest_dirs := auto-updater git-tools config ci pr
+pytest_dirs := auto-updater git-tools config ci pr am
 pytest_targets := $(foreach t,$(pytest_dirs),check-$t)
 
 .PHONY: all clean clean-venv venv requirements
