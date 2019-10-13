@@ -54,8 +54,7 @@ def read_config_for_branch(branch: str, remote: str = 'origin') -> Optional[AMTa
     return AMTargetBranchConfig(branch, json.loads(contents))
 
 
-def find_am_configs() -> List[AMTargetBranchConfig]:
-    remote = 'origin'
+def find_am_configs(remote: str = 'origin') -> List[AMTargetBranchConfig]:
     ref_prefix = f'refs/remotes/{remote}/'
     refs = git_output('branch', '--list',
                       '--format=%(refname)', '-r').split('\n')

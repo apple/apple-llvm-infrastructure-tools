@@ -5,6 +5,7 @@
 import os
 import pytest
 from git_apple_llvm.am.am_config import find_am_configs
+from git_apple_llvm.am.am_status import print_status
 from git_apple_llvm.git_tools import git
 import json
 
@@ -55,3 +56,11 @@ def test_am_config(cd_to_am_tool_repo_clone):
     assert configs[0].test_command is None
     assert configs[0].secondary_upstream is None
     assert configs[0].common_ancestor is None
+
+
+def test_am_print_status(cd_to_am_tool_repo_clone, capfd):
+    print_status()
+    captured = capfd.readouterr()
+    assert captured.out == '[upstream -> master]\n- There are no unmerged commits. The master is up to date.\n'
+
+# FIXME: more tests.
