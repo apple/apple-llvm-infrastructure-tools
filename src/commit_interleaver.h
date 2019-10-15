@@ -326,9 +326,12 @@ int commit_interleaver::make_partial_tree(
     if (source.is_repeat) {
       for (int i = 0; i < tree.num_items; ++i) {
         assert(tree.items[i].sha1);
-        if (int d = dirs.find_dir(tree.items[i].name))
-          if (dirs.repeated_dirs.test(d))
-            items.push_back(tree.items[i]);
+        int d = dirs.find_dir(tree.items[i].name);
+        if (d == -1)
+          continue;
+        if (!dirs.repeated_dirs.test(d))
+          continue;
+        items.push_back(tree.items[i]);
       }
       return 0;
     }

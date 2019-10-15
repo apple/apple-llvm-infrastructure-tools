@@ -21,11 +21,24 @@ RUN: number-commits -p ADD-B  %t-mt-repo.git just-a..add-b >>%t.map
 RUN: number-commits -p A      %t.a              master     >>%t.map
 RUN: number-commits -p B      %t.b              master     >>%t.map
 RUN: git -C %t-mt-repo.git log add-b --topo-order --format="%%H %%P %%s" \
+RUN:     -m --name-status                                                \
 RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s CHECK %t
 CHECK:  ADD-B-4  ADD-B-3 JUST-A-3 Merge root: mkblob: 5
+CHECK: A 5
+CHECK:  ADD-B-4  ADD-B-3 JUST-A-3 Merge root: mkblob: 5
+CHECK: A b/2
+CHECK: A b/4
 CHECK: JUST-A-3 JUST-A-2          mkblob: 5
+CHECK: A 5
 CHECK:  ADD-B-3  ADD-B-2          mkblob: 4
+CHECK: A b/4
 CHECK:  ADD-B-2  ADD-B-1 JUST-A-2 Merge root: mkblob: 3
+CHECK: A 3
+CHECK:  ADD-B-2  ADD-B-1 JUST-A-2 Merge root: mkblob: 3
+CHECK: A b/2
 CHECK: JUST-A-2 JUST-A-1          mkblob: 3
+CHECK: A 3
 CHECK:  ADD-B-1 JUST-A-1          mkblob: 2
+CHECK: A b/2
 CHECK: JUST-A-1                   mkblob: 1
+CHECK: A 1
