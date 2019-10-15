@@ -1,9 +1,24 @@
-RUN: rm -rf %t.db
+RUN: rm -rf %t.db %t.svndb
 RUN: mkdir %t.db
+RUN: %svn2git create %t.svndb
 RUN: %split2mono create %t.db db
 RUN: %split2mono insert %t.db 0123456789abcdef0123456789abcdef01234567 9876543210abcdef0123456789abcdef01234567
-RUN: %split2mono lookup %t.db 0123456789abcdef0123456789abcdef01234567 | grep ^9876543210abcdef0123456789abcdef01234567'$'
-RUN: %split2mono dump %t.db | grep "split=0123456789abcdef0123456789abcdef01234567 mono=9876543210abcdef0123456789abcdef01234567"
+RUN: %split2mono lookup %t.db 0123456789abcdef0123456789abcdef01234567 | check-diff %s LOOKUP %t
+RUN: %split2mono compute-mono %t.db %t.svndb 0123456789abcdef0123456789abcdef01234567 \
+RUN:     | check-diff %s LOOKUP %t
+LOOKUP: 9876543210abcdef0123456789abcdef01234567
+
+RUN: %split2mono dump %t.db | check-diff %s DUMP %t
+DUMP: commits table
+DUMP:   00000000: split=0123456789abcdef0123456789abcdef01234567 mono=9876543210abcdef0123456789abcdef01234567
+DUMP:
+DUMP: commits index num=root num-bits=14
+DUMP:   entry: bits=00000001001000 table=00000000
+DUMP:
+DUMP: svnbase table
+DUMP:   <empty>
+DUMP:
+
 
 RUN: not %split2mono lookup %t.db 9876543210abcdef0123456789abcdef01234567 \
 RUN:   | check-empty

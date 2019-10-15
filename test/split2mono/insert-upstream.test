@@ -1,5 +1,6 @@
-RUN: rm -rf %t-up.db %t-down.db
+RUN: rm -rf %t-up.db %t-down.db %t-svn.db
 RUN: mkdir %t-up.db %t-down.db
+RUN: %svn2git create %t-svn.db
 RUN: %split2mono create %t-up.db up
 RUN: %split2mono insert %t-up.db 0123456789abcdef0123456789abcdef01234567 \
 RUN:                             9876543210abcdef0123456789abcdef01234567
@@ -24,6 +25,10 @@ RUN: %split2mono lookup %t-up.db   0123456789abcdef0123456789abcdef01234567 \
 RUN:   | check-diff %s LOOKUP %t
 RUN: %split2mono lookup %t-down.db 0123456789abcdef0123456789abcdef01234567 \
 RUN:   | check-diff %s LOOKUP %t
+RUN: %split2mono compute-mono %t-up.db   %t-svn.db 0123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP %t
+RUN: %split2mono compute-mono %t-down.db %t-svn.db 0123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP %t
 LOOKUP: 9876543210abcdef0123456789abcdef01234567
 
 RUN: %split2mono dump %t-up.db   | grep -v entry: | grep -v index | grep . \
@@ -38,6 +43,8 @@ DUMP:   <empty>
 RUN: %split2mono insert %t-down.db 2123456789abcdef0123456789abcdef01234567 \
 RUN:                               2876543210abcdef0123456789abcdef01234567
 RUN: %split2mono lookup %t-down.db 2123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP-2 %t
+RUN: %split2mono compute-mono %t-down.db %t-svn.db 2123456789abcdef0123456789abcdef01234567 \
 RUN:   | check-diff %s LOOKUP-2 %t
 LOOKUP-2: 2876543210abcdef0123456789abcdef01234567
 RUN: %split2mono dump %t-down.db | grep -v entry: | grep -v index | grep . \
@@ -65,6 +72,12 @@ RUN:   | check-diff %s LOOKUP %t
 RUN: %split2mono lookup %t-down.db 2123456789abcdef0123456789abcdef01234567 \
 RUN:   | check-diff %s LOOKUP-2 %t
 RUN: %split2mono lookup %t-down.db 3123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP-3 %t
+RUN: %split2mono compute-mono %t-down.db %t-svn.db 0123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP %t
+RUN: %split2mono compute-mono %t-down.db %t-svn.db 2123456789abcdef0123456789abcdef01234567 \
+RUN:   | check-diff %s LOOKUP-2 %t
+RUN: %split2mono compute-mono %t-down.db %t-svn.db 3123456789abcdef0123456789abcdef01234567 \
 RUN:   | check-diff %s LOOKUP-3 %t
 LOOKUP-3: 3876543210abcdef0123456789abcdef01234567
 RUN: %split2mono dump %t-up.db | grep -v entry: | grep -v index | grep . \
