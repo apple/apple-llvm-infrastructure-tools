@@ -103,6 +103,8 @@ struct commit_interleaver {
     head = cmdline_start = sha1s.lookup(sha1);
   }
 
+  int compare_trees(const commit_source &source, const git_tree &head_tree,
+                    sha1_ref sha1, dir_mask &changed_dirs);
   int construct_tree(int head_p, commit_source &source, sha1_ref base_commit,
                      const std::vector<sha1_ref> &parents,
                      const std::vector<int> &parent_revs,
@@ -866,6 +868,42 @@ int commit_interleaver::mark_independent_targets(MergeRequest &merge) {
   return 0;
 }
 
+int commit_interleaver::compare_trees(const commit_source &source,
+                                      const git_tree &head_tree, sha1_ref sha1,
+                                      dir_mask &changed_dirs) {
+  assert(source.has_root || source.is_repeat);
+  git_tree tree;
+  tree.sha1 = sha1;
+  if (cache.ls_tree(tree))
+    return 1;
+
+  std::vector<git_tree::item_type> items;
+  for (int i = 0; i < tree.num_items; ++i) {
+    int d = dirs.find_dir(tree.items[i].name);
+    if (d != -1)
+      if (source.is_repeat ? dirs.repeated_dirs.test(d) : dirs.list[d].is_root)
+        items.push_back(tree.items[i]);
+  }
+  for (int i = 0; i < head_tree.num_items; ++i) {
+    int d = dirs.find_dir(head_tree.items[i].name);
+    if (d != -1)
+      if (source.is_repeat ? dirs.repeated_dirs.test(d) : dirs.list[d].is_root)
+        items.push_back(head_tree.items[i]);
+  }
+  // Sort and see if we're matched up pairwise.
+  std::sort(items.begin(), items.end());
+  if (!source.is_repeat)
+    if (items.size() % 2) {
+      changed_dirs.set(dirs.find_dir("-"));
+      return 0;
+    }
+
+  for (int i = 0, ie = items.size(); i < ie; i += 2)
+    if (i + 1 == ie || items[i] < items[i + 1])
+      changed_dirs.set(dirs.find_dir(items[i].name));
+  return 0;
+}
+
 int commit_interleaver::merge_targets(MergeRequest &merge,
                                       sha1_ref &new_commit) {
   if (mark_independent_targets(merge))
@@ -941,6 +979,13 @@ int commit_interleaver::merge_targets(MergeRequest &merge,
   dir_mask source_dirs;
 
   git_tree head_tree;
+  auto ls_tree_head = [&]() {
+    if (head_tree.sha1)
+      return 0;
+    assert(primary_parent);
+    head_tree.sha1 = primary_parent;
+    return cache.ls_tree(head_tree);
+  };
 
   std::vector<const char *> source_dir_names;
   for (const MergeTarget &target : merge.targets) {
@@ -949,15 +994,29 @@ int commit_interleaver::merge_targets(MergeRequest &merge,
                           source_dirs))
       return error("failed to add items to merge");
 
+    dir_mask changed_dirs;
     auto add_target_as_parent = [&]() {
       if (add_parent(target.base, target.mono))
         return 1;
-      if (source.is_repeat)
-        source_dir_names.insert(source_dir_names.end(),
-                                repeated_dir_names.begin(),
-                                repeated_dir_names.end());
-      else
+      if (source.is_repeat) {
+        if (merge.head_is_independent) {
+          // If we have a head, look up what's getting merged in.
+          if (ls_tree_head() ||
+              compare_trees(source, head_tree, target.mono, changed_dirs))
+            return 1;
+          for (int d = 0, de = dirs.list.size(); d != de; ++d)
+            if (changed_dirs.test(d))
+              source_dir_names.push_back(dirs.list[d].name);
+        } else {
+          // If this is an initial merge, where we don't even have a head yet,
+          // assume everything is getting merged.
+          source_dir_names.insert(source_dir_names.end(),
+                                  repeated_dir_names.begin(),
+                                  repeated_dir_names.end());
+        }
+      } else {
         source_dir_names.push_back(dirs.list[source.dir_index].name);
+      }
 
       // Keep track of whether the monorepo root is included.
       source_includes_root |= source.has_root;
@@ -977,49 +1036,14 @@ int commit_interleaver::merge_targets(MergeRequest &merge,
     }
 
     // Look up the head tree if we don't have it yet.
-    if (!head_tree.sha1) {
-      assert(primary_parent);
-      head_tree.sha1 = primary_parent;
-      if (cache.ls_tree(head_tree))
-        return 1;
-    }
-
-    // This commit is in the ancestry of the head, but we still need to add it
-    // if the content doesn't match up.  Compare content against the head.
+    if (ls_tree_head())
+      return 1;
     if (source.has_root || source.is_repeat) {
-      git_tree tree;
-      tree.sha1 = source.is_repeat ? target.mono : target.base;
-      if (cache.ls_tree(tree))
+      if (compare_trees(source, head_tree,
+                        source.is_repeat ? target.mono : target.base,
+                        changed_dirs))
         return 1;
-
-      std::vector<git_tree::item_type> items;
-      for (int i = 0; i < tree.num_items; ++i) {
-        int d = dirs.find_dir(tree.items[i].name);
-        if (d != -1)
-          if (source.is_repeat ? dirs.repeated_dirs.test(d)
-                               : dirs.list[d].is_root)
-            items.push_back(tree.items[i]);
-      }
-      for (int i = 0; i < head_tree.num_items; ++i) {
-        int d = dirs.find_dir(head_tree.items[i].name);
-        if (d != -1)
-          if (source.is_repeat ? dirs.repeated_dirs.test(d)
-                               : dirs.list[d].is_root)
-            items.push_back(head_tree.items[i]);
-      }
-      // Sort and see if we're matched up pairwise.
-      std::sort(items.begin(), items.end());
-      if (items.size() % 2) {
-        add_target_as_parent();
-        continue;
-      }
-      bool found_mismatch = false;
-      for (int i = 0, ie = items.size(); i < ie; i += 2)
-        if (items[i] < items[i + 1]) {
-          found_mismatch = true;
-          break;
-        }
-      if (found_mismatch)
+      if (changed_dirs.any())
         if (add_target_as_parent())
           return 1;
       continue;
