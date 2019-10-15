@@ -6,8 +6,10 @@ import os
 import pytest
 from git_apple_llvm.am.am_config import find_am_configs
 from git_apple_llvm.am.am_status import print_status
+from git_apple_llvm.am.main import am
 from git_apple_llvm.git_tools import git
 import json
+from click.testing import CliRunner
 
 
 @pytest.fixture(scope='session')
@@ -62,5 +64,13 @@ def test_am_print_status(cd_to_am_tool_repo_clone, capfd):
     print_status()
     captured = capfd.readouterr()
     assert captured.out == '[upstream -> master]\n- There are no unmerged commits. The master is up to date.\n'
+
+
+def test_am_status(cd_to_am_tool_repo_clone):
+    result = CliRunner().invoke(am, ['status', '--target', 'master'],
+                                mix_stderr=True)
+
+    assert result.exit_code == 0
+    assert result.output == '[upstream -> master]\n- There are no unmerged commits. The master is up to date.\n'
 
 # FIXME: more tests.

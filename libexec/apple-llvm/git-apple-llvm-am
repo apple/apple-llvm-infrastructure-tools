@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from git_apple_llvm.am.main import am
+am()
