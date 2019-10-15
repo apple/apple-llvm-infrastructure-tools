@@ -1,0 +1,33 @@
+repo root      file://%t-root
+repo subs      file://%t-subs
+repo out       file://%t-out
+repo out-split file://%t-out-split
+
+destination splitref out-split
+destination monorepo out
+
+declare-dir -
+declare-dir subs
+
+generate branch just-subs
+generate branch nor5
+generate branch just-root
+generate branch both
+generate branch root-after-subs
+start           root-after-subs just-subs
+generate branch subs-after-root
+start           subs-after-root just-root
+generate branch nor5-and-subs
+start           nor5-and-subs both
+repeat          nor5-and-subs nor5
+
+dir subs-after-root subs subs/master
+dir root-after-subs subs subs/master
+dir just-subs       subs subs/master
+dir both            subs subs/master
+dir nor5-and-subs   subs subs/master
+dir subs-after-root -    root/master
+dir root-after-subs -    root/master
+dir just-root       -    root/master
+dir both            -    root/master
+dir nor5            -    root/nor5

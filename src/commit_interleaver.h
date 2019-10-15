@@ -993,16 +993,20 @@ int commit_interleaver::merge_targets(MergeRequest &merge,
         return 1;
 
       std::vector<git_tree::item_type> items;
-      for (int i = 0; i < tree.num_items; ++i)
-        if (int d = dirs.find_dir(tree.items[i].name))
+      for (int i = 0; i < tree.num_items; ++i) {
+        int d = dirs.find_dir(tree.items[i].name);
+        if (d != -1)
           if (source.is_repeat ? dirs.repeated_dirs.test(d)
                                : dirs.list[d].is_root)
             items.push_back(tree.items[i]);
-      for (int i = 0; i < head_tree.num_items; ++i)
-        if (int d = dirs.find_dir(head_tree.items[i].name))
+      }
+      for (int i = 0; i < head_tree.num_items; ++i) {
+        int d = dirs.find_dir(head_tree.items[i].name);
+        if (d != -1)
           if (source.is_repeat ? dirs.repeated_dirs.test(d)
                                : dirs.list[d].is_root)
             items.push_back(head_tree.items[i]);
+      }
       // Sort and see if we're matched up pairwise.
       std::sort(items.begin(), items.end());
       if (items.size() % 2) {
