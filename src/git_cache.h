@@ -1076,8 +1076,8 @@ void git_cache::apply_merge_authorship(commit_tree_buffers &buffers,
                                        parsed_metadata::string_ref cd) {
   buffers.an.append("apple-llvm-mt");
   buffers.cn.append("apple-llvm-mt");
-  buffers.ae.append("mt @ apple-llvm");
-  buffers.ce.append("mt @ apple-llvm");
+  buffers.ae.append("mt@apple-llvm");
+  buffers.ce.append("mt@apple-llvm");
   buffers.ad.append(cd.first, cd.last);
   buffers.cd.append(cd.first, cd.last);
 }

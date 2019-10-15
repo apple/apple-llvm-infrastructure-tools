@@ -108,6 +108,18 @@ AB: apple-llvm-split-dir: a/
 AB: --
 AB: ADD-B-3 ADD-B-2 JUST-A-2 Merge a: mkblob: 4
 AB: apple-llvm-split-dir: a/
+
+# Check metadata for the merge commit.
+RUN: git -C %t-ab log --no-walk add-b                      \
+RUN:      --format=%%an%%n%%cn%%n%%ae%%n%%ce%%n%%at%%n%%ct \
+RUN:   | check-diff %s METADATA %t
+METADATA: apple-llvm-mt
+METADATA: apple-llvm-mt
+METADATA: mt@apple-llvm
+METADATA: mt@apple-llvm
+METADATA: 1550000004
+METADATA: 1550000004
+
 AB-BODY: --
 AB-BODY: ADD-B-3
 AB-BODY: Merge a: mkblob: 4
