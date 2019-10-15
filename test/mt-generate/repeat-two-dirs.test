@@ -1,0 +1,54 @@
+RUN: mkrepo %t-r
+RUN: mkrepo %t-a
+RUN: mkrepo %t-b
+RUN: mkrepo %t-c
+RUN: env ct=1550000001 mkblob %t-a a1
+RUN: env ct=1550000002 mkblob %t-b b2
+RUN: env ct=1550000003 mkblob %t-c c3
+RUN: env ct=1550000004 mkblob %t-a a4
+RUN: env ct=1550000005 mkblob %t-b b5
+RUN: env ct=1550000006 mkblob %t-c c6
+RUN: env ct=1550000007 mkblob %t-r r7
+
+RUN: mkrepo --bare %t-out
+RUN: mkrepo --bare %t-out-split
+RUN: rm -rf %t-mt-repo.git
+RUN: rm -rf %t-mt-configs
+RUN: mkdir -p %t-mt-configs
+RUN: cat %S/Inputs/repeat-two-dirs.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/repeat-two-dirs.mt-config
+RUN: %mtgen --verbose --git-dir %t-mt-repo.git --config-dir %t-mt-configs \
+RUN:     repeat-two-dirs
+
+RUN: number-commits -p RAB  %t-mt-repo.git rab       >%t.map
+RUN: number-commits -p RABC %t-mt-repo.git rab..rabc >>%t.map
+RUN: git -C %t-mt-repo.git log rabc --date-order --format="%%H %%P %%s" \
+RUN:     -m --name-status                                               \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s CHECK %t
+CHECK: RABC-5 RABC-4 RAB-5 Merge root: mkblob: r7
+CHECK: A r7
+CHECK: RABC-5 RABC-4 RAB-5 Merge root: mkblob: r7
+CHECK: A c/c3
+CHECK: A c/c6
+CHECK: RAB-5  RAB-4        mkblob: r7
+CHECK: A r7
+CHECK: RABC-4 RABC-3       mkblob: c6
+CHECK: A c/c6
+CHECK: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
+CHECK: A b/b5
+CHECK: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
+CHECK: A c/c3
+CHECK: RAB-4  RAB-3        mkblob: b5
+CHECK: A b/b5
+CHECK: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
+CHECK: A a/a4
+CHECK: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
+CHECK: A c/c3
+CHECK: RAB-3  RAB-2        mkblob: a4
+CHECK: A a/a4
+CHECK: RABC-1 RAB-2        mkblob: c3
+CHECK: A c/c3
+CHECK: RAB-2  RAB-1        mkblob: b2
+CHECK: A b/b2
+CHECK: RAB-1               mkblob: a1
+CHECK: A a/a1
