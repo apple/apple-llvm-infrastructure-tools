@@ -71,6 +71,7 @@ static int usage(const std::string &msg, const char *cmd) {
   fprintf(stderr,
           "usage: %s create             <dbdir> <name>\n"
           "       %s lookup             <dbdir> <split>\n"
+          "       %s compute-mono       <dbdir> <svn2git-db> <split>\n"
           "       %s lookup-svnbase     <dbdir> <sha1>\n"
           "       %s upstream           <dbdir> <upstream-dbdir>\n"
           "       %s check-upstream     <dbdir> <upstream-dbdir>\n"
@@ -85,7 +86,7 @@ static int usage(const std::string &msg, const char *cmd) {
           "       <dir>     '-'         root\n"
           "                 000...0     not yet started\n"
           "       <sha1>    '-'         untracked\n",
-          cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd);
+          cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd, cmd);
   return 1;
 }
 
@@ -113,6 +114,43 @@ static int main_lookup(const char *cmd, int argc, const char *argv[]) {
   // TODO: add a test for the exit status.
   textual_sha1 mono(binmono);
   return printf("%s\n", mono.bytes) != 41;
+}
+
+static int main_compute_mono(const char *cmd, int argc, const char *argv[]) {
+  if (argc < 1)
+    return usage("compute-mono: missing <dbdir>", cmd);
+  split2monodb db;
+  if (db.opendb(argv[0]))
+    return usage("could not open <dbdir>", cmd);
+  --argc, ++argv;
+
+  // Copied from svn2git.cpp.
+  if (argc < 1)
+    return usage("compute-mono: missing <svn2git-db>", cmd);
+  mmapped_file svn2git;
+  unsigned char svn2git_magic[] = {'s', 2, 'g', 0xd, 0xb, 'm', 0xa, 'p'};
+  if (svn2git.init(argv[0]) ||
+      svn2git.num_bytes < (long)sizeof(svn2git_magic) ||
+      memcmp(svn2git_magic, svn2git.bytes, sizeof(svn2git_magic)))
+    return usage("invalid <svn2git-db>", cmd);
+  --argc, ++argv;
+
+  if (argc < 1)
+    return usage("compute-mono: missing <split>", cmd);
+  sha1_ref split;
+  sha1_pool pool;
+  const char *current = argv[0];
+  if (pool.parse_sha1(current, split) || *current)
+    return usage("compute-mono: <split> is not a valid sha1", cmd);
+
+  dir_list dirs;
+  git_cache git(db, svn2git, pool, dirs);
+
+  // TODO: add a test for the exit status.
+  sha1_ref mono;
+  if (git.compute_mono(split, mono))
+    return 1;
+  return printf("%s\n", mono->to_string().c_str()) != 41;
 }
 
 static int main_lookup_svnbase(const char *cmd, int argc, const char *argv[]) {
@@ -591,6 +629,7 @@ int main(int argc, const char *argv[]) {
   SUB_MAIN_SVNBASE(insert);
   SUB_MAIN_IMPL("interleave-commits", interleave_commits);
   SUB_MAIN_IMPL("check-upstream", check_upstream);
+  SUB_MAIN_IMPL("compute-mono", compute_mono);
 #undef SUB_MAIN_IMPL
 #undef SUB_MAIN
 #undef SUB_MAIN_SVNBASE
