@@ -53,7 +53,7 @@ def compute_inflight_commit_count(commits: List[str], commits_inflight: Set[str]
     # Scan until we find the first in-flight commit.
     not_seen = 0
     for commit in commits:
-        if commit in commits_inflight:
+        if commit.split(' ')[0] in commits_inflight:
             return len(commits) - not_seen
         not_seen += 1
     return 0
@@ -82,7 +82,8 @@ def print_edge_status(upstream_branch: str, target_branch: str,
     print('- Unmerged commits:')
 
     def print_commit_status(commit: str):
-        if commit in commits_inflight:
+        hash = commit.split(' ')[0]
+        if hash in commits_inflight:
             print(f'  * {commit}: Auto merge in progress')
         else:
             print(f'  * {commit}')
