@@ -629,6 +629,11 @@ int commit_source::find_repeat_commits_and_head(git_cache &cache,
     return error("failed to add search terms for repeat head");
   argv.push_back(nullptr);
 
+  // Drop the goal, since it may not be changing a repeated dir.  We'll set it
+  // in find_repeat_commits_and_head_impl based on the most recent commit that
+  // changes relevant dirs.
+  goal = sha1_ref();
+
   sha1_ref next;
   while (
       !find_repeat_commits_and_head_impl(cache, min_ct_to_merge, argv, next)) {
@@ -638,15 +643,14 @@ int commit_source::find_repeat_commits_and_head(git_cache &cache,
       continue;
     }
 
-    if (fparents.empty())
-      return 0;
-
     // We found them all.
     assert(std::is_sorted(fparents.begin(), fparents.end(),
                           by_non_increasing_commit_timestamp));
 
-    // Refine the repeat goal.
-    goal = fparents.front().commit;
+    // Set the goal if we haven't done so yet.
+    if (!goal)
+      goal = head;
+
     num_fparents_from_start = fparents.size();
     return 0;
   }
@@ -675,6 +679,11 @@ int commit_source::find_repeat_commits_and_head_impl(
         parse_space(current) || parse_num(current, fparents.back().ct) ||
         parse_space(current))
       return error("failed to parse repeat commit");
+
+    // Set the goal, if this is the first commit we found.
+    if (!goal)
+      goal = fparents.front().commit;
+
     long long real_ct = fparents.back().ct;
     validate_last_ct();
 
@@ -702,7 +711,9 @@ int commit_source::find_repeat_commits_and_head_impl(
       return error("missing terminator for repeat commit '" +
                    fparents.back().commit->to_string() + "'");
 
-    // Break once we're one past the earliest other commit timestamp.
+    // Break once we're one past the earliest other commit timestamp.  This is
+    // critical for fast-forwarding downstream branches that have no changes
+    // (yet) from upstream.
     if (real_ct <= min_ct_to_merge) {
       // Rewind the search by one and set the head if it's not already set.
       if (!head)

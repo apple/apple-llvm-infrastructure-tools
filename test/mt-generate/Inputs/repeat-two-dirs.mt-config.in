@@ -15,9 +15,12 @@ declare-dir c
 
 generate branch rab
 generate branch rabc
-repeat          rabc rab
+generate branch rabc-downstream
+repeat          rabc            rab
+repeat          rabc-downstream rabc
 
-dir rab  -    r/master
-dir rab  a    a/master
-dir rab  b    b/master
-dir rabc c    c/master
+dir rab             -    r/master
+dir rab             a    a/master
+dir rab             b    b/master
+dir rabc            c    c/master
+dir rabc-downstream c    c/downstream

@@ -25,6 +25,10 @@ usage() {
         "   --check-for-work"                                                 \
         "                   Print the first piece of work to do, but"         \
         "                   don't actually do anything"                       \
+        "   --assume-branch-work"                                             \
+        "                   Meant for testing, assume there is work to do on" \
+        "                   a branch (don't return early).  Forces a call to" \
+        "                   mt-translate-ref."                                \
         "   --sync-destinations"                                              \
         "                   Sync destinations repeatedly until there is no"   \
         "                   work to do, relying on another agent to push it;" \
@@ -793,8 +797,9 @@ mt_generate_ref() {
         # Not reachable...
     done
 
-    # Return early unless there's work to do.
-    [ -n "$work" ] || return 0
+    # Return early unless there's work to do, or unless tests have asked to
+    # bypass this early return.
+    assume_branch_work || [ -n "$work" ] || return 0
 
     refdirs="$(print_all_refdirs "$rawtarget")" ||
         error "failed to extract complete refdirs for $rawtarget"
@@ -964,6 +969,7 @@ should_push() { [ ! "${PUSH:-0}" = 0 ]; }
 push_only() { [ ! "${PUSH_ONLY:-0}" = 0 ]; }
 only_validate() { [ ! "${ONLY_VALIDATE:-0}" = 0 ]; }
 check_for_work() { [ ! "${CHECK_FOR_WORK:-0}" = 0 ]; }
+assume_branch_work() { [ ! "${ASSUME_BRANCH_WORK:-0}" = 0 ]; }
 should_sync_destinations() { [ ! "${SYNC:-0}" = 0 ]; }
 NAME=
 while [ $# -gt 0 ]; do
@@ -994,6 +1000,7 @@ while [ $# -gt 0 ]; do
         --generate)     GENERATE=1; shift ;;
         --no-generate)  GENERATE=0; shift ;;
         --check-for-work) CHECK_FOR_WORK=1; shift ;;
+        --assume-branch-work) ASSUME_BRANCH_WORK=1; shift ;;
         --dump-merged-mt-config) DUMP=merged; shift ;;
         --dump-mt-config)        DUMP=raw;    shift ;;
         --sync-destinations) SYNC=1; CHECK_FOR_WORK=1; shift ;;

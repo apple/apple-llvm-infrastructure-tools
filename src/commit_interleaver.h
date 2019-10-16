@@ -1001,9 +1001,10 @@ int commit_interleaver::merge_targets(MergeRequest &merge,
       if (source.is_repeat) {
         if (merge.head_is_independent) {
           // If we have a head, look up what's getting merged in.
-          if (ls_tree_head() ||
-              compare_trees(source, head_tree, target.mono, changed_dirs))
-            return 1;
+          if (!changed_dirs.any())
+            if (ls_tree_head() ||
+                compare_trees(source, head_tree, target.mono, changed_dirs))
+              return 1;
           for (int d = 0, de = dirs.list.size(); d != de; ++d)
             if (changed_dirs.test(d))
               source_dir_names.push_back(dirs.list[d].name);
