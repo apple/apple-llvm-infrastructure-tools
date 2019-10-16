@@ -49,6 +49,7 @@ struct dir_name_range {
 
   const char *const *begin() const { return only ? &only : first; }
   const char *const *end() const { return only ? &only + 1 : last; }
+  bool empty() const { return begin() == end(); }
 };
 
 struct dir_type {

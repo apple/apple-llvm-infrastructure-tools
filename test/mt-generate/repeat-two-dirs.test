@@ -7,7 +7,8 @@ RUN: env ct=1550000002 mkblob %t-b b2
 RUN: env ct=1550000003 mkblob %t-c c3
 RUN: env ct=1550000004 mkblob %t-a a4
 RUN: env ct=1550000005 mkblob %t-b b5
-RUN: env ct=1550000006 mkblob %t-c c6
+RUN: git -C %t-c checkout -b downstream
+RUN: env ct=1550000006 mkblob %t-c c6-downstream
 RUN: env ct=1550000007 mkblob %t-r r7
 
 RUN: mkrepo --bare %t-out
@@ -20,35 +21,113 @@ RUN:   | tee %t-mt-configs/repeat-two-dirs.mt-config
 RUN: %mtgen --verbose --git-dir %t-mt-repo.git --config-dir %t-mt-configs \
 RUN:     repeat-two-dirs
 
-RUN: number-commits -p RAB  %t-mt-repo.git rab       >%t.map
-RUN: number-commits -p RABC %t-mt-repo.git rab..rabc >>%t.map
-RUN: git -C %t-mt-repo.git log rabc --date-order --format="%%H %%P %%s" \
-RUN:     -m --name-status                                               \
-RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s CHECK %t
-CHECK: RABC-5 RABC-4 RAB-5 Merge root: mkblob: r7
-CHECK: A r7
-CHECK: RABC-5 RABC-4 RAB-5 Merge root: mkblob: r7
-CHECK: A c/c3
-CHECK: A c/c6
-CHECK: RAB-5  RAB-4        mkblob: r7
-CHECK: A r7
-CHECK: RABC-4 RABC-3       mkblob: c6
-CHECK: A c/c6
-CHECK: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
-CHECK: A b/b5
-CHECK: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
-CHECK: A c/c3
-CHECK: RAB-4  RAB-3        mkblob: b5
-CHECK: A b/b5
-CHECK: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
-CHECK: A a/a4
-CHECK: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
-CHECK: A c/c3
-CHECK: RAB-3  RAB-2        mkblob: a4
-CHECK: A a/a4
-CHECK: RABC-1 RAB-2        mkblob: c3
-CHECK: A c/c3
-CHECK: RAB-2  RAB-1        mkblob: b2
-CHECK: A b/b2
-CHECK: RAB-1               mkblob: a1
-CHECK: A a/a1
+RUN: number-commits -p RAB  %t-mt-repo.git rab                    >%t.map
+RUN: number-commits -p RABC %t-mt-repo.git rab..rabc             >>%t.map
+RUN: number-commits -p DOWN %t-mt-repo.git rabc..rabc-downstream >>%t.map
+RUN: git -C %t-mt-repo.git log rabc --date-order \
+RUN:     --format="%%H %%P %%s" -m --name-status \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s RABC %t
+RABC: RABC-4 RABC-3 RAB-5 Merge root: mkblob: r7
+RABC: A r7
+RABC: RABC-4 RABC-3 RAB-5 Merge root: mkblob: r7
+RABC: A c/c3
+RABC: RAB-5  RAB-4        mkblob: r7
+RABC: A r7
+RABC: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
+RABC: A b/b5
+RABC: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
+RABC: A c/c3
+RABC: RAB-4  RAB-3        mkblob: b5
+RABC: A b/b5
+RABC: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
+RABC: A a/a4
+RABC: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
+RABC: A c/c3
+RABC: RAB-3  RAB-2        mkblob: a4
+RABC: A a/a4
+RABC: RABC-1 RAB-2        mkblob: c3
+RABC: A c/c3
+RABC: RAB-2  RAB-1        mkblob: b2
+RABC: A b/b2
+RABC: RAB-1               mkblob: a1
+RABC: A a/a1
+
+RUN: git -C %t-mt-repo.git log rabc-downstream --date-order \
+RUN:     --format="%%H %%P %%s" -m --name-status            \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s DOWN %t
+DOWN: DOWN-2 DOWN-1 RABC-4 Merge root: Merge root: mkblob: r7
+DOWN: A r7
+DOWN: DOWN-2 DOWN-1 RABC-4 Merge root: Merge root: mkblob: r7
+DOWN: A c/c6-downstream
+DOWN: RABC-4 RABC-3 RAB-5 Merge root: mkblob: r7
+DOWN: A r7
+DOWN: RABC-4 RABC-3 RAB-5 Merge root: mkblob: r7
+DOWN: A c/c3
+DOWN: RAB-5  RAB-4        mkblob: r7
+DOWN: A r7
+DOWN: DOWN-1 RABC-3       mkblob: c6-downstream
+DOWN: A c/c6-downstream
+DOWN: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
+DOWN: A b/b5
+DOWN: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
+DOWN: A c/c3
+DOWN: RAB-4  RAB-3        mkblob: b5
+DOWN: A b/b5
+DOWN: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
+DOWN: A a/a4
+DOWN: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
+DOWN: A c/c3
+DOWN: RAB-3  RAB-2        mkblob: a4
+DOWN: A a/a4
+DOWN: RABC-1 RAB-2        mkblob: c3
+DOWN: A c/c3
+DOWN: RAB-2  RAB-1        mkblob: b2
+DOWN: A b/b2
+DOWN: RAB-1               mkblob: a1
+DOWN: A a/a1
+
+# Add an extra commit that should not be repeated.  Drop down to
+# mt-translate-ref to avoid relying on mt-generate's early return logic by
+# using --assume-branch-work.
+RUN: git -C %t-c checkout master
+RUN: env ct=1550000008 mkblob %t-c c8
+RUN: %mtgen --verbose --git-dir %t-mt-repo.git --config-dir %t-mt-configs \
+RUN:     --assume-branch-work                                             \
+RUN:     repeat-two-dirs
+
+RUN: number-commits -p RAB  %t-mt-repo.git rab                    >%t.map
+RUN: number-commits -p RABC %t-mt-repo.git rab..rabc             >>%t.map
+RUN: number-commits -p DOWN %t-mt-repo.git rabc..rabc-downstream >>%t.map
+RUN: git -C %t-mt-repo.git log rabc --date-order \
+RUN:     --format="%%H %%P %%s" -m --name-status \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s RABC-WITH-C8 %t
+RABC-WITH-C8: RABC-5 RABC-4       mkblob: c8
+RABC-WITH-C8: A c/c8
+RABC-WITH-C8: RABC-4 RABC-3 RAB-5 Merge root: mkblob: r7
+RABC-WITH-C8: A r7
+RABC-WITH-C8: RABC-4 RABC-3 RAB-5 Merge root: mkblob: r7
+RABC-WITH-C8: A c/c3
+RABC-WITH-C8: RAB-5  RAB-4        mkblob: r7
+RABC-WITH-C8: A r7
+RABC-WITH-C8: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
+RABC-WITH-C8: A b/b5
+RABC-WITH-C8: RABC-3 RABC-2 RAB-4 Merge b: mkblob: b5
+RABC-WITH-C8: A c/c3
+RABC-WITH-C8: RAB-4  RAB-3        mkblob: b5
+RABC-WITH-C8: A b/b5
+RABC-WITH-C8: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
+RABC-WITH-C8: A a/a4
+RABC-WITH-C8: RABC-2 RABC-1 RAB-3 Merge a: mkblob: a4
+RABC-WITH-C8: A c/c3
+RABC-WITH-C8: RAB-3  RAB-2        mkblob: a4
+RABC-WITH-C8: A a/a4
+RABC-WITH-C8: RABC-1 RAB-2        mkblob: c3
+RABC-WITH-C8: A c/c3
+RABC-WITH-C8: RAB-2  RAB-1        mkblob: b2
+RABC-WITH-C8: A b/b2
+RABC-WITH-C8: RAB-1               mkblob: a1
+RABC-WITH-C8: A a/a1
+
+RUN: git -C %t-mt-repo.git log rabc-downstream --date-order \
+RUN:     --format="%%H %%P %%s" -m --name-status            \
+RUN:   | apply-commit-numbers %t.map | grep -e . | check-diff %s DOWN %t
