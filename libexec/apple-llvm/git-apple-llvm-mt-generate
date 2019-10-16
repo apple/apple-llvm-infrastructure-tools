@@ -663,16 +663,6 @@ fetch_upstream() {
     sync_upstream_destinations || exit 1
 }
 
-does_mtref_match_goal() {
-    # Caller: local mtsha1 work
-    local mtref="$1"
-    local goal_sha1="$2"
-    mtsha1=$(run --dry git rev-parse --verify $mtref^{commit})
-    [ "$mtsha1" = "$goal_sha1" ] || work=1
-    mtsha1="${mtsha1:-$ZERO_SHA1}"
-    [ -z "$work" ]
-}
-
 mt_ref_init_helper() {
     # From parent: local rawtarget
     # From parent: local refsprefix
@@ -705,12 +695,13 @@ mt_generate_ref() {
     mt_ref_init_helper
 
     # Check if the ref exists already.
+    local work
     run --hide-errors git rev-parse --verify $target >/dev/null || work=1
 
     # If the ref doesn't exist then there's work to do.  Return early.
     if check_for_work && [ -n "$work" ]; then
         report_work $mttype "$mtname"
-        return 0;
+        # Not reachable.
     fi
 
     # For tags, return early if it already exists.
@@ -728,7 +719,7 @@ mt_generate_ref() {
         error "generate $target: no 'dir' declarations"
 
     local refdir ref dir dirs sha1
-    local mtref mtsha1 work
+    local mtref mtsha1
     local -a goal_sha1s
     for refdir in $refdirs; do
         ref=${refdir%:*}
@@ -754,7 +745,7 @@ mt_generate_ref() {
 
         # If we found work just report it.
         report_work $mttype "$mtname: $dir"
-        return 0
+        # Not reachable...
     done
 
     refdirs="$(print_all_refdirs "$rawtarget")" ||
@@ -799,7 +790,7 @@ mt_generate_ref() {
         work=1
         check_for_work || break
         report_work $mttype "$mtname: $changed"
-        return 0
+        # Not reachable...
     done
 
     # Return early unless there's work to do.
