@@ -67,7 +67,7 @@ def test_am_print_status(cd_to_am_tool_repo_clone, capfd):
 
 
 def test_am_status(cd_to_am_tool_repo_clone):
-    result = CliRunner().invoke(am, ['status', '--target', 'master'],
+    result = CliRunner().invoke(am, ['status', '--target', 'master', '--no-fetch'],
                                 mix_stderr=True)
 
     assert result.exit_code == 0
