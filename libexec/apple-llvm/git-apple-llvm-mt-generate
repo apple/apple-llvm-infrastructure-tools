@@ -294,6 +294,9 @@ mt_setup() {
         error "failed to sync '$GIT_DIR'"
     done || return 1
 
+    # Pack refs for faster rev-parse queries.
+    run git pack-refs --all || return 1
+
     # Check that the destination repos work.
     run git remote | run grep "$splitdest" >/dev/null ||
         error "splitref destination '$splitdest' is not a repo"
