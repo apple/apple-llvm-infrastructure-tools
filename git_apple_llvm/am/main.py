@@ -1,6 +1,7 @@
 import click
 import logging
 from typing import Optional
+from git_apple_llvm.git_tools import git
 from git_apple_llvm.am.am_status import print_status
 
 log = logging.getLogger(__name__)
@@ -42,8 +43,15 @@ def am(verbose):
               help='The target branch for which the status should be reported. All branches are shown by default.')
 @click.option('--all-commits', is_flag=True, default=False,
               help='List all outstanding commits in the merge backlog.')
-def status(target: Optional[str], all_commits: bool):
-    print_status(target_branch=target, list_commits=all_commits)
+@click.option('--no-fetch', is_flag=True, default=False,
+              help='Do not fetch remote (WARNING: status will be stale!).')
+def status(target: Optional[str], all_commits: bool, no_fetch: bool):
+    remote = 'origin'
+    if not no_fetch:
+        click.echo(f'❕ Fetching "{remote}" to provide the latest status...')
+        git('fetch', remote, stderr=None)
+        click.echo('✅ Fetch succeeded!\n')
+    print_status(remote=remote, target_branch=target, list_commits=all_commits)
 
 
 if __name__ == '__main__':
