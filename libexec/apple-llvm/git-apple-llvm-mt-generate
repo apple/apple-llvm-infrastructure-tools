@@ -281,13 +281,21 @@ mt_setup() {
         log "  - $name"
         # Ignore errors here, since often the remote will already exist.
         run --hide-errors git remote add $name $PWD/clones/$name.git >$gitout
-        local remotetags
+
+        # Use a special tags namespace unless this is a generated monorepo
+        # destination.
+        local remotetags tagsopt
         if [ "$name" = "$monodest" ]; then
+            # We need --tags in order to fetch *all* tags.
             remotetags="refs/tags/*"
+            tagsopt=--tags
         else
+            # We still need --no-tags to avoid *also* fetching some tags to
+            # refs/tags/*.
             remotetags="refs/tags/remotes/$name/*/remote-tag"
+            tagsopt=--no-tags
         fi
-        run $hide git fetch -q $name --no-tags      \
+        run $hide git fetch -q $name $tagsopt       \
             "+refs/heads/*:refs/remotes/$name/*"    \
             "+refs/tags/*:$remotetags"              \
             >$gitout ||
@@ -383,7 +391,10 @@ fetch_destinations() {
         '$1 == m || $1 == s { print $0 }' |
     while read name url; do
         mt_setup_repo || exit 1
-        run $hide git fetch -q --no-tags $name >$gitout ||
+
+        # Note: we want to fetch tags as well, in case new ones have been
+        # pushed.
+        run $hide git fetch -q --tags $name >$gitout ||
             error "failed to sync '$GIT_DIR'"
     done || exit 1
 
