@@ -568,6 +568,7 @@ mt_generate() {
     fi
 
     # Invoke through wrappers whose logic can be reused.
+    local should_push_ref=true
     mt_fetcher   "$fetcher"   "$object" || exit 1
     mt_generator "$generator" "$object" || exit 1
     mt_pusher    "$pusher"    "$object" || exit 1
@@ -695,8 +696,12 @@ mt_push_tag()        { mt_push_ref "$@"; }
 
 mt_generate_ref() {
     # From parent: local action
+    # From parent: local should_push_ref
     local mtname refsprefix mtprefix target rawtarget="$1" mttype="$action"
     mt_ref_init_helper
+
+    # Assume we don't have to push.
+    should_push_ref=false
 
     # Check if the ref exists already.
     local work
@@ -804,6 +809,7 @@ mt_generate_ref() {
     refdirs="$(print_all_refdirs "$rawtarget")" ||
         error "failed to extract complete refdirs for $rawtarget"
 
+    should_push_ref=true
     run --dry git apple-llvm mt translate-ref $target "$start" $refdirs ||
         error "failed to generate $mttype '$target'"
 }
@@ -857,16 +863,16 @@ mt_fetch_one_branch() {
 
 mt_push_ref() {
     # From parent: local mttype
+    # From parent: local should_push_ref
     local mtname refsprefix mtprefix target rawtarget="$1" mttype="$action"
     mt_ref_init_helper
+
+    # Return early if there was no work.
+    $should_push_ref || return 0
 
     local branch="$1"
     local old_mtdb_sha1=$MTDB_SHA1
     MTDB_SHA1=$(run git show-ref $MTDB_REF | awk '{print $1}')
-
-    # Return early if nothing has changed.
-    [ ! "$old_mtdb_sha1" = "$MTDB_SHA1" ] ||
-        return 0
 
     # Push the primary refs.  Need to push to the local mirror, and then from
     # there to the actual remote.

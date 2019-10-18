@@ -1,0 +1,13 @@
+repo in file://%t.in
+repo out file://%t.out
+repo out-split file://%t.out-split
+
+destination splitref out-split
+destination monorepo out
+
+declare-dir d
+
+generate branch d1
+generate branch d2
+dir d1 d in/master
+dir d2 d in/master
