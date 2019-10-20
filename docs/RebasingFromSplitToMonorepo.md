@@ -15,7 +15,7 @@ guide is for you.
 
 ### TL;DR
 
-```
+```sh
 $ git rebase -Xsubtree=llvm                            \
     --onto github/apple/llvm-project/apple/master      \
     github/apple/swift-llvm/upstream-with-swift
@@ -53,20 +53,20 @@ Here's the scenario:
 
 Clone swift-llvm if you haven't already:
 
-```
+```sh
 $ git clone git@github.com:$USERNAME/swift-llvm.git
 $ cd swift-llvm
 ```
 
 Add a remote for the official `swift-llvm` history from Apple:
-```
+```sh
 $ git remote add upstream/split               \
     git@github.com:apple/swift-llvm.git
 ```
 
 Now add remotes for llvm-project.
 
-```
+```sh
 $ git remote add monorepo                     \
     git@github.com:$USERNAME/llvm-project.git
 $ git remote add upstream/monorepo            \
@@ -75,7 +75,7 @@ $ git remote add upstream/monorepo            \
 
 Fetching the contents will take some time:
 
-```
+```sh
 $ git remote update
 ```
 
@@ -84,7 +84,7 @@ $ git remote update
 The branch I want to convert is called "bugfix".  There are lots of ways to
 check it out, but here's one:
 
-```
+```sh
 $ git checkout --detach origin/bugfix
 ```
 
@@ -93,7 +93,7 @@ $ git checkout --detach origin/bugfix
 The key command is `git-rebase` (see `man git-rebase` for details).  The form
 we want to use is:
 
-```
+```sh
 $ git rebase -Xsubtree=<dir> --onto <newbase> <upstream> [<branch>]
 ```
 
@@ -111,7 +111,7 @@ Here's what the arguments mean:
 
 Since we already have `bugfix` checked out, we just need:
 
-```
+```sh
 $ git rebase -Xsubtree=llvm               \
     --onto upstream/monorepo/apple/master \
     upstream/split/upstream-with-swift
@@ -119,7 +119,7 @@ $ git rebase -Xsubtree=llvm               \
 
 Alternatively we could have skipped the previous step with:
 
-```
+```sh
 $ git rebase -Xsubtree=llvm               \
     --onto upstream/monorepo/apple/master \
     upstream/split/upstream-with-swift    \
@@ -131,7 +131,7 @@ $ git rebase -Xsubtree=llvm               \
 Now you just need to push `HEAD` to the monorepo fork.  For example, to use the
 same branch name, `bugfix`:
 
-```
+```sh
 $ git push monorepo HEAD:bugfix
 ```
 
@@ -139,7 +139,7 @@ $ git push monorepo HEAD:bugfix
 
 Continue working on your newly-converted monorepo branch in a fresh clone.
 
-```
+```sh
 $ cd ..
 $ git clone git@github.com:$USERNAME/llvm-project.git
 $ git checkout -b bugfix origin/bugfix
@@ -156,7 +156,7 @@ now, you need to be more precise.
 
 First, you need to find your current merge base with the split upstream:
 
-```
+```sh
 $ BASE=$(git merge-base HEAD upstream/split/upstream-with-swift)
 ```
 
@@ -169,7 +169,7 @@ Then you need to find the equivalent monorepo commit.
 If this is an llvm.org upstream commit with a `git-svn-id:` trailer, you can
 grab the SVN revision number:
 
-```
+```sh
 $ REV=$(git log --no-walk --format=%B $BASE |
         grep git-svn-id:)
 $ REV=${REV#*@}
@@ -178,7 +178,7 @@ $ REV=${REV%%#}
 
 Then find the monorepo commit by looking for an equivalent `llvm-svn:` trailer:
 
-```
+```sh
 # Look at the log.  There should just be one.
 $ git log upstream/monorepo/apple/master \
     --grep "^llvm-svn: $REV\$"
@@ -195,7 +195,7 @@ If this is a downstream commit from Apple's split repos (like swift-llvm), it
 should have been converted as part of the monorepo transition.  You can find it
 directly by looking for the `apple-llvm-split-commit:` trailer.
 
-```
+```sh
 # Look at the log.  There should just be one.
 $ git log upstream/monorepo/apple/master \
     --grep "^apple-llvm-split-commit: $BASE\$"
@@ -211,6 +211,6 @@ $ MONOBASE=$(git log --format=%H --no-walk    \
 We find the split merge base and its equivalent monorepo base.  Now we're ready
 to run the command as before:
 
-```
+```sh
 $ git rebase -Xsubtree=llvm --onto $MONOBASE $BASE
 ```
