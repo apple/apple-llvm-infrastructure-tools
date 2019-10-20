@@ -180,7 +180,7 @@ def isKnownTrackingBranch(remote: str, b: str) -> bool:
     remote_prefix = f'{remote}/'
     if not b.startswith(remote_prefix):
         return False
-    known_prefixes = set(['llvm', 'apple', 'internal', 'swift'])
+    known_prefixes = set(['llvm.org', 'apple', 'internal', 'swift'])
     return b[len(remote_prefix):].split('/')[0] in known_prefixes
 
 
