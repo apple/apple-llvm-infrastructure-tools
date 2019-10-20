@@ -1,0 +1,52 @@
+RUN: rm -rf %t.svn2git %t.split2mono
+RUN: mkdir %t.split2mono
+RUN: %svn2git create %t.svn2git
+RUN: %split2mono create %t.split2mono db
+
+# Create r1 and r3.  Note that setting the author timestamp with 'at' also
+# changes the default 'ct'.
+RUN: mkrepo %t-s
+RUN: mkrepo %t-m
+RUN: env at=1550000001 mkblob-svn -s %t-s -m %t-m -d sub 1
+RUN: git -C %t-m rev-list -1 master | xargs %svn2git insert %t.svn2git 1
+RUN: git -C %t-s branch r1
+RUN: env at=1550000003 mkblob-svn -s %t-s -m %t-m -d sub 3
+RUN: git -C %t-m rev-list -1 master | xargs %svn2git insert %t.svn2git 3
+RUN: git -C %t-s branch r3
+
+# Create an upstream commit post-SVN, using the expected trailers for an
+# upstream llvm.org commit.
+RUN: env at=1550000010 mkblob %t-m sub/10
+RUN: printf "10\n\n"                              >%t-10.msg
+RUN: printf "apple-llvm-monorepo-commit: "       >>%t-10.msg
+RUN: git -C %t-m log --no-walk --format=%H       >>%t-10.msg
+RUN: printf "apple-llvm-split-parents: "         >>%t-10.msg
+RUN: git -C %t-s log --no-walk --format=%H       >>%t-10.msg
+RUN: printf "apple-llvm-upstream-merge-base: "   >>%t-10.msg
+RUN: git -C %t-m log --no-walk --format=%H       >>%t-10.msg
+RUN: env at=1550000010 mkblob %t-s 10 -F %t-10.msg
+RUN: git -C %t-s branch r10
+
+# Add a cherry-pick of r10 onto r1.  It should be rejected.
+RUN: git -C %t-s checkout -b downstream r1
+RUN: env at=1550000010 git -C %t-s cherry-pick r10
+
+RUN: number-commits -p SUP   %t-s master      >%t.map
+RUN: number-commits -p MUP   %t-m master     >>%t.map
+RUN: number-commits -p SDOWN %t-s downstream >>%t.map
+
+RUN: git -C %t-s log --no-walk --format=%H r1                            \
+RUN:   | xargs %split2mono -C %t-s compute-mono %t.split2mono %t.svn2git \
+RUN:   | apply-commit-numbers %t.map | check-diff %s R1 %t
+R1: MUP-1
+RUN: git -C %t-s log --no-walk --format=%H r3                            \
+RUN:   | xargs %split2mono -C %t-s compute-mono %t.split2mono %t.svn2git \
+RUN:   | apply-commit-numbers %t.map | check-diff %s R3 %t
+R3: MUP-2
+RUN: git -C %t-s log --no-walk --format=%H r10                           \
+RUN:   | xargs %split2mono -C %t-s compute-mono %t.split2mono %t.svn2git \
+RUN:   | apply-commit-numbers %t.map | check-diff %s R10 %t
+R10: MUP-3
+RUN: git -C %t-s log --no-walk --format=%H downstream                        \
+RUN:   | xargs not %split2mono -C %t-s compute-mono %t.split2mono %t.svn2git \
+RUN:   | check-empty

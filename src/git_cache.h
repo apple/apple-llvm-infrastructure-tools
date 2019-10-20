@@ -55,6 +55,13 @@ struct git_tree {
 };
 
 struct git_cache {
+  // A divider between real SVN revisions (that could possibly show up with the
+  // 'llvm-svn:' trailer) and proxies generated from commit timestamps.
+  constexpr static const int max_llvm_svn_rev = 1000000;
+  static bool is_llvm_svn_rev(int rev) {
+    return rev && rev <= max_llvm_svn_rev && rev >= -max_llvm_svn_rev;
+  }
+
   /// Mark the given commit as one that will be translated.  Even if it can't
   /// be found in the commits table, it'll be there eventually.
   void note_being_translated(sha1_ref commit);
@@ -160,6 +167,12 @@ struct git_cache {
     string_ref an, ad, ae;
     const char *message = nullptr;
   };
+  struct mono2split_trailers {
+    sha1_ref monorepo_commit;
+    sha1_ref split_first_parent;
+    sha1_ref upstream_merge_base;
+    bool is_merge = false;
+  };
   int commit_tree(sha1_ref base_commit, const dir_type *dir, sha1_ref tree,
                   const std::vector<sha1_ref> &parents, sha1_ref &commit,
                   commit_tree_buffers &buffers, dir_name_range dir_names);
@@ -179,6 +192,10 @@ struct git_cache {
   int parse_commit_metadata(sha1_ref commit,
                             git_cache::commit_tree_buffers &buffers,
                             bool is_merge, dir_name_range dir_names);
+
+  static int parse_rev(const char *message, bool is_split, int &rev);
+  int parse_mono2split_trailers(const char *message,
+                                mono2split_trailers &trailers);
 
   void apply_metadata_env_names(git_cache::commit_tree_buffers &buffers);
 
@@ -414,8 +431,18 @@ int git_cache::compute_mono(sha1_ref split, sha1_ref &mono) {
   if (!compute_mono_from_table(split, mono, is_based_on_rev))
     return 0;
 
-  int rev = -1;
-  if (compute_rev(split, /*is_split=*/true, rev) || rev <= 0)
+  int rev = INT_MIN;
+  if (compute_rev(split, /*is_split=*/true, rev) || rev == INT_MIN)
+    return 1;
+
+  // If we looked up a rev then we may have found (and cached) an
+  // 'apple-llvm-monorepo-commit:' trailer.  Look it up.
+  if (!lookup_mono(split, mono))
+    return 0;
+
+  // If the rev is not positive we shouldn't check svn2git, since this isn't
+  // really an upstream SVN commit.
+  if (rev <= 0 || rev > max_llvm_svn_rev)
     return 1;
 
   // This looks like a real git-svn commit.  Even so, there may not be a
@@ -613,10 +640,6 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, bool is_split,
     if (compute_metadata(commit, raw_metadata, is_merge, first_parent))
       return 1;
 
-  // Merges cannot be upstream SVN commits.
-  if (is_merge)
-    return 1;
-
   if (is_split && first_parent) {
     // If first_parent is in the split2mono database, then commit is not an
     // upstream SVN commit.  This helps to avoid mapping commits like
@@ -632,8 +655,55 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, bool is_split,
         return 1;
   }
 
+  // Parse the metadata, which we'll need for the other heuristics below.
   parsed_metadata parsed;
   if (parse_commit_metadata_impl(raw_metadata, parsed))
+    return 1;
+
+  // Detect split-commits that are converted from monorepo commits.
+  mono2split_trailers trailers;
+  if (is_split && !parse_mono2split_trailers(parsed.message, trailers) &&
+      first_parent == trailers.split_first_parent &&
+      is_merge == trailers.is_merge) {
+    const bool is_upstream_commit =
+        trailers.upstream_merge_base == trailers.monorepo_commit;
+
+    // Try to parse the SVN rev from the merge base, and if that fails,
+    // manufacture one.
+    rev = 0;
+    bool is_rev_manufactured = false;
+    if (compute_rev(trailers.upstream_merge_base, /*is_spit=*/false, rev)) {
+      is_rev_manufactured = true;
+      long long ct;
+      if (compute_ct(trailers.upstream_merge_base, ct))
+        error("failed to parse commit timestamp from upstream merge base '" +
+              trailers.upstream_merge_base->to_string() + "'");
+      assert(ct);
+
+      // Use the ct as a proxy for the rev, but make sure it fits and doesn't
+      // collide.  Deal with the year-2038 problem by saturating.  If somehow
+      // this commit timestamp look small enough to be a revision, saturate as
+      // well.
+      rev = std::min((long long)INT_MAX, std::max(ct, max_llvm_svn_rev + 1ll));
+
+      // Mark this rev as a downstream commit if it's not its own upstream
+      // merge base.
+      if (!is_upstream_commit)
+        rev = -rev;
+    }
+
+    // Store the rev mappings for both the split and the monorepo commits.
+    note_rev(commit, rev);
+    if (is_rev_manufactured || !is_upstream_commit)
+      note_rev(trailers.monorepo_commit, rev);
+
+    // Remember this mapping.
+    note_mono(commit, trailers.monorepo_commit, /*is_based_on_rev=*/false);
+    return 0;
+  }
+
+  // Merges cannot be upstream SVN commits.
+  if (is_merge)
     return 1;
 
   // Check that committer and author match.
@@ -641,7 +711,19 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, bool is_split,
       parsed.ad != parsed.cd)
     return 1;
 
-  const char *current = parsed.message;
+  if (!parse_rev(parsed.message, is_split, rev)) {
+    note_rev(commit, rev);
+    return 0;
+  }
+
+  // This is a split commit that's not an upstream commit.
+  rev = 0;
+  note_rev(commit, rev);
+  return 0;
+}
+
+int git_cache::parse_rev(const char *message, bool is_split, int &rev) {
+  const char *current = message;
   while (*current) {
     if (!is_split) {
       if (try_parse_string(current, "llvm-rev: ")) {
@@ -653,7 +735,6 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, bool is_split,
       if (parse_num(current, parsed_rev) || parse_ch(current, '\n'))
         break;
       rev = parsed_rev;
-      note_rev(commit, rev);
       return 0;
     }
 
@@ -670,18 +751,75 @@ int git_cache::compute_rev_with_metadata(sha1_ref commit, bool is_split,
       break;
 
     rev = parsed_rev;
-    note_rev(commit, rev);
     return 0;
   }
 
-  // Monorepo commits should always have a rev, either from the 'llvm-rev:' tag
-  // or stored in the svnbaserev table.  If we get here there's a problem.
-  if (!is_split)
-    return error("missing base svn rev for monorepo commit");
+  // Not found.
+  return 1;
+}
 
-  // This is a split commit that's not an upstream commit.
-  rev = 0;
-  note_rev(commit, rev);
+int git_cache::parse_mono2split_trailers(const char *message,
+                                         mono2split_trailers &trailers) {
+  // If we hit the end of the message, we didn't find the trailer block.
+  const char *current = message;
+  if (!*current)
+    return 1;
+
+  // Expect all the trailers to be in a row.
+  mono2split_trailers parsed_trailers;
+
+  // Parse the monorepo commit.
+  //
+  // apple-llvm-monorepo-commit: %H
+  if (parse_string(current, "apple-llvm-monorepo-commit: ") ||
+      pool.parse_sha1(current, parsed_trailers.monorepo_commit) ||
+      parse_newline(current)) {
+    parse_through_newline(current);
+    return parse_mono2split_trailers(current, trailers);
+  }
+
+  // Parse the expected parents of this commit.
+  //
+  // apple-llvm-split-parents: -
+  // apple-llvm-split-parents: %P
+  if (parse_string(current, "apple-llvm-split-parents: ")) {
+    parse_through_newline(current);
+    return parse_mono2split_trailers(current, trailers);
+  }
+
+  // Parse parents, if any.
+  if (parse_ch(current, '-')) {
+    // First parent.
+    if (pool.parse_sha1(current, parsed_trailers.split_first_parent)) {
+      parse_through_newline(current);
+      return parse_mono2split_trailers(current, trailers);
+    }
+
+    // Other parents.
+    while (*current != '\n') {
+      parsed_trailers.is_merge = true;
+      sha1_ref parent;
+      if (parse_space(current) || pool.parse_sha1(current, parent)) {
+        parse_through_newline(current);
+        return parse_mono2split_trailers(current, trailers);
+      }
+    }
+  }
+
+  // Parse the upstream merge base.  Note that the preceding newline still has
+  // to be parsed.
+  //
+  // apple-llvm-upstream-merge-base: %H
+  if (parse_newline(current) ||
+      parse_string(current, "apple-llvm-upstream-merge-base: ") ||
+      pool.parse_sha1(current, parsed_trailers.upstream_merge_base) ||
+      parse_newline(current)) {
+    parse_through_newline(current);
+    return parse_mono2split_trailers(current, trailers);
+  }
+
+  // Found all the trailers.  Return success.
+  trailers = parsed_trailers;
   return 0;
 }
 
