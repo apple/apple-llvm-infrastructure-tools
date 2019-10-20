@@ -4,6 +4,7 @@
 
 REPO="$1"
 BLOB="$2"
+shift 2
 
 [ -d "$REPO" ] || error "no such repo: '$REPO'"
 [ -d "$REPO"/.git ] || error "invalid repo: '$REPO'"
@@ -14,5 +15,12 @@ check mkdir -p "$(dirname "$FILE")"
 check printf "%s\n" "$BLOB" > "$FILE"
 check cd "$REPO"
 check git add "$BLOB"
-execdir --check mkcommit "$REPO" -am \
-    "$(printf "%s\n\n%s\n" "mkblob: $BLOB" "added the blob $BLOB")"
+
+if [ $# -eq 0 ]; then
+    MSG="$(printf "%s\n\n%s\n" "mkblob: $BLOB" "added the blob $BLOB")"
+    ARGS=( -m "$MSG" )
+else
+    ARGS=( "$@" )
+fi
+
+execdir --check mkcommit "$REPO" -a "${ARGS[@]}"

@@ -15,11 +15,11 @@ RUN: mkrepo %t
 RUN: not git -C %t log | check-empty
 RUN: not mkblob %t
 RUN: mkblob %t a
-RUN: cat %t/a | check-diff %s BLOB %t
+RUN: cat %t/a | check-diff %s A %t
+A: a
 RUN: git -C %t log --date=raw \
 RUN:      --format=format:%%an%%n%%cn%%n%%ae%%n%%ce%%n%%ad%%n%%cd%%n%%B \
 RUN:   | check-diff %s LOG %t
-BLOB: a
 LOG: mkblob.sh
 LOG: mkblob.sh
 LOG: mkblob@apple.llvm
@@ -32,3 +32,22 @@ LOG: added the blob a
 
 RUN: not mkblob %t a 2>&1 | check-diff %s DUPLICATE %t
 DUPLICATE: error: blob already exists: 'a'
+
+# Customize message.
+RUN: mkblob %t b -m "my message"
+RUN: cat %t/b | check-diff %s B %t
+B: b
+RUN: git -C %t log --no-walk --format=format:%B | check-diff %s BMSG %t
+BMSG: my message
+
+# Customize message in file.
+RUN: echo "subject"  >%t.msg
+RUN: echo ""        >>%t.msg
+RUN: echo "body"    >>%t.msg
+RUN: mkblob %t c -F %t.msg
+RUN: cat %t/c | check-diff %s C %t
+C: c
+RUN: git -C %t log --no-walk --format=format:%B | check-diff %s CMSG %t
+CMSG: subject
+CMSG:
+CMSG: body
