@@ -171,9 +171,9 @@ grab the SVN revision number:
 
 ```sh
 $ REV=$(git log --no-walk --format=%B $BASE |
-        grep git-svn-id:)
+        grep "^git-svn-id: ")
 $ REV=${REV#*@}
-$ REV=${REV%%#}
+$ REV=${REV%% *}
 ```
 
 Then find the monorepo commit by looking for an equivalent `llvm-svn:` trailer:
