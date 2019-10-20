@@ -13,6 +13,20 @@ is downstream of the LLVM project's monorepo at
 [github.com/llvm/llvm-project](https://github.com/llvm/llvm-project), then this
 guide is for you.
 
+### TL;DR
+
+```
+$ git rebase -Xsubtree=llvm                            \
+    --onto github/apple/llvm-project/apple/master      \
+    github/apple/swift-llvm/upstream-with-swift
+$ git rebase -Xsubtree=clang                           \
+    --onto github/apple/llvm-project/apple/master      \
+    github/apple/swift-clang/upstream-with-swift
+$ git rebase -Xsubtree=lldb                            \
+    --onto github/apple/llvm-project/swift/master-next \
+    github/apple/swift-lldb/upstream-with-swift
+```
+
 ## Steps to rebase a split branch onto the monorepo
 
 1. Add your fork of [llvm-project](https://github.com/apple/llvm-project) as an
