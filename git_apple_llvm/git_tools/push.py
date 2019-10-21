@@ -25,6 +25,7 @@ all_monorepo_split_dirs = set([
     'clang-tools-extra',
     'compiler-rt',
     'debuginfo-tests',
+    'libc',
     'libclc',
     'libcxx',
     'libcxxabi',

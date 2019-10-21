@@ -23,6 +23,7 @@ declare-dir clang-tools-extra
 declare-dir clang
 declare-dir compiler-rt
 declare-dir debuginfo-tests
+declare-dir libc
 declare-dir libclc
 declare-dir libcxx
 declare-dir libcxxabi
