@@ -23,6 +23,7 @@ These guides are there to let you know how to use `git apple-llvm` to help your 
    monorepo-transition
    Getting started with git apple-llvm <git-apple-llvm>
    working-on-github-apple-llvm-project
+   RebasingFromSplitToMonorepo
 
 Tools Documentation
 ===================
