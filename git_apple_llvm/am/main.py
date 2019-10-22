@@ -3,6 +3,7 @@ import logging
 from typing import Optional
 from git_apple_llvm.git_tools import git
 from git_apple_llvm.am.am_status import print_status
+from git_apple_llvm.am.oracle import set_state, get_state
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,31 @@ def status(target: Optional[str], all_commits: bool, no_fetch: bool):
         git('fetch', remote, stderr=None)
         click.echo('✅ Fetch succeeded!\n')
     print_status(remote=remote, target_branch=target, list_commits=all_commits)
+
+
+@am.group()
+def result():
+    """ Set and Get merge results.
+    """
+    pass
+
+
+@result.command()
+@click.argument('merge_id', envvar='MERGE_ID')
+@click.argument('status')
+def set(merge_id, status):
+    """Set the merge status for a merge ID."""
+    # FIXME: Verify that status is valid.
+    set_state(merge_id, status)
+    click.echo(f"Set {merge_id} to {status}")
+
+
+@result.command()
+@click.argument('merge_id', envvar='MERGE_ID')
+def get(merge_id):
+    """Get the merge status of a merge_id.
+    """
+    click.echo(get_state(merge_id))
 
 
 if __name__ == '__main__':
