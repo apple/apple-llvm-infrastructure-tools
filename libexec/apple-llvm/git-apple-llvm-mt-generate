@@ -587,18 +587,24 @@ mt_generate_mapping() {
     grep ^refs/remotes/$remote)"
 
     [ -n "$branches" ] || error "no branches found under '$remote'"
-    local branch rev
+    local branch rev sha1
     for branch in $branches; do
-        rev=$(mt_llvm_svn $branch) ||
-            error "generate mapping: '$branch' has no LLVM revision"
+        sha1=$(git rev-parse --verify $branch^{commit}) ||
+            error "generate mapping: $branch has no commits"
+        if ! rev=$(mt_llvm_svn $sha1); then
+            sha1=$(run git log -1 --format=%H $sha1 --grep '^llvm-svn: ') ||
+                error "generate mapping: $branch has no LLVM revision"
+            rev=$(mt_llvm_svn $sha1) ||
+                error "generate mapping: $branch at $sha1 has no LLVM revision"
+        fi
         if (mt_llvm_svn2git "$rev" >/dev/null); then
             log "Mapping for '$branch' up-to-date"
             continue
         fi
         ! check_for_work || report_work mapping "$remote"
-        log "Generating mapping for '$branch'"
-        run --dry git apple-llvm mt llvm-svn2git-map $branch ||
-            error "failed to generate mapping for '$branch'"
+        log "Generating mapping for '$branch' at '$sha1'"
+        run --dry git apple-llvm mt llvm-svn2git-map $sha1 ||
+            error "failed to generate mapping for '$branch' at '$sha1'"
     done
 }
 
