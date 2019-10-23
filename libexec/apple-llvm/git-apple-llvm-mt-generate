@@ -124,6 +124,19 @@ print_start() {
     END { if (x && !broken) print x }
     ' "$MERGED_MT_CONFIG"
 }
+print_tagmsg() {
+    awk -v tag="$1" '
+    $1 == "tagmsg" && $2 == tag {
+        if (x) {
+            printf "error: second message for tag %s\n", tag >"/dev/stderr"
+            broken = 1
+            exit 1
+        }
+        x = $3
+    }
+    END { if (x && !broken) print x }
+    ' "$MERGED_MT_CONFIG"
+}
 print_active_dirs()      { print_dirs_impl "$1" 1 0 0 0 0; }
 print_inactive_dirs()    { print_dirs_impl "$1" 0 1 0 0 0; }
 print_repeat_dirs()      { print_dirs_impl "$1" 0 0 1 0 0; }
@@ -722,19 +735,24 @@ mt_generate_ref() {
     # For tags, return early if it already exists.
     [ -n "$work" -o ! $mttype = tag ] || return 0
 
-    local refdirs repeat rawstart
+    local refdirs repeat rawstart tagmsgsrc
     refdirs="$(print_active_refdirs "$rawtarget")" ||
         error "failed to extract active refdirs for $rawtarget"
     repeat="$(print_repeat "$rawtarget")" ||
         error "failed to extract any repeat directive for $rawtarget"
     rawstart="$(print_start "$rawtarget")" ||
         error "failed to extract any start directive for $rawtarget"
+    tagmsgsrc="$(print_tagmsg "$rawtarget")" ||
+        error "failed to extract any tagmsg directive for $rawtarget"
 
     [ -n "$refdirs" ] ||
         error "generate $target: no 'dir' declarations"
+    [ -z "$tagmsgsrc" -o $mttype = tag ] ||
+        error "generate $target: tagmsg specified for $mttype"
 
     local refdir ref dir dirs sha1
     local mtref mtsha1
+    local found_tagmsg=false
     local -a goal_sha1s
     for refdir in $refdirs; do
         ref=${refdir%:*}
@@ -747,6 +765,12 @@ mt_generate_ref() {
         goal_sha1s=( "${goal_sha1s[@]}" "$sha1" )
         [ "$dir" = "*" ] &&
             error "generate $target: invalid dir '$dir' for ref '$ref'"
+
+        if [ "$dir" = "$tagmsgsrc" ]; then
+            run --hide-errors git rev-parse --verify $ref^{tag} ||
+                error "generate $target: tagmsg at $dir ($ref) is not a tag"
+            found_tagmsg=true
+        fi
 
         # Figure out if there's work to do, if we haven't found it already.
         [ -z "$work" ] || continue
@@ -762,6 +786,9 @@ mt_generate_ref() {
         report_work $mttype "$mtname: $dir"
         # Not reachable...
     done
+
+    [ -z "$tagmsgsrc" ] || $found_tagmsg ||
+        error "generate $target: No dir $tagmsgsrc for tagmsg"
 
     refdirs="$(print_all_refdirs "$rawtarget")" ||
         error "failed to extract complete refdirs for $rawtarget"
@@ -816,7 +843,8 @@ mt_generate_ref() {
         error "failed to extract complete refdirs for $rawtarget"
 
     should_push_ref=true
-    run --dry git apple-llvm mt translate-ref $target "$start" $refdirs ||
+    run --dry git apple-llvm mt translate-ref \
+        $target "$start" "$tagmsgsrc" $refdirs ||
         error "failed to generate $mttype '$target'"
 }
 
