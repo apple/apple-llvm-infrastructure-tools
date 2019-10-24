@@ -7,11 +7,13 @@ helper mt_list_commits
 
 usage() {
     printf "%s\n" \
-        "usage: $(print_cmdname) [options] <target> <start> <ref>:<dir>..." \
+        "usage: $(print_cmdname) [options] <target> <start> <tagmsgsrc>"    \
+        "                        <ref>:<dir>..."                            \
         ""                                                                  \
         "   <target>      the ref to interleave"                            \
         "   <start>       the start ref (ignored if <target> exists)"       \
         "                   this can safely be empty"                       \
+        "   <tagmsgsrc>   dir to get tag message from"                      \
         "   <ref>         a ref to interleave commits from"                 \
         "                   '%<ref>[{no-pass}]' to repeat commits"          \
         "                     from <upstream> (optionally, without passing" \
@@ -22,7 +24,7 @@ usage() {
 }
 
 main() {
-    local target start
+    local target start tagmsgsrc
     local -a refdirs
     parse_cmdline "$@" || return 1
 
@@ -36,7 +38,8 @@ main() {
 parse_cmdline() {
     [ $# -ge 1 ] || usage_error "missing <target>"
     [ $# -ge 2 ] || usage_error "missing <start> (can be empty)"
-    [ $# -ge 3 ] || usage_error "missing <ref>:<dir>..."
+    [ $# -ge 3 ] || usage_error "missing <tagmsgsrc> (can be empty)"
+    [ $# -ge 4 ] || usage_error "missing <ref>:<dir>..."
     local pos=0
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -54,7 +57,8 @@ parse_cmdline() {
                 usage_error "unknown option '$1'"
                 ;;
             *)
-                [ $pos -lt 2 ] || usage_error "invalid <ref>:<dir> '$1'"
+                [ $pos -lt 3 ] || usage_error "invalid <ref>:<dir> '$1'"
+                [ $pos -ne 2 ] || tagmsgsrc="$1"
                 [ $pos -ne 1 ] || start="$1"
                 [ $pos -ne 0 ] || target="$1"
                 pos=$(( $pos + 1 ))
@@ -70,6 +74,7 @@ parse_cmdline() {
 }
 
 get_commit_sha1() { run --hide-errors git rev-parse --verify "$1"^{commit}; }
+get_tag_sha1() { run --hide-errors git rev-parse --verify "$1"^{tag}; }
 is_translated() { mt_split2mono "$1" >/dev/null 2>/dev/null; }
 translate_ref() {
     local current
@@ -103,7 +108,7 @@ translate_ref() {
         start_mtprefix=refs/heads/mt-tag/
     fi
 
-    local r d rd mtref goal_sha1
+    local r d rd mtref goal_sha1 tagmsg_sha1
     local -a listdirs # refs to list commits of and for which directory
     local -a repeated # directories getting repeated
     local repeated_root # the root is getting repeated
@@ -123,6 +128,11 @@ translate_ref() {
         # Gather all the declared directories for list_new_commits, except for
         # '-'.
         [ "$d" = - ] || declared="$declared${declared:+ }$d"
+
+        if [ "$d" = "$tagmsgsrc" ]; then
+            tagmsg_sha1=$(get_tag_sha1 $r) ||
+                error "invalid ref for tagmsg for '$r' in '$d'"
+        fi
 
         # Return early if there is no ref for this directory.
         if [ "$r" = - ]; then
@@ -224,6 +234,7 @@ create_initial_merge_impl() {
 
 process_new_commits() {
     # From parent: local head
+    # From parent: local tagmsg_sha1
     # From parent: local -a head_sha1dirs
     # From parent: local -a other_sha1dirs
     # From parent: local -a goal_sha1dirs
@@ -261,6 +272,7 @@ interleave_commits() {
 update_refs() {
     # From parent: local target
     # From parent: local head
+    # From parent: local tagmsg_sha1
     # From parent: local new_sha1dirs
     local current="$1"
     local old_sha1dirs="$2"
@@ -270,7 +282,12 @@ update_refs() {
     if [ "$mttype" = tag ]; then
         local -a message trailers
         local dslash
-        message=( "Tagging $name" "" )
+        if [ -n "$tagmsg_sha1" ]; then
+            message=( "$(git show --format= -s $tagmsg_sha1 |
+                             awk 'found {print} NF == 0 {found=1}' )" "" )
+        else
+            message=( "Tagging $mtname" "" )
+        fi
         for sd in $new_sha1dirs; do
             d=${sd#*:}
             if [ "$d" = % ]; then
@@ -284,7 +301,7 @@ update_refs() {
             sha1=${sd%:*}
             mtref=$mtprefix$mtname/$d/mt-split
             updates=( "${updates[@]}" "update $mtref $sha1 $ZERO_SHA1" )
-            message=( "${message[@]}" "  - $sha1: $dslash" )
+            message=( "${message[@]}" "- $sha1: $dslash" )
             trailers=( "${trailers[@]}" "apple-llvm-split-dir: $dslash" )
         done
         message=( "${message[@]}" "" "${trailers[@]}" )

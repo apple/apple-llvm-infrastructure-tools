@@ -1,0 +1,27 @@
+repo a   file://%t-a
+repo b   file://%t-b
+repo out file://%t-out
+
+destination splitref out
+destination monorepo out
+
+declare-dir a
+declare-dir b
+
+generate branch master
+dir master a a/master
+dir master b b/master
+
+generate tag tag-a-default
+dir tag-a-default a remotes/a/tag-a/remote-tag
+dir tag-a-default b remotes/b/tag-b/remote-tag
+
+generate tag tag-a
+dir tag-a a remotes/a/tag-a/remote-tag
+dir tag-a b remotes/b/tag-b/remote-tag
+tagmsg tag-a a
+
+generate tag tag-b
+dir tag-b a remotes/a/tag-a/remote-tag
+dir tag-b b remotes/b/tag-b/remote-tag
+tagmsg tag-b b

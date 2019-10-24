@@ -1,0 +1,61 @@
+RUN: mkrepo %t-a
+RUN: mkrepo %t-b
+RUN: env ct=1550000001 mkblob %t-b 1
+RUN: env ct=1550000002 mkblob %t-a 2
+RUN: git -C %t-a tag -a -m "Message for tag A" tag-a
+RUN: printf "Message for tag B\n\nBody" | git -C %t-b tag -a -F - tag-b
+
+RUN: mkrepo --bare %t-out
+RUN: rm -rf %t-mt-repo.git
+RUN: rm -rf   %t-mt-configs
+RUN: mkdir -p %t-mt-configs
+RUN: cat         %S/Inputs/tagmsg.mt-config.in | sed -e 's,%%t,%t,' \
+RUN:   | tee %t-mt-configs/tagmsg.mt-config
+RUN: %mtgen --git-dir %t-mt-repo.git --config-dir %t-mt-configs tagmsg
+RUN: number-commits -p A %t-mt-repo.git a/master  >%t.map
+RUN: number-commits -p B %t-mt-repo.git b/master >>%t.map
+RUN: number-commits -p M %t-mt-repo.git master   >>%t.map
+
+RUN: git -C %t-mt-repo.git show --format=%H -s tag-a-default \
+RUN:   | apply-commit-numbers %t.map | sed '/^Tagger:/d' \
+RUN:   | check-diff %s TAG-A-DEFAULT %t
+TAG-A-DEFAULT: tag tag-a-default
+TAG-A-DEFAULT:
+TAG-A-DEFAULT: Tagging tag-a-default
+TAG-A-DEFAULT:
+TAG-A-DEFAULT: - A-1: a/
+TAG-A-DEFAULT: - B-1: b/
+TAG-A-DEFAULT:
+TAG-A-DEFAULT: apple-llvm-split-dir: a/
+TAG-A-DEFAULT: apple-llvm-split-dir: b/
+TAG-A-DEFAULT: M-2
+
+RUN: git -C %t-mt-repo.git show --format=%H -s tag-a \
+RUN:   | apply-commit-numbers %t.map | sed '/^Tagger:/d' \
+RUN:   | check-diff %s TAG-A %t
+TAG-A: tag tag-a
+TAG-A:
+TAG-A: Message for tag A
+TAG-A:
+TAG-A: - A-1: a/
+TAG-A: - B-1: b/
+TAG-A:
+TAG-A: apple-llvm-split-dir: a/
+TAG-A: apple-llvm-split-dir: b/
+TAG-A: M-2
+
+RUN: git -C %t-mt-repo.git show --format=%H -s tag-b \
+RUN:   | apply-commit-numbers %t.map | sed '/^Tagger:/d' \
+RUN:   | check-diff %s TAG-B %t
+TAG-B: tag tag-b
+TAG-B:
+TAG-B: Message for tag B
+TAG-B:
+TAG-B: Body
+TAG-B:
+TAG-B: - A-1: a/
+TAG-B: - B-1: b/
+TAG-B:
+TAG-B: apple-llvm-split-dir: a/
+TAG-B: apple-llvm-split-dir: b/
+TAG-B: M-2
