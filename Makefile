@@ -19,7 +19,7 @@ ifeq ($(PREFIX),)
   PIP := pip3
 else
   VIRTUALENV := $(PREFIX)
-  PIP := $(PREFIX)/bin/pip
+  PIP := $(PREFIX)/bin/pip3
 endif
 
 INSTALL := install
@@ -43,13 +43,13 @@ show-params:
 install-python-package: $(VIRTUALENV)
 	@echo "Installing python packages"
 	@echo "################################################################################"
-	$(PIP) install $(verbose_arg) .
+	env GIT_APPLE_LLVM_NO_BIN_LIBEXEC=1 $(PIP) install $(verbose_arg) .
 	@echo ""
 
 $(VIRTUALENV):
 	@echo "Creating virtualenv at $(PREFIX) "
 	@echo "################################################################################"
-	virtualenv -p python3 $(PREFIX)
+	python3 -m venv $(PREFIX)
 	@echo ""
 
 install-git-scripts:
