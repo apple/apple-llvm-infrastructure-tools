@@ -60,7 +60,7 @@ setup(
     author='Apple',
     python_requires='>=3.7.0',
     packages=packages,
-    data_files=[('bin', ['bin/git-apple-llvm'])] + libexec_paths,
+    data_files=[] if os.getenv('GIT_APPLE_LLVM_NO_BIN_LIBEXEC') else [('bin', ['bin/git-apple-llvm'])] + libexec_paths,
     install_requires=['click', 'appdirs', 'github3.py', 'redis'],
     cmdclass={
         'info': InfoCommand,
