@@ -1,10 +1,4 @@
-RUN: rm -rf %t/venv
-RUN: mkdir -p %t/prefix
-RUN: python3 -m venv %t/venv
 RUN: rm -rf %t/prefix
-RUN: mkdir -p %t/prefix
-RUN: mkdir -p %t/prefix/bin
-RUN: mkdir -p %t/prefix/libexec
 RUN: rm -rf %t/src
 RUN: mkdir -p %t/src
 
@@ -15,7 +9,7 @@ RUN: cp -r %S/../../libexec %t/src/libexec
 RUN: cp -r %S/../../Makefile %t/src/Makefile
 RUN: cp -r %S/../../setup.py %t/src/setup.py
 
-RUN: make -C %t/src/ install PREFIX=%t/prefix PIP=%t/venv/bin/pip
+RUN: make -C %t/src/ install PREFIX=%t/prefix
 
 # Check that the files are there.
 RUN: ls %t/prefix/bin/git-apple-llvm
@@ -23,7 +17,7 @@ RUN: ls %t/prefix/libexec/apple-llvm
 
 # Check that the python package is there.
 RUN: echo "import git_apple_llvm.git_tools" > %t/src.py
-RUN: %t/venv/bin/python %t/src.py
+RUN: %t/prefix/bin/python %t/src.py
 
 # Check that the version is set.
 RUN: git apple-llvm --version > %t/orig_v
@@ -31,15 +25,14 @@ RUN: %t/prefix/bin/git-apple-llvm --version > %t/installed_v
 RUN: not diff %t/orig_v %t/installed_v
 
 # Run the uninstaller.
-RUN: make -C %t/src uninstall PREFIX=%t/prefix PIP=%t/venv/bin/pip
+RUN: make -C %t/src uninstall PREFIX=%t/prefix
 
 # The files should be removed.
 RUN: not ls %t/prefix/bin/git-apple-llvm
 RUN: not ls %t/prefix/libexec/apple-llvm
 
 # The python package should be gone as well.
-RUN: not %t/venv/bin/python %t/src.py
+RUN: not %t/prefix/bin/python %t/src.py
 
-# Cleanup the venv. It must not interefere with any greps for python files.
-RUN: rm -rf %t/venv
+# Cleanup tmps. It must not interefere with any greps for python files.
 RUN: rm -rf %t/src.py
