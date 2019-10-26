@@ -15,6 +15,9 @@ packages = find_packages('git_apple_llvm', exclude=[
                          "tests", "*.tests", "*.tests.*", "tests.*"])
 packages = [f'git_apple_llvm.{x}' for x in packages]
 
+libexec_paths = []
+for dirname, _, files in os.walk('libexec'):
+    libexec_paths += [(dirname, [os.path.join(dirname, f) for f in files])]
 
 class CleanCommand(Command):
     """Custom clean command to tidy up the project root."""
@@ -57,6 +60,7 @@ setup(
     author='Apple',
     python_requires='>=3.7.0',
     packages=packages,
+    data_files=[('bin', ['bin/git-apple-llvm'])] + libexec_paths,
     install_requires=['click', 'appdirs', 'github3.py', 'redis'],
     cmdclass={
         'info': InfoCommand,

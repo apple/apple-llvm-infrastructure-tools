@@ -53,11 +53,8 @@ $(VIRTUALENV):
 	@echo ""
 
 install-git-scripts:
-	@echo "Installing 'git apple-llvm' bash scripts"
+	@echo "Injecting version for 'git apple-llvm' bash scripts"
 	@echo "################################################################################"
-	$(INSTALL) bin/git-apple-llvm $(DESTDIR)$(PREFIX)/bin/
-	$(INSTALL) -d $(DESTDIR)$(PREFIX)/libexec/apple-llvm
-	tar cf - libexec/apple-llvm | (cd $(DESTDIR)$(PREFIX); tar xf -)
 	echo "${shell utils/get-git-revision.sh}" > $(DESTDIR)$(PREFIX)/libexec/apple-llvm/helpers/version
 	@echo ""
 	@echo "################################################################################"
