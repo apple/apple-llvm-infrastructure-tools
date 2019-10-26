@@ -2,19 +2,24 @@
 # Configuration variables.
 ################################################################################
 
-PIP = pip3
 VERBOSE = 0
 
 ################################################################################
 
 ifeq "$(VERBOSE)" "1"
-	verbose_arg='-v'
+  verbose_arg='-v'
 else
-	verbose_arg=
+  verbose_arg=
 endif
 
 ifeq ($(PREFIX),)
-	PREFIX := /usr/local
+  PREFIX := /usr/local
+  # Blank out VIRTUALENV and use the system pip
+  VIRTUALENV :=
+  PIP := pip3
+else
+  VIRTUALENV := $(PREFIX)
+  PIP := $(PREFIX)/bin/pip
 endif
 
 INSTALL := install
@@ -22,8 +27,10 @@ INSTALL := install
 help:
 	@echo "git apple-llvm can be installed using 'make install'"
 
-install:
-	@echo "Installing 'git-apple-llvm'"
+install: show-params install-python-package install-git-scripts
+
+show-params:
+	@echo "'git-apple-llvm' version:"
 	@echo "  ${shell utils/get-git-revision.sh}"
 	@echo "################################################################################"
 	@echo "The following parameters are set:"
@@ -32,10 +39,20 @@ install:
 	@echo "  PREFIX = ${PREFIX}"
 	@echo "  DESTDIR = ${DESTDIR}"
 	@echo ""
+
+install-python-package: $(VIRTUALENV)
 	@echo "Installing python packages"
 	@echo "################################################################################"
 	$(PIP) install $(verbose_arg) .
 	@echo ""
+
+$(VIRTUALENV):
+	@echo "Creating virtualenv at $(PREFIX) "
+	@echo "################################################################################"
+	virtualenv -p python3 $(PREFIX)
+	@echo ""
+
+install-git-scripts:
 	@echo "Installing 'git apple-llvm' bash scripts"
 	@echo "################################################################################"
 	$(INSTALL) bin/git-apple-llvm $(DESTDIR)$(PREFIX)/bin/
