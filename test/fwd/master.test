@@ -28,6 +28,10 @@ RUN: cat %s | sed -e s,__REPOS__,%t/repos, > %t/configs/t.fwd-config
 RUN: cd %t/working
 RUN: git apple-llvm fwd --config-dir %t/configs t
 
+# Check that we've put our working directory where we expected to
+RUN: git --git-dir %t/working/apple-llvm-fwd-repo.git show-ref
+RUN: not git --git-dir %t/working/.git show-ref
+
 # Check the output.
 RUN: git -C %t/repos/b.git show-ref a/master
 RUN: not git -C %t/repos/b.git show-ref refs/heads/master
