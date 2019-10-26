@@ -35,12 +35,8 @@ fwd_setup() {
 
     # Always change directory.
     log "Updating remotes up and syncing $GIT_DIR"
-    if [ -d "$GIT_DIR" ]; then
-        run --dry cd "$GIT_DIR" || error "failed to enter '$GIT_DIR'"
-    else
-        run --dry mkdir -p "$GIT_DIR" || error "failed to make '$GIT_DIR'"
+    run --hide-errors --dry git --git-dir="$GIT_DIR" show-ref >/dev/null ||
         run --dry git init || error "failed to create '$GIT_DIR'"
-    fi
 
     local -a remotes
     for remote in $(run cat "$FWD_CONFIG" |
@@ -98,6 +94,9 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$NAME" ] || usage_error "missing name of fwd-config"
+
+# Export GIT_DIR so that child git processes use it
+export GIT_DIR
 
 fwd_setup || exit 1
 
