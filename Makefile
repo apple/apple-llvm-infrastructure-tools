@@ -52,7 +52,7 @@ $(VIRTUALENV):
 	python3 -m venv $(PREFIX)
 	@echo ""
 
-LIBEXEC_DIR=$(DESTDIR)$(PREFIX)/libexec/apple-llvm
+LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/apple-llvm
 
 install-git-scripts: svn2git split2mono
 	@echo "Installing 'git apple-llvm' bash scripts"
