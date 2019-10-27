@@ -66,7 +66,7 @@ install-git-scripts: svn2git split2mono
 	@echo "Installation succeeded: 'git apple-llvm' is now available!"
 
 svn2git split2mono:
-	make -C src D="$(LIBEXEC_DIR)/tools" $(LIBEXEC_DIR)/tools/$@
+	make -C src D="$(LIBEXEC_DIR)" $(LIBEXEC_DIR)/$@
 
 uninstall:
 	@echo "Uninstalling 'git-apple-llvm'"

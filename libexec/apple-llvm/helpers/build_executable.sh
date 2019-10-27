@@ -4,7 +4,7 @@ build_executable() {
     # Check for an override from the environment, used by tests, falling back
     # to libexec/apple-llvm, used by installed tools.
     local prebuiltdir="$APPLE_LLVM_PREBUILT_DIR"
-    [ -n "$prebuiltdir" ] || prebuiltdir="$APPLE_LLVM_LIBEXEC_DIR"/tools
+    [ -n "$prebuiltdir" ] || prebuiltdir="$APPLE_LLVM_LIBEXEC_DIR"
 
     # Return early if there's nothing to build.
     local execpath="$prebuiltdir"/"$name"
