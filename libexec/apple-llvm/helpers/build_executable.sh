@@ -1,8 +1,15 @@
 build_executable() {
     local name="$1"
-    if [ -x "$APPLE_LLVM_LIBEXEC_DIR"/tools/"$name" ]; then
-        # Prebuilt executable (ie, we're installed)
-        echo "$APPLE_LLVM_LIBEXEC_DIR"/tools/"$name"
+
+    # Check for an override from the environment, used by tests, falling back
+    # to libexec/apple-llvm, used by installed tools.
+    local prebuiltdir="$APPLE_LLVM_PREBUILT_DIR"
+    [ -n "$prebuiltdir" ] || prebuiltdir="$APPLE_LLVM_LIBEXEC_DIR"/tools
+
+    # Return early if there's nothing to build.
+    local execpath="$prebuiltdir"/"$name"
+    if [ -x "$execpath" ]; then
+        echo "$execpath"
         return 0
     fi
 
@@ -23,7 +30,7 @@ build_executable() {
 
     local pd="$TMPDIR"mt-build-executable
     local d="$pd/$sha1"
-    local execpath="$d"/"$name"
+    execpath="$d"/"$name"
     if [ -x "$execpath" ]; then
         echo "$execpath"
         return 0
