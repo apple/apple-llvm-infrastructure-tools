@@ -1,8 +1,8 @@
 build_executable() {
     local name="$1"
-    if [ -x "$(dirname $0)"/tools/"$name" ]; then
+    if [ -x "$APPLE_LLVM_LIBEXEC_DIR"/tools/"$name" ]; then
         # Prebuilt executable (ie, we're installed)
-        echo "$(dirname $0)"/tools/"$name"
+        echo "$APPLE_LLVM_LIBEXEC_DIR"/tools/"$name"
         return 0
     fi
 
