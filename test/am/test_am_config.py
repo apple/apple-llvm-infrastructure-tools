@@ -16,17 +16,19 @@ from click.testing import CliRunner
 def am_tool_git_repo(tmp_path_factory) -> str:
     path = str(tmp_path_factory.mktemp('simple-am-dir'))
 
-    am_config = {
+    am_config = [{
+        'target': 'master',
         'upstream': 'upstream'
-    }
+    }]
     git('init', git_dir=path)
     os.mkdir(os.path.join(path, 'apple-llvm-config'))
     os.mkdir(os.path.join(path, 'apple-llvm-config', 'am'))
-    with open(os.path.join(path, 'apple-llvm-config', 'am', 'master.json'), 'w') as f:
+    with open(os.path.join(path, 'apple-llvm-config', 'am', 'am-config.json'), 'w') as f:
         f.write(json.dumps(am_config))
-    git('add', 'apple-llvm-config/am/master.json', git_dir=path)
+    git('add', 'apple-llvm-config/am/am-config.json', git_dir=path)
     git('commit', '-m', 'am config', git_dir=path)
     git('commit', '-m', 'up', '--allow-empty', git_dir=path)
+    git('checkout', '-b', 'repo/apple-llvm-config/am', git_dir=path)
     git('checkout', '-b', 'upstream', 'HEAD~1', git_dir=path)
     git('commit', '-m', 'up', '--allow-empty', git_dir=path)
     return path
@@ -63,7 +65,7 @@ def test_am_config(cd_to_am_tool_repo_clone):
 def test_am_print_status(cd_to_am_tool_repo_clone, capfd):
     print_status()
     captured = capfd.readouterr()
-    assert captured.out == '[upstream -> master]\n- There are no unmerged commits. The master is up to date.\n'
+    assert captured.out == '[upstream -> master]\n- There are no unmerged commits. The master branch is up to date.\n'
 
 
 def test_am_status(cd_to_am_tool_repo_clone):
@@ -71,6 +73,6 @@ def test_am_status(cd_to_am_tool_repo_clone):
                                 mix_stderr=True)
 
     assert result.exit_code == 0
-    assert result.output == '[upstream -> master]\n- There are no unmerged commits. The master is up to date.\n'
+    assert result.output == '[upstream -> master]\n- There are no unmerged commits. The master branch is up to date.\n'
 
 # FIXME: more tests.
