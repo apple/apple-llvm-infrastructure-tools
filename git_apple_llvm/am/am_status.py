@@ -7,7 +7,6 @@ from git_apple_llvm.git_tools import git, git_output
 import logging
 import click
 from typing import Dict, List, Set, Optional
-from functools import cmp_to_key
 
 
 AM_PREFIX = 'refs/am/changes/'
@@ -73,7 +72,7 @@ def print_edge_status(upstream_branch: str, target_branch: str,
     click.echo(click.style(
         f'[{upstream_branch} -> {target_branch}]', bold=True))
     if not commit_log_output:
-        print(f'- There are no unmerged commits. The {target_branch} is up to date.')
+        print(f'- There are no unmerged commits. The {target_branch} branch is up to date.')
         return
     commits: List[str] = commit_log_output.split('\n')
     inflight_count = compute_inflight_commit_count(commits, commits_inflight)
@@ -101,54 +100,7 @@ def print_edge_status(upstream_branch: str, target_branch: str,
 
 
 def print_status(remote: str = 'origin', target_branch: Optional[str] = None, list_commits: bool = False):
-    found_configs: List[AMTargetBranchConfig] = find_am_configs(remote)
-
-    # Find roots.
-    targets: Dict[str, bool] = {}
-    upstream_config_mapping: Dict[str, List[AMTargetBranchConfig]] = {}
-    # Map branch name -> config.
-    for config in found_configs:
-        if config.upstream in upstream_config_mapping:
-            upstream_config_mapping[config.upstream].append(config)
-        else:
-            upstream_config_mapping[config.upstream] = [config]
-        if config.upstream not in targets:
-            targets[config.upstream] = False
-        targets[config.target] = True
-
-    root_configs: List[AMTargetBranchConfig] = []
-    for (branch, is_target) in targets.items():
-        if not is_target:
-            assert len(upstream_config_mapping[branch]) == 1
-            root_configs.append(upstream_config_mapping[branch][0])
-    log.debug(f'ROOTS UNSORTED: {root_configs}')
-
-    # Sort roots.
-    first_one = set(['llvm.org/master', 'apple/master'])
-
-    def compare_root(x: AMTargetBranchConfig, y: AMTargetBranchConfig):
-        if x.upstream in first_one:
-            return -1
-        if y.upstream in first_one:
-            return 1
-        if x.target < y.target:
-            return -1
-        if y.target < x.target:
-            return 1
-        return 0
-    root_configs = sorted(root_configs, key=cmp_to_key(compare_root))
-    log.debug(f'ROOTS SORTED: {root_configs}')
-
-    # Build topology.
-    configs: List[AMTargetBranchConfig] = []
-    for config in root_configs:
-        configs.append(config)
-        if config.target in upstream_config_mapping:
-            # FIXME: More fixes!
-            configs += upstream_config_mapping[config.target]
-
-    log.debug(f'CONFIGS: {config}')
-
+    configs: List[AMTargetBranchConfig] = find_am_configs(remote)
     if target_branch:
         configs = list(
             filter(lambda config: config.target == target_branch, configs))
