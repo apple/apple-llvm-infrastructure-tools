@@ -2,6 +2,7 @@ import click
 import logging
 from typing import Optional
 from git_apple_llvm.git_tools import git
+from git_apple_llvm.am.am_graph import print_graph
 from git_apple_llvm.am.am_status import print_status
 from git_apple_llvm.am.oracle import set_state, get_state
 
@@ -53,6 +54,21 @@ def status(target: Optional[str], all_commits: bool, no_fetch: bool):
         git('fetch', remote, stderr=None)
         click.echo('✅ Fetch succeeded!\n')
     print_status(remote=remote, target_branch=target, list_commits=all_commits)
+
+
+@am.command()
+@click.option('--no-fetch', is_flag=True, default=False,
+              help='Do not fetch remote (WARNING: status will be stale!).')
+@click.option('--format', metavar='<format>', type=str,
+              default=None,
+              help='The file format for the generated graph.')
+def graph(no_fetch: bool, format: str):
+    remote = 'origin'
+    if not no_fetch:
+        click.echo(f'❕ Fetching "{remote}" to provide the latest status...')
+        git('fetch', remote, stderr=None)
+        click.echo('✅ Fetch succeeded!\n')
+    print_graph(remote=remote, fmt=format)
 
 
 @am.group()
