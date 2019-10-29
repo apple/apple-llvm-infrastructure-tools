@@ -20,13 +20,19 @@ def print_graph(remote: str = 'origin', fmt: str = 'pdf'):
         print(f'Generating the automerger graph requires the "graphviz" Python package.')
         return
     try:
-        dot = Digraph(comment='Automergers',
-                      format=fmt,
-                      node_attr={'shape': 'record'})
+        graph = Digraph(comment='Automergers',
+                        format=fmt,
+                        node_attr={'shape': 'record',
+                                   'style': 'filled',
+                                   'color': 'lightblue',
+                                   'fixedsize': 'true',
+                                   'width': '3',
+                                   'height': '0.8',
+                                   })
     except ValueError as e:
         print(e)
         return
-    dot.node_attr.update(style='filled', color='lightblue')
+    graph.attr(rankdir='LR', nodesep='1', ranksep='1')
     for config in configs:
-        dot.edge(config.upstream, config.target)
-    dot.render('automergers', view=True)
+        graph.edge(config.upstream, config.target, weight='10')
+    graph.render('automergers', view=True)
