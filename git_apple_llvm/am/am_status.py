@@ -3,6 +3,7 @@
 """
 
 from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
+from git_apple_llvm.am.core import is_secondary_edge_commit_blocked_by_primary_edge
 from git_apple_llvm.git_tools import git, git_output
 import logging
 import click
@@ -59,7 +60,8 @@ def compute_inflight_commit_count(commits: List[str], commits_inflight: Set[str]
 
 
 def print_edge_status(upstream_branch: str, target_branch: str,
-                      inflight_merges: Dict[str, List[str]], list_commits: bool = False, remote: str = 'origin'):
+                      inflight_merges: Dict[str, List[str]], list_commits: bool = False, remote: str = 'origin',
+                      common_ancestor: Optional[str] = None, primary_edge: Optional[str] = None):
     commits_inflight: Set[str] = set(
         inflight_merges[target_branch] if target_branch in inflight_merges else [])
 
@@ -82,10 +84,18 @@ def print_edge_status(upstream_branch: str, target_branch: str,
 
     def print_commit_status(commit: str):
         hash = commit.split(' ')[0]
+        is_blocked: bool = False
+        if common_ancestor:
+            is_blocked = is_secondary_edge_commit_blocked_by_primary_edge(hash, f'{remote}/{common_ancestor}',
+                                                                          f'{remote}/{target_branch}')
+        status = ''
         if hash in commits_inflight:
-            print(f'  * {commit}: Auto merge in progress')
-        else:
-            print(f'  * {commit}')
+            status = f'{status} Auto merge in progress'
+        if is_blocked:
+            status = f'{status} Blocked by not fully merged {primary_edge} -> {target_branch} edge'
+        if status:
+            status = f':{status}'
+        print(f'  * {commit}{status}')
 
     print_commit_status(commits[0])
     if list_commits:
@@ -119,5 +129,7 @@ def print_status(remote: str = 'origin', target_branch: Optional[str] = None, li
                           ms, list_commits, remote)
         if config.secondary_upstream:
             print_edge_status(config.secondary_upstream,
-                              config.target, ms, list_commits, remote)
+                              config.target, ms, list_commits, remote,
+                              common_ancestor=config.common_ancestor,
+                              primary_edge=config.upstream)
         printed = True
