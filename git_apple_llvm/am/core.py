@@ -6,6 +6,17 @@ from git_apple_llvm.git_tools import git_output
 from typing import Optional
 
 
+class CommitStates:
+    new = "NEW"
+    conflict = "CONFLICT"
+    pending = "PENDING"
+    started = "STARTED"
+    passed = "PASSED"
+    failed = "FAILED"
+    known_failed = "KNOWN_FAILED"  # When Failed was already reported.
+    all = [new, conflict, pending, started, passed, failed, known_failed]
+
+
 def is_secondary_edge_commit_blocked_by_primary_edge(upstream_commit_hash: str, common_ancestor_ref: str,
                                                      target_ref: str, git_dir: Optional[str] = None) -> bool:
     """ Returns true if the given commit hash from secondary upstream edge can be merged,

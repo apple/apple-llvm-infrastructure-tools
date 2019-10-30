@@ -2,6 +2,7 @@ import click
 import logging
 from typing import Optional
 from git_apple_llvm.git_tools import git
+from git_apple_llvm.am.core import CommitStates
 from git_apple_llvm.am.am_graph import print_graph
 from git_apple_llvm.am.am_status import print_status
 from git_apple_llvm.am.oracle import set_state, get_state
@@ -47,13 +48,15 @@ def am(verbose):
               help='List all outstanding commits in the merge backlog.')
 @click.option('--no-fetch', is_flag=True, default=False,
               help='Do not fetch remote (WARNING: status will be stale!).')
-def status(target: Optional[str], all_commits: bool, no_fetch: bool):
+@click.option('--ci-status', is_flag=True, default=False,
+              help='Query additional CI status from Redis.')
+def status(target: Optional[str], all_commits: bool, no_fetch: bool, ci_status: bool):
     remote = 'origin'
     if not no_fetch:
         click.echo(f'❕ Fetching "{remote}" to provide the latest status...')
         git('fetch', remote, stderr=None)
         click.echo('✅ Fetch succeeded!\n')
-    print_status(remote=remote, target_branch=target, list_commits=all_commits)
+    print_status(remote=remote, target_branch=target, list_commits=all_commits, query_ci_status=ci_status)
 
 
 @am.command()
@@ -83,7 +86,9 @@ def result():
 @click.argument('status')
 def set(merge_id, status):
     """Set the merge status for a merge ID."""
-    # FIXME: Verify that status is valid.
+    if status not in CommitStates.all:
+        all_status = ', '.join(CommitStates.all)
+        raise click.BadArgumentUsage(f"Status must be one of {all_status}.")
     set_state(merge_id, status)
     click.echo(f"Set {merge_id} to {status}")
 

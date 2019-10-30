@@ -4,6 +4,7 @@
 
 from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
 from git_apple_llvm.am.core import is_secondary_edge_commit_blocked_by_primary_edge
+from git_apple_llvm.am.oracle import get_ci_status
 from git_apple_llvm.git_tools import git, git_output
 import logging
 import click
@@ -61,7 +62,8 @@ def compute_inflight_commit_count(commits: List[str], commits_inflight: Set[str]
 
 def print_edge_status(upstream_branch: str, target_branch: str,
                       inflight_merges: Dict[str, List[str]], list_commits: bool = False, remote: str = 'origin',
-                      common_ancestor: Optional[str] = None, primary_edge: Optional[str] = None):
+                      common_ancestor: Optional[str] = None, primary_edge: Optional[str] = None,
+                      query_ci_status: bool = False):
     commits_inflight: Set[str] = set(
         inflight_merges[target_branch] if target_branch in inflight_merges else [])
 
@@ -95,6 +97,10 @@ def print_edge_status(upstream_branch: str, target_branch: str,
             status = f'{status} Blocked by not fully merged {primary_edge} -> {target_branch} edge'
         if status:
             status = f':{status}'
+        if query_ci_status:
+            ci_state: Optional[str] = get_ci_status(hash, target_branch)
+            if ci_state:
+                status = f': {ci_state}'
         print(f'  * {commit}{status}')
 
     print_commit_status(commits[0])
@@ -109,7 +115,8 @@ def print_edge_status(upstream_branch: str, target_branch: str,
         print_commit_status(commits[-1])
 
 
-def print_status(remote: str = 'origin', target_branch: Optional[str] = None, list_commits: bool = False):
+def print_status(remote: str = 'origin', target_branch: Optional[str] = None, list_commits: bool = False,
+                 query_ci_status: bool = False):
     configs: List[AMTargetBranchConfig] = find_am_configs(remote)
     if target_branch:
         configs = list(
@@ -126,10 +133,12 @@ def print_status(remote: str = 'origin', target_branch: Optional[str] = None, li
         if printed:
             print('')
         print_edge_status(config.upstream, config.target,
-                          ms, list_commits, remote)
+                          ms, list_commits, remote,
+                          query_ci_status=query_ci_status)
         if config.secondary_upstream:
             print_edge_status(config.secondary_upstream,
                               config.target, ms, list_commits, remote,
                               common_ancestor=config.common_ancestor,
-                              primary_edge=config.upstream)
+                              primary_edge=config.upstream,
+                              query_ci_status=query_ci_status)
         printed = True
