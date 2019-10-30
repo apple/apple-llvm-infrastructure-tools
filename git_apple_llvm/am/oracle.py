@@ -8,6 +8,8 @@ import sys
 
 import redis
 import logging
+from typing import Optional
+from git_apple_llvm.am.core import CommitStates
 
 log = logging.getLogger(__name__)
 
@@ -48,3 +50,12 @@ def set_state(tree_hash, state):
 def clear_state(tree_hash):
     r = redis.Redis(host=host, port=redis_port, db=redis_db, password=get_credentials(host))
     return r.delete(tree_hash)
+
+
+def get_ci_status(commit_hash: str, target_branch: str) -> Optional[str]:
+    id = f'{commit_hash}_{target_branch}'
+    val = get_state(id)
+    if val:
+        assert val in CommitStates.all
+        return val
+    return None
