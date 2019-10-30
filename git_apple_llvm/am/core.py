@@ -2,8 +2,15 @@
   Module for core automerger operations.
 """
 
-from git_apple_llvm.git_tools import git_output
-from typing import Optional
+from git_apple_llvm.git_tools import git, git_output
+from typing import Dict, List, Optional
+import logging
+
+AM_PREFIX = 'refs/am/changes/'
+AM_STATUS_PREFIX = 'refs/am-status/changes/'
+
+
+log = logging.getLogger(__name__)
 
 
 class CommitStates:
@@ -29,3 +36,35 @@ def is_secondary_edge_commit_blocked_by_primary_edge(upstream_commit_hash: str, 
     if not br:
         return True
     return br != 'refs/remotes/' + target_ref
+
+
+def find_inflight_merges(remote: str = 'origin') -> Dict[str, List[str]]:
+    """
+       This function fetches the refs created by the automerger to find
+       the inflight merges that are currently being processed.
+    """
+    git('fetch', remote,
+        f'{AM_PREFIX}*:{AM_STATUS_PREFIX}*')  # FIXME: handle fetch failures.
+    refs = git_output('for-each-ref', AM_STATUS_PREFIX,
+                      '--format=%(refname)').split('\n')
+
+    inflight_merges: Dict[str, List[str]] = {}
+
+    for ref in refs:
+        if not ref:
+            continue
+        assert ref.startswith(AM_STATUS_PREFIX)
+        merge_name = ref[len(AM_STATUS_PREFIX):]
+        underscore_idx = merge_name.find('_')
+        assert underscore_idx != -1
+        commit_hash = merge_name[:underscore_idx]
+        dest_branch = merge_name[underscore_idx + 1:]
+
+        if dest_branch in inflight_merges:
+            inflight_merges[dest_branch].append(commit_hash)
+        else:
+            inflight_merges[dest_branch] = [commit_hash]
+
+    for (m, k) in inflight_merges.items():
+        log.debug(f'in-flight {m}: {k}')
+    return inflight_merges
