@@ -43,6 +43,15 @@ def find_inflight_merges(remote: str = 'origin') -> Dict[str, List[str]]:
        This function fetches the refs created by the automerger to find
        the inflight merges that are currently being processed.
     """
+    # Delete the previously fetched refs to avoid fetch failures
+    # where there were force pushes.
+    existing_refs = git_output('for-each-ref', AM_STATUS_PREFIX,
+                               '--format=%(refname)').split('\n')
+    for ref in existing_refs:
+        if not ref:
+            continue
+        log.debug(f'Deleting local ref "{ref}" before fetching')
+        git('update-ref', '-d', ref)
     git('fetch', remote,
         f'{AM_PREFIX}*:{AM_STATUS_PREFIX}*')  # FIXME: handle fetch failures.
     refs = git_output('for-each-ref', AM_STATUS_PREFIX,
