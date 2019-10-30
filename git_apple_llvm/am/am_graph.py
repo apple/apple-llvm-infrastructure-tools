@@ -24,7 +24,7 @@ def print_graph(remote: str = 'origin', fmt: str = 'pdf'):
                         format=fmt,
                         node_attr={'shape': 'record',
                                    'style': 'filled',
-                                   'color': 'lightblue',
+                                   'color': 'lightgray',
                                    'fixedsize': 'true',
                                    'width': '3',
                                    'height': '0.8',
@@ -34,5 +34,5 @@ def print_graph(remote: str = 'origin', fmt: str = 'pdf'):
         return
     graph.attr(rankdir='LR', nodesep='1', ranksep='1')
     for config in configs:
-        graph.edge(config.upstream, config.target, weight='10')
+        graph.edge(config.upstream, config.target)
     graph.render('automergers', view=True)
