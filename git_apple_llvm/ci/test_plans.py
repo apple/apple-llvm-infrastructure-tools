@@ -2,7 +2,7 @@ import logging
 from typing import Dict
 import json
 from git_apple_llvm.ci.jenkins_ci import JenkinsCIConfig
-from git_apple_llvm.git_tools import git_output
+from git_apple_llvm.git_tools import read_file_or_none
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +49,11 @@ class TestPlan:
         ci_job_config_filename = f'apple-llvm-config/ci-jobs/{self.ci_jobs}.json'
         log.debug('Test plan %s: loading ci config %s',
                   self.name, ci_job_config_filename)
-        ci_job_config_json = json.loads(git_output('show', f'HEAD:{ci_job_config_filename}'))
+        file_contents = read_file_or_none('origin/repo/apple-llvm-config/pr',
+                                          ci_job_config_filename)
+        if not file_contents:
+            raise RuntimeError(f'ci config {ci_job_config_filename} not found')
+        ci_job_config_json = json.loads(file_contents)
         ci_job_config = JenkinsCIConfig(ci_job_config_json)
         params.update(self.params)
         log.debug(
@@ -74,8 +78,11 @@ class TestPlanDispatcher:
         test_plans_filename = 'apple-llvm-config/ci-test-plans.json'
         log.debug('Test plan dispatcher: loading test plans %s',
                   test_plans_filename)
+        file_contents = read_file_or_none('origin/repo/apple-llvm-config/pr', test_plans_filename)
+        if not file_contents:
+            raise TestPlanNotFoundError(name)
         test_plans: Dict[str, TestPlan] = {}
-        tp = json.loads(git_output('show', f'HEAD:{test_plans_filename}'))['test-plans']
+        tp = json.loads(file_contents)['test-plans']
         for k in tp:
             test_plans[k] = TestPlan(k, tp[k])
         if name not in test_plans:

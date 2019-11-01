@@ -64,13 +64,24 @@ def ci_tool_git_repo(tmp_path_factory) -> str:
         f.write(json.dumps(ci_jobs))
     git('add', 'apple-llvm-config', git_dir=path)
     git('commit', '-m', 'ci config', git_dir=path)
+    git('checkout', '-b', 'repo/apple-llvm-config/pr', git_dir=path)
+    return path
+
+
+@pytest.fixture(scope='session')
+def ci_tool_repo_clone(tmp_path_factory, ci_tool_git_repo: str) -> str:
+    path = str(tmp_path_factory.mktemp('simple-ci-tool-dir-clone'))
+    git('init', git_dir=path)
+    git('remote', 'add', 'origin', ci_tool_git_repo, git_dir=path)
+    git('fetch', 'origin', git_dir=path)
+    git('checkout', 'master', git_dir=path)
     return path
 
 
 @pytest.fixture(scope='function')
-def cd_to_pr_tool_repo(ci_tool_git_repo: str):
+def cd_to_pr_tool_repo(ci_tool_repo_clone: str):
     prev = os.getcwd()
-    os.chdir(ci_tool_git_repo)
+    os.chdir(ci_tool_repo_clone)
     yield
     os.chdir(prev)
 
