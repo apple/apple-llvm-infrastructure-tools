@@ -60,18 +60,20 @@ def status(target: Optional[str], all_commits: bool, no_fetch: bool, ci_status: 
 
 
 @am.command()
-@click.option('--no-fetch', is_flag=True, default=False,
-              help='Do not fetch remote (WARNING: status will be stale!).')
 @click.option('--format', metavar='<format>', type=str,
               default=None,
               help='The file format for the generated graph.')
-def graph(no_fetch: bool, format: str):
+@click.option('--no-fetch', is_flag=True, default=False,
+              help='Do not fetch remote (WARNING: status will be stale!).')
+@click.option('--ci-status', is_flag=True, default=False,
+              help='Query additional CI status from Redis.')
+def graph(format: str, no_fetch: bool, ci_status: bool):
     remote = 'origin'
     if not no_fetch:
         click.echo(f'❕ Fetching "{remote}" to provide the latest status...')
         git('fetch', remote, stderr=None)
         click.echo('✅ Fetch succeeded!\n')
-    print_graph(remote=remote, fmt=format)
+    print_graph(remote=remote, query_ci_status=ci_status, fmt=format)
 
 
 @am.group()
