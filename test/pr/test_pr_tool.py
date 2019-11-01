@@ -198,7 +198,7 @@ JENKINS_TEST_API_URL = 'https://test.foo/bar'
 
 
 @pytest.fixture(scope='function')
-def cd_to_pr_tool_repo_clone_adjust_jenkins_ci(cd_to_pr_tool_repo):
+def cd_to_pr_tool_repo_clone_adjust_jenkins_ci(cd_to_pr_tool_repo, tmp_path_factory):
     pr_config = {
         'type': 'github',
         'domain': 'github.com',
@@ -238,7 +238,21 @@ def cd_to_pr_tool_repo_clone_adjust_jenkins_ci(cd_to_pr_tool_repo):
         f.write(json.dumps(ci_jobs))
     git('add', 'apple-llvm-config')
     git('commit', '-m', 'use jenkins now')
+    git('checkout', '-b', 'repo/apple-llvm-config/pr')
+
+    cur_dir = os.getcwd()
+
+    # Clone it
+    path = str(tmp_path_factory.mktemp('simple-pr-ci-tool-dir-clone'))
+    git('init', git_dir=path)
+    git('remote', 'add', 'origin', cur_dir, git_dir=path)
+    git('fetch', 'origin', git_dir=path)
+    git('checkout', 'master', git_dir=path)
+    os.chdir(str(path))
+
     yield
+    os.chdir(cur_dir)
+    git('checkout', 'master')
     git('reset', '--hard', 'HEAD~1')
 
 
