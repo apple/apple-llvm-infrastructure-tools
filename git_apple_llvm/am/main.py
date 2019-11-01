@@ -1,6 +1,6 @@
 import click
 import logging
-from typing import Optional
+from typing import Optional, List
 from git_apple_llvm.git_tools import git
 from git_apple_llvm.am.core import CommitStates
 from git_apple_llvm.am.am_graph import print_graph
@@ -63,17 +63,20 @@ def status(target: Optional[str], all_commits: bool, no_fetch: bool, ci_status: 
 @click.option('--format', metavar='<format>', type=str,
               default=None,
               help='The file format for the generated graph.')
+@click.option('--remote', metavar='<remote>',
+              multiple=True,
+              help='The remote(s) to graph.')
 @click.option('--no-fetch', is_flag=True, default=False,
               help='Do not fetch remote (WARNING: status will be stale!).')
 @click.option('--ci-status', is_flag=True, default=False,
-              help='Query additional CI status from Redis.')
-def graph(format: str, no_fetch: bool, ci_status: bool):
-    remote = 'origin'
+              help='Query additional CI [status from Redis.')
+def graph(format: str, remote: List[str], no_fetch: bool, ci_status: bool):
+    remotes = remote if remote else ['origin']
     if not no_fetch:
-        click.echo(f'❕ Fetching "{remote}" to provide the latest status...')
-        git('fetch', remote, stderr=None)
-        click.echo('✅ Fetch succeeded!\n')
-    print_graph(remote=remote, query_ci_status=ci_status, fmt=format)
+        for r in remotes:
+            click.echo(f'❕ Fetching "{r}" to provide the latest status...')
+            git('fetch', r, stderr=None)
+    print_graph(remotes=remotes, query_ci_status=ci_status, fmt=format)
 
 
 @am.group()

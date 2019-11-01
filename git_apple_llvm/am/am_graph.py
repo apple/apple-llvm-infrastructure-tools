@@ -85,13 +85,9 @@ def get_state(upstream_branch: str,
     return EdgeStates.clear
 
 
-def print_graph(remote: str = 'origin',
+def print_graph(remotes: List = ['origin'],
                 query_ci_status: bool = False,
                 fmt: str = 'pdf'):
-    configs: List[AMTargetBranchConfig] = find_am_configs(remote)
-    if len(configs) == 0:
-        print(f'No automerger configured for remote "{remote}"')
-        return
     if 'graphviz' not in sys.modules:
         print(f'Generating the automerger graph requires the "graphviz" Python package.')
         return
@@ -108,24 +104,29 @@ def print_graph(remote: str = 'origin',
     except ValueError as e:
         print(e)
         return
-    graph.attr(rankdir='LR', nodesep='1', ranksep='1')
-    merges = find_inflight_merges(remote)
-    for config in configs:
-        edge_state = get_state(config.upstream,
-                               config.target,
-                               merges,
-                               config.common_ancestor,
-                               remote,
-                               query_ci_status)
-        graph.edge(config.upstream, config.target,
-                   color=EdgeStates.get_color(edge_state))
-        if config.secondary_upstream:
-            edge_state = get_state(config.secondary_upstream,
+    for remote in remotes:
+        configs: List[AMTargetBranchConfig] = find_am_configs(remote)
+        if len(configs) == 0:
+            print(f'No automerger configured for remote "{remote}"')
+            continue
+        graph.attr(rankdir='LR', nodesep='1', ranksep='1')
+        merges = find_inflight_merges(remote)
+        for config in configs:
+            edge_state = get_state(config.upstream,
                                    config.target,
                                    merges,
                                    config.common_ancestor,
                                    remote,
                                    query_ci_status)
-            graph.edge(config.secondary_upstream, config.target,
+            graph.edge(config.upstream, config.target,
                        color=EdgeStates.get_color(edge_state))
+            if config.secondary_upstream:
+                edge_state = get_state(config.secondary_upstream,
+                                       config.target,
+                                       merges,
+                                       config.common_ancestor,
+                                       remote,
+                                       query_ci_status)
+                graph.edge(config.secondary_upstream, config.target,
+                           color=EdgeStates.get_color(edge_state))
     graph.render('automergers', view=True)
