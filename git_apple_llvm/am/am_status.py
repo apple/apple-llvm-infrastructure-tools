@@ -3,9 +3,9 @@
 """
 
 from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
-from git_apple_llvm.am.core import is_secondary_edge_commit_blocked_by_primary_edge, find_inflight_merges
-from git_apple_llvm.am.core import compute_unmerged_commits
+from git_apple_llvm.am.core import find_inflight_merges, compute_unmerged_commits
 from git_apple_llvm.am.oracle import get_ci_status
+from git_apple_llvm.am.zippered_merge import compute_zippered_merges
 import logging
 import click
 from typing import Dict, List, Set, Optional
@@ -26,7 +26,6 @@ def compute_inflight_commit_count(commits: List[str], commits_inflight: Set[str]
 
 def print_edge_status(upstream_branch: str, target_branch: str,
                       inflight_merges: Dict[str, List[str]], list_commits: bool = False, remote: str = 'origin',
-                      common_ancestor: Optional[str] = None, primary_edge: Optional[str] = None,
                       query_ci_status: bool = False):
     commits_inflight: Set[str] = set(
         inflight_merges[target_branch] if target_branch in inflight_merges else [])
@@ -45,15 +44,9 @@ def print_edge_status(upstream_branch: str, target_branch: str,
 
     def print_commit_status(commit: str):
         hash = commit.split(' ')[0]
-        is_blocked: bool = False
-        if common_ancestor:
-            is_blocked = is_secondary_edge_commit_blocked_by_primary_edge(hash, f'{remote}/{common_ancestor}',
-                                                                          f'{remote}/{target_branch}')
         status = ''
         if hash in commits_inflight:
             status = f'{status} Auto merge in progress'
-        if is_blocked:
-            status = f'{status} Blocked by not fully merged {primary_edge} -> {target_branch} edge'
         if status:
             status = f':{status}'
         if query_ci_status:
@@ -74,6 +67,30 @@ def print_edge_status(upstream_branch: str, target_branch: str,
         print_commit_status(commits[-1])
 
 
+def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str):
+    click.echo(click.style(
+               f'[{config.upstream} -> {config.target} <- {config.secondary_upstream}]',
+               bold=True))
+    print(f'- This is zippered merge branch!')
+
+    merges: Optional[List[List[str]]] = []
+    merges = compute_zippered_merges(remote=remote, target=config.target,
+                                     left_upstream=config.upstream,
+                                     right_upstream=config.secondary_upstream,
+                                     common_ancestor=config.common_ancestor)
+    if not merges:
+        # FIXME: This might not be true.
+        print(f'- There are no unmerged commits. The {config.target} branch is up to date.')
+        return
+
+    # FIXME: proper status
+    print(f'- There are {len(merges)} planned merges:')
+    for merge in merges:
+        assert len(merge) == 1 or len(merge) == 2
+        commit = merge[0] if len(merge) == 1 else f'{merge[0]} + {merge[1]}'
+        print(f'  * {commit}')
+
+
 def print_status(remote: str = 'origin', target_branch: Optional[str] = None, list_commits: bool = False,
                  query_ci_status: bool = False):
     configs: List[AMTargetBranchConfig] = find_am_configs(remote)
@@ -91,13 +108,11 @@ def print_status(remote: str = 'origin', target_branch: Optional[str] = None, li
     for config in configs:
         if printed:
             print('')
+        if config.secondary_upstream:
+            print_zippered_edge_status(config, remote)
+            printed = True
+            continue
         print_edge_status(config.upstream, config.target,
                           ms, list_commits, remote,
                           query_ci_status=query_ci_status)
-        if config.secondary_upstream:
-            print_edge_status(config.secondary_upstream,
-                              config.target, ms, list_commits, remote,
-                              common_ancestor=config.common_ancestor,
-                              primary_edge=config.upstream,
-                              query_ci_status=query_ci_status)
         printed = True

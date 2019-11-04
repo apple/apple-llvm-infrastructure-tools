@@ -27,6 +27,12 @@
 """
 
 from typing import List, Optional
+from git_apple_llvm.am.core import compute_unmerged_commits
+from git_apple_llvm.git_tools import git_output
+import logging
+
+
+log = logging.getLogger(__name__)
 
 
 # FIXME: The current iterator requires computing all of the merge bases upfront.
@@ -104,4 +110,50 @@ def compute_zippered_merge_commits(left: BranchIterator, right: BranchIterator) 
             continue
         break
 
+    return merges
+
+
+def compute_zippered_merges(remote: str, target: str, left_upstream: str,
+                            right_upstream: str, common_ancestor: str,
+                            max_commits: int = 20) -> Optional[List[List[str]]]:
+    """
+        Return the list of lists that contain the parents of the merge commit that should
+        be constructed to perform merges into the zippered branch, or None if the zippered
+        branch is up-to-date.
+    """
+    def emptyIfNoneOrReversed(x: Optional[List[str]]) -> List[str]:
+        return [] if not x else list(reversed(x))
+    # Compute the unmerged commit lists.
+    left_commits: List[str] = emptyIfNoneOrReversed(compute_unmerged_commits(remote=remote, target_branch=target,
+                                                    upstream_branch=left_upstream))
+    right_commits: List[str] = emptyIfNoneOrReversed(compute_unmerged_commits(remote=remote, target_branch=target,
+                                                     upstream_branch=right_upstream))
+    if len(left_commits) == 0 and len(right_commits) == 0:
+        # The branches are up-to-date.
+        return None
+    # Restrict the size of the merge window, as computing a lot of merge bases
+    # is expensive.
+    if len(left_commits) > max_commits:
+        left_commits = left_commits[:max_commits]
+    if len(right_commits) > max_commits:
+        right_commits = right_commits[:max_commits]
+
+    def computeMergeBases(commits: List[str]) -> List[str]:
+        return list([git_output('merge-base', x, f'{remote}/{common_ancestor}') for x in commits])
+
+    def computeInitialMergeBase(branch: str, commits: List[str]) -> str:
+        # FIXME: This might be wrong if someone did a reverse merge into the upstream branch,
+        # and the first parent of the first commit doesn't reach the common ancestor.
+        return git_output('merge-base',
+                          f'{remote}/{branch}' if len(commits) == 0 else f'{commits[0]}^',
+                          f'{remote}/{common_ancestor}')
+
+    log.debug(f'setting up left branch iterator for zippered merge to {target}')
+    left = BranchIterator(left_commits, computeMergeBases(left_commits),
+                          computeInitialMergeBase(left_upstream, left_commits))
+    log.debug(f'setting up right branch iterator for zippered merge to {target}')
+    right = BranchIterator(right_commits, computeMergeBases(right_commits),
+                           computeInitialMergeBase(right_upstream, right_commits))
+    merges: List[List[str]] = compute_zippered_merge_commits(left, right)
+    log.debug(f'zippered merge algorithm produced {len(merges)} merges')
     return merges
