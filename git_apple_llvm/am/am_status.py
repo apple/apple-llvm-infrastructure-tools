@@ -3,7 +3,7 @@
 """
 
 from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
-from git_apple_llvm.am.core import find_inflight_merges, compute_unmerged_commits
+from git_apple_llvm.am.core import find_inflight_merges, compute_unmerged_commits, has_merge_conflict
 from git_apple_llvm.am.oracle import get_ci_status
 from git_apple_llvm.am.zippered_merge import compute_zippered_merges
 import logging
@@ -42,20 +42,21 @@ def print_edge_status(upstream_branch: str, target_branch: str,
     print(f'- There are {len(commits)} unmerged commits. {str2}')
     print('- Unmerged commits:')
 
-    def print_commit_status(commit: str):
+    def print_commit_status(commit: str, check_for_merge_conflict: bool = False):
         hash = commit.split(' ')[0]
-        status = ''
-        if hash in commits_inflight:
-            status = f'{status} Auto merge in progress'
-        if status:
-            status = f':{status}'
+        status: str = ''
         if query_ci_status:
             ci_state: Optional[str] = get_ci_status(hash, target_branch)
             if ci_state:
-                status = f': {ci_state}'
-        print(f'  * {commit}{status}')
+                status = ci_state
+        if not status:
+            if hash in commits_inflight:
+                status = 'Auto merge in progress'
+            if check_for_merge_conflict and has_merge_conflict(hash, target_branch, remote):
+                status = 'Conflict'
+        print(f'  * {commit}: {status}')
 
-    print_commit_status(commits[0])
+    print_commit_status(commits[0], True)
     if list_commits:
         for commit in commits[1:]:
             print_commit_status(commit)

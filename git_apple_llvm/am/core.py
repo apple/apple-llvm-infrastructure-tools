@@ -2,7 +2,7 @@
   Module for core automerger operations.
 """
 
-from git_apple_llvm.git_tools import git, git_output
+from git_apple_llvm.git_tools import git, git_output, get_dev_null, GitError
 from typing import Dict, List, Optional
 import logging
 
@@ -24,18 +24,28 @@ class CommitStates:
     all = [new, conflict, pending, started, passed, failed, known_failed]
 
 
-def is_secondary_edge_commit_blocked_by_primary_edge(upstream_commit_hash: str, common_ancestor_ref: str,
-                                                     target_ref: str, git_dir: Optional[str] = None) -> bool:
-    """ Returns true if the given commit hash from secondary upstream edge can be merged,
-        iff its merge base with common ancestor has been already merged in through the
-        primary upstream edge.
+def has_merge_conflict(commit: str, target_branch: str, remote: str = 'origin') -> bool:
+    """ Returns true if the given commit hash has a merge conflict with the given target branch.
     """
-    merge_base_hash = git_output('merge-base', upstream_commit_hash, common_ancestor_ref, git_dir=git_dir)
-    # Check to see if the merge base is already in the target branch.
-    br = git_output('branch', '-r', target_ref, '--contains', merge_base_hash, '--format=%(refname)', git_dir=git_dir)
-    if not br:
+    try:
+        # Always remove the temporary worktree. It's possible that we got
+        # interrupted and left it around. This will raise an exception if the
+        # worktree doesn't exist, which can be safely ignored.
+        git('worktree', 'remove', '--force', '.git/temp-worktree',
+            stdout=get_dev_null(), stderr=get_dev_null())
+    except GitError:
+        pass
+    git('worktree', 'add', '.git/temp-worktree', f'{remote}/{target_branch}', '--detach',
+        stdout=get_dev_null(), stderr=get_dev_null())
+    try:
+        git('merge', '--no-commit', commit,
+            git_dir='.git/temp-worktree', stdout=get_dev_null(), stderr=get_dev_null())
+        return False
+    except GitError:
         return True
-    return br != 'refs/remotes/' + target_ref
+    finally:
+        git('worktree', 'remove', '--force', '.git/temp-worktree',
+            stdout=get_dev_null(), stderr=get_dev_null())
 
 
 def compute_unmerged_commits(remote: str, target_branch: str,
