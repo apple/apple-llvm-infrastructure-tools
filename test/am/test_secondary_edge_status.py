@@ -66,8 +66,7 @@ def test_am_secondary_edge_status(cd_to_am_tool_repo_clone):
                                 mix_stderr=True)
 
     assert result.exit_code == 0
-    assert """[downstream/master -> downstream/swift/master]
-- There are 1 unmerged commits. 0 commits are currently being merged/build/tested.""" in result.output
-    assert """[swift/master -> downstream/swift/master]
-- There are 2 unmerged commits. 0 commits are currently being merged/build/tested.""" in result.output
-    assert """: Blocked by not fully merged downstream/master -> downstream/swift/master edge""" in result.output
+    assert """[downstream/master -> downstream/swift/master <- swift/master]
+- This is zippered merge branch!
+- There are 2 planned merges:""" in result.output
+    assert ' + ' in result.output
