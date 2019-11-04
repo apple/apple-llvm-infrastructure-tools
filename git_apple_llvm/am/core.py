@@ -38,6 +38,20 @@ def is_secondary_edge_commit_blocked_by_primary_edge(upstream_commit_hash: str, 
     return br != 'refs/remotes/' + target_ref
 
 
+def compute_unmerged_commits(remote: str, target_branch: str,
+                             upstream_branch: str, format: str = '%H') -> Optional[List[str]]:
+    """ Returns the list of commits that are not yet merged from upstream to the target branch. """
+    commit_log_output = git_output(
+        'log',
+        '--first-parent',
+        f'--pretty=format:{format}', '--no-patch',
+        f'{remote}/{target_branch}..{remote}/{upstream_branch}',
+    )
+    if not commit_log_output:
+        return None
+    return commit_log_output.split('\n')
+
+
 def find_inflight_merges(remote: str = 'origin') -> Dict[str, List[str]]:
     """
        This function fetches the refs created by the automerger to find

@@ -4,8 +4,8 @@
 
 from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
 from git_apple_llvm.am.core import is_secondary_edge_commit_blocked_by_primary_edge, find_inflight_merges
+from git_apple_llvm.am.core import compute_unmerged_commits
 from git_apple_llvm.am.oracle import get_ci_status
-from git_apple_llvm.git_tools import git_output
 import logging
 import click
 from typing import Dict, List, Set, Optional
@@ -31,18 +31,13 @@ def print_edge_status(upstream_branch: str, target_branch: str,
     commits_inflight: Set[str] = set(
         inflight_merges[target_branch] if target_branch in inflight_merges else [])
 
-    commit_log_output = git_output(
-        'log',
-        '--first-parent',
-        '--pretty=format:%H %cd', '--no-patch',
-        f'{remote}/{target_branch}..{remote}/{upstream_branch}',
-    )
     click.echo(click.style(
-        f'[{upstream_branch} -> {target_branch}]', bold=True))
-    if not commit_log_output:
+               f'[{upstream_branch} -> {target_branch}]', bold=True))
+    commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=target_branch,
+                                                            upstream_branch=upstream_branch, format='%H %cd')
+    if not commits:
         print(f'- There are no unmerged commits. The {target_branch} branch is up to date.')
         return
-    commits: List[str] = commit_log_output.split('\n')
     inflight_count = compute_inflight_commit_count(commits, commits_inflight)
     str2 = f'{inflight_count} commits are currently being merged/build/tested.'
     print(f'- There are {len(commits)} unmerged commits. {str2}')
