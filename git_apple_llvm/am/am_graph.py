@@ -12,6 +12,27 @@ try:
 except ImportError:
     pass
 
+# Graphviz node, edge and graph attributes.
+# https://www.graphviz.org/doc/info/attrs.html
+NODESEP = '1'
+NODE_ATTR = {'shape': 'record',
+             'style': 'filled',
+             'color': 'lightgray',
+             'fixedsize': 'true',
+             'width': '3',
+             'height': '0.8',
+             }
+PENWIDTH = '2'
+RANKDIR = 'LR'
+RANKSEP = '1'
+SPLINES = 'ortho'
+
+# Graphviz colors.
+# https://www.graphviz.org/doc/info/colors.html
+GREEN = 'green3'
+YELLOW = 'gold3'
+RED = 'red3'
+
 
 class EdgeStates:
     clear = 'clear'
@@ -21,9 +42,9 @@ class EdgeStates:
     @staticmethod
     def get_color(state: str):
         colors: Dict = {
-            EdgeStates.clear: 'green3',
-            EdgeStates.working: 'gold3',
-            EdgeStates.blocked: 'red3',
+            EdgeStates.clear: GREEN,
+            EdgeStates.working: YELLOW,
+            EdgeStates.blocked: RED,
         }
         return colors[state]
 
@@ -121,17 +142,11 @@ def print_graph(remotes: List = ['origin'],
     try:
         graph = Digraph(comment='Automergers',
                         format=fmt,
-                        node_attr={'shape': 'record',
-                                   'style': 'filled',
-                                   'color': 'lightgray',
-                                   'fixedsize': 'true',
-                                   'width': '3',
-                                   'height': '0.8',
-                                   })
-        graph.attr(rankdir='LR',
-                   nodesep='1',
-                   ranksep='1',
-                   splines='ortho')
+                        node_attr=NODE_ATTR)
+        graph.attr(rankdir=RANKDIR,
+                   nodesep=NODESEP,
+                   ranksep=RANKSEP,
+                   splines=SPLINES)
     except ValueError as e:
         print(e)
         return
@@ -161,7 +176,7 @@ def print_graph(remotes: List = ['origin'],
                                    query_ci_status)
             graph.edge(config.upstream, config.target,
                        color=EdgeStates.get_color(edge_state),
-                       penwidth='2')
+                       penwidth=PENWIDTH)
             if config.secondary_upstream:
                 edge_state = get_state(config.secondary_upstream,
                                        config.target,
@@ -170,5 +185,5 @@ def print_graph(remotes: List = ['origin'],
                                        query_ci_status)
                 graph.edge(config.secondary_upstream, config.target,
                            color=EdgeStates.get_color(edge_state),
-                           penwidth='2')
+                           penwidth=PENWIDTH, constraint='false')
     graph.render('automergers', view=True)
