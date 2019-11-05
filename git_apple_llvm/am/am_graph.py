@@ -4,8 +4,8 @@
 
 from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
 from git_apple_llvm.am.core import CommitStates, is_secondary_edge_commit_blocked_by_primary_edge, find_inflight_merges
+from git_apple_llvm.am.core import compute_unmerged_commits
 from git_apple_llvm.am.oracle import get_ci_status
-from git_apple_llvm.git_tools import git_output
 from typing import Dict, Set, List, Optional
 import sys
 try:
@@ -44,14 +44,11 @@ def get_state(upstream_branch: str,
               common_ancestor: Optional[str] = None,
               remote: str = 'origin',
               query_ci_status: bool = False):
-    commit_log_output = git_output(
-        'log',
-        '--first-parent',
-        '--pretty=format:%H', '--no-patch',
-        f'{remote}/{target_branch}..{remote}/{upstream_branch}',
-    )
-
-    if not commit_log_output:
+    commits: Optional[List[str]] = compute_unmerged_commits(remote=remote,
+                                                            target_branch=target_branch,
+                                                            upstream_branch=upstream_branch,
+                                                            format='%H')
+    if not commits:
         return EdgeStates.clear
 
     commits_inflight: Set[str] = set(
@@ -73,8 +70,12 @@ def get_state(upstream_branch: str,
             return EdgeStates.blocked
         return None
 
+    # Determine the status of this edge.
+    # The edge is blocked if there is a least one blocked commit. If there are
+    # no blocked commits, the edge is working if there's at least one working
+    # commit. Otherwise the edge is clear.
     working: bool = False
-    for commit in commit_log_output.split('\n'):
+    for commit in commits:
         commit_state = get_commit_state(commit)
         if commit_state is EdgeStates.blocked:
             return EdgeStates.blocked
