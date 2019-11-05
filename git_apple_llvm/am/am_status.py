@@ -71,7 +71,7 @@ def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str):
     click.echo(click.style(
                f'[{config.upstream} -> {config.target} <- {config.secondary_upstream}]',
                bold=True))
-    print(f'- This is zippered merge branch!')
+    print(f'- This is a zippered merge branch!')
 
     merges: Optional[List[List[str]]] = []
     merges = compute_zippered_merges(remote=remote, target=config.target,
