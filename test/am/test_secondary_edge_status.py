@@ -24,6 +24,16 @@ def am_tool_git_repo(tmp_path_factory) -> str:
         'upstream': 'downstream/master',
         'secondary-upstream': 'swift/master',
         'common-ancestor': 'master'
+    }, {
+        'target': 'downstream/swift/master-merged',
+        'upstream': 'downstream/master',
+        'secondary-upstream': 'swift/master',
+        'common-ancestor': 'master'
+    }, {
+        'target': 'downstream/swift/master-unmergeable',
+        'upstream': 'downstream/master',
+        'secondary-upstream': 'swift/master2',
+        'common-ancestor': 'master'
     }]
     git('init', git_dir=path)
     os.mkdir(os.path.join(path, 'apple-llvm-config'))
@@ -40,6 +50,14 @@ def am_tool_git_repo(tmp_path_factory) -> str:
     git('checkout', '-b', 'swift/master', 'master~1', git_dir=path)
     git('commit', '-m', 'waiting for merges', '--allow-empty', git_dir=path)
     git('merge', 'master', git_dir=path)
+    git('checkout', '-b', 'downstream/swift/master-merged', 'downstream/swift/master', git_dir=path)
+    git('merge', 'downstream/master', '--no-edit', git_dir=path)
+    git('merge', 'swift/master', '--no-edit', git_dir=path)
+    git('checkout', '-b', 'downstream/swift/master-unmergeable', 'downstream/swift/master-merged', git_dir=path)
+    git('checkout', 'master', git_dir=path)
+    git('commit', '-m', 'not yet merged through one', '--allow-empty', git_dir=path)
+    git('checkout', '-b', 'swift/master2', 'swift/master', git_dir=path)
+    git('merge', 'master', '--no-edit', git_dir=path)
     return path
 
 
@@ -68,4 +86,29 @@ def test_am_secondary_edge_status(cd_to_am_tool_repo_clone):
     assert result.exit_code == 0
     assert """[downstream/master -> downstream/swift/master <- swift/master]
 - This is a zippered merge branch!
-- There is at least one merge that can be performed.""" in result.output
+- The automerger will perform at least one zippered merge on the next run.""" in result.output
+
+
+def test_am_secondary_edge_status_merged(cd_to_am_tool_repo_clone):
+    result = CliRunner().invoke(am, ['status', '--target', 'downstream/swift/master-merged', '--no-fetch'],
+                                mix_stderr=True)
+
+    assert result.exit_code == 0
+    assert """[downstream/master -> downstream/swift/master-merged <- swift/master]
+- This is a zippered merge branch!
+- There are no unmerged commits. The downstream/swift/master-merged branch is up to date.""" in result.output
+
+
+def test_am_secondary_edge_status_blocked(cd_to_am_tool_repo_clone):
+    result = CliRunner().invoke(am, ['status', '--target', 'downstream/swift/master-unmergeable', '--no-fetch'],
+                                mix_stderr=True)
+
+    print(result.output)
+    assert result.exit_code == 0
+    assert """[downstream/master -> downstream/swift/master-unmergeable <- swift/master2]
+- This is a zippered merge branch!
+- There are 0 unmerged commits from downstream/master.
+- There are 1 unmerged commits from swift/master2.
+- The automerger is waiting for unmerged commits in
+  downstream/master and swift/master2 to agree on a merge base
+  from the master branch before performing a zippered merge.""" in result.output
