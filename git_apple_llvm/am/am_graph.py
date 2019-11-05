@@ -7,10 +7,14 @@ from git_apple_llvm.am.core import CommitStates, find_inflight_merges, compute_u
 from git_apple_llvm.am.oracle import get_ci_status
 from typing import Dict, Set, List, Optional
 import sys
+import logging
 try:
     from graphviz import Digraph
 except ImportError:
     pass
+
+
+log = logging.getLogger(__name__)
 
 # Graphviz node, edge and graph attributes.
 # https://www.graphviz.org/doc/info/attrs.html
@@ -63,6 +67,7 @@ def get_state(upstream_branch: str,
               inflight_merges: Dict[str, List[str]],
               remote: str = 'origin',
               query_ci_status: bool = False):
+    log.info(f'Computing status for [{upstream_branch} -> {target_branch}]')
     commits: Optional[List[str]] = compute_unmerged_commits(remote=remote,
                                                             target_branch=target_branch,
                                                             upstream_branch=upstream_branch,
@@ -104,6 +109,7 @@ def get_state(upstream_branch: str,
 
 
 def create_subgraph(graph, name: str, nodes: List[str]):
+    log.info(f'Creating {name} subgraph with {len(nodes)} node(s)')
     with graph.subgraph(name=f'cluster_{name}') as subgraph:
         subgraph.attr(label=name)
         for node in nodes:
@@ -115,7 +121,7 @@ def add_branches(graph, branches: List[str]):
     github: List[str] = []
     internal: List[str] = []
 
-    branches.sort()
+    branches = sorted(set(branches))
     for branch in branches:
         if branch.startswith('llvm'):
             llvm.append(branch)
