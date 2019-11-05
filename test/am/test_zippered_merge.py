@@ -3,10 +3,14 @@
 """
 
 from git_apple_llvm.am.zippered_merge import BranchIterator, compute_zippered_merge_commits
+from typing import Dict
 
 
 def br(commits, merge_bases, initial_merge_base) -> BranchIterator:
-    return BranchIterator(commits, merge_bases, initial_merge_base)
+    commit_to_merge_base: Dict[str, str] = {}
+    for i in range(0, len(commits)):
+        commit_to_merge_base[commits[i]] = merge_bases[i]
+    return BranchIterator(commits, lambda commit: commit_to_merge_base[commit], initial_merge_base)
 
 
 def test_zippered_merge_alg_no_zipper():

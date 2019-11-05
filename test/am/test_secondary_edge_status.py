@@ -68,5 +68,4 @@ def test_am_secondary_edge_status(cd_to_am_tool_repo_clone):
     assert result.exit_code == 0
     assert """[downstream/master -> downstream/swift/master <- swift/master]
 - This is a zippered merge branch!
-- There are 2 planned merges:""" in result.output
-    assert ' + ' in result.output
+- There is at least one merge that can be performed.""" in result.output

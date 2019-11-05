@@ -35,15 +35,12 @@ import logging
 log = logging.getLogger(__name__)
 
 
-# FIXME: The current iterator requires computing all of the merge bases upfront.
-# If there's a long list of commits then computing all of these merge bases will be
-# quite expensive, when probably you just need to know the "next" merge. We could
-# potentially use a generator pattern instead to avoid this.
 class BranchIterator:
-    def __init__(self, commits: List[str], merge_bases: List[str], initial_merge_base: str):
+    def __init__(self, commits: List[str], merge_base_generator, initial_merge_base: str):
         self.commits: List[str] = commits
-        self.merge_bases: List[str] = merge_bases
-        assert len(self.commits) == len(self.merge_bases)
+        self.merge_base_generator = merge_base_generator
+        self.cached_merge_bases: List[Optional[str]] = list([None for x in commits])
+        assert len(self.commits) == len(self.cached_merge_bases)
         self.i: int = 0
         self.len: int = len(self.commits)
         self.initial_merge_base: str = initial_merge_base
@@ -52,13 +49,20 @@ class BranchIterator:
     def has_commits(self) -> bool:
         return self.i < self.len
 
+    def _get_merge_base(self, idx) -> str:
+        if self.cached_merge_bases[idx] is not None:
+            return self.cached_merge_bases[idx]
+        result: str = self.merge_base_generator(self.commits[idx])
+        self.cached_merge_bases[idx] = result
+        return result
+
     @property
     def prev_merge_base(self) -> str:
-        return self.initial_merge_base if self.i == 0 else self.merge_bases[self.i - 1]
+        return self.initial_merge_base if self.i == 0 else self._get_merge_base(self.i - 1)
 
     @property
     def current_merge_base(self) -> str:
-        return self.merge_bases[self.i]
+        return self._get_merge_base(self.i)
 
     def takeCommit(self) -> str:
         result = self.commits[self.i]
@@ -68,7 +72,7 @@ class BranchIterator:
     def find_matching_merge_base(self, right) -> Optional[int]:
         i = self.i
         while i < self.len:
-            if self.merge_bases[i] == right.current_merge_base:
+            if self._get_merge_base(i) == right.current_merge_base:
                 return i
             i += 1
         return None
@@ -87,7 +91,8 @@ def find_next_matching_merge_base(left: BranchIterator, right: BranchIterator) -
     return False
 
 
-def compute_zippered_merge_commits(left: BranchIterator, right: BranchIterator) -> List[List[str]]:
+def compute_zippered_merge_commits(left: BranchIterator, right: BranchIterator,
+                                   stop_on_first: bool = False) -> List[List[str]]:
     """
        Return the list of lists that contain the parents of the merge commit that should
        be constructed to perform the required zippered merges.
@@ -95,6 +100,8 @@ def compute_zippered_merge_commits(left: BranchIterator, right: BranchIterator) 
     merges: List[List[str]] = []
 
     while left.has_commits or right.has_commits:
+        if stop_on_first and len(merges) > 0:
+            break
         # Try merging commits from one branch first, while the merge base allows it.
         if left.has_commits and right.prev_merge_base == left.current_merge_base:
             merges.append([left.takeCommit()])
@@ -115,7 +122,8 @@ def compute_zippered_merge_commits(left: BranchIterator, right: BranchIterator) 
 
 def compute_zippered_merges(remote: str, target: str, left_upstream: str,
                             right_upstream: str, common_ancestor: str,
-                            max_commits: int = 20) -> Optional[List[List[str]]]:
+                            max_commits: int = 40,
+                            stop_on_first: bool = False) -> Optional[List[List[str]]]:
     """
         Return the list of lists that contain the parents of the merge commit that should
         be constructed to perform merges into the zippered branch, or None if the zippered
@@ -138,22 +146,20 @@ def compute_zippered_merges(remote: str, target: str, left_upstream: str,
     if len(right_commits) > max_commits:
         right_commits = right_commits[:max_commits]
 
-    def computeMergeBases(commits: List[str]) -> List[str]:
-        return list([git_output('merge-base', x, f'{remote}/{common_ancestor}') for x in commits])
+    def computeMergeBase(commit: str) -> str:
+        return git_output('merge-base', commit, f'{remote}/{common_ancestor}')
 
     def computeInitialMergeBase(branch: str, commits: List[str]) -> str:
         # FIXME: This might be wrong if someone did a reverse merge into the upstream branch,
         # and the first parent of the first commit doesn't reach the common ancestor.
-        return git_output('merge-base',
-                          f'{remote}/{branch}' if len(commits) == 0 else f'{commits[0]}^',
-                          f'{remote}/{common_ancestor}')
+        return computeMergeBase(f'{remote}/{branch}' if len(commits) == 0 else f'{commits[0]}^')
 
     log.debug(f'setting up left branch iterator for zippered merge to {target}')
-    left = BranchIterator(left_commits, computeMergeBases(left_commits),
+    left = BranchIterator(left_commits, computeMergeBase,
                           computeInitialMergeBase(left_upstream, left_commits))
     log.debug(f'setting up right branch iterator for zippered merge to {target}')
-    right = BranchIterator(right_commits, computeMergeBases(right_commits),
+    right = BranchIterator(right_commits, computeMergeBase,
                            computeInitialMergeBase(right_upstream, right_commits))
-    merges: List[List[str]] = compute_zippered_merge_commits(left, right)
+    merges: List[List[str]] = compute_zippered_merge_commits(left, right, stop_on_first)
     log.debug(f'zippered merge algorithm produced {len(merges)} merges')
     return merges

@@ -78,18 +78,15 @@ def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str):
     merges = compute_zippered_merges(remote=remote, target=config.target,
                                      left_upstream=config.upstream,
                                      right_upstream=config.secondary_upstream,
-                                     common_ancestor=config.common_ancestor)
+                                     common_ancestor=config.common_ancestor,
+                                     stop_on_first=True)
     if not merges:
         # FIXME: This might not be true.
-        print(f'- There are no unmerged commits. The {config.target} branch is up to date.')
+        # print(f'- There are no unmerged commits. The {config.target} branch is up to date.')
+        print(f'- The status is not computable yet.')
         return
 
-    # FIXME: proper status
-    print(f'- There are {len(merges)} planned merges:')
-    for merge in merges:
-        assert len(merge) == 1 or len(merge) == 2
-        commit = merge[0] if len(merge) == 1 else f'{merge[0]} + {merge[1]}'
-        print(f'  * {commit}')
+    print(f'- There is at least one merge that can be performed.')
 
 
 def print_status(remote: str = 'origin', target_branch: Optional[str] = None, list_commits: bool = False,
