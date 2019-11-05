@@ -3,11 +3,21 @@
 """
 
 from typing import Optional, List
-import subprocess
 import logging
+import os
 import shlex
+import subprocess
 
 log = logging.getLogger(__name__)
+dev_null_fd = None
+
+
+def get_dev_null():
+    """Lazily create a /dev/null fd for use in shell()"""
+    global dev_null_fd
+    if dev_null_fd is None:
+        dev_null_fd = open(os.devnull, 'w')
+    return dev_null_fd
 
 
 class GitError(Exception):

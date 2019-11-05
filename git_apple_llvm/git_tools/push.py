@@ -12,6 +12,7 @@ from typing import Optional, List, Dict, Set
 from enum import Enum
 from contextlib import ExitStack
 from git_apple_llvm.git_tools import git, git_output, get_current_checkout_directory, commit_exists, GitError
+from git_apple_llvm.git_tools import get_dev_null
 
 
 # Global log.
@@ -272,17 +273,6 @@ class RegraftMissingSplitRootError(Exception):
 
     def __init__(self, root_commit_hash: str):
         self.root_commit_hash = root_commit_hash
-
-
-dev_null_fd = None
-
-
-def get_dev_null():
-    """Lazily create a /dev/null fd for use in shell()"""
-    global dev_null_fd
-    if dev_null_fd is None:
-        dev_null_fd = open(os.devnull, 'w')
-    return dev_null_fd
 
 
 def regraft_commit_graph_onto_split_repo(commit_graph: CommitGraph,
