@@ -81,12 +81,23 @@ def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str):
                                      common_ancestor=config.common_ancestor,
                                      stop_on_first=True)
     if not merges:
-        # FIXME: This might not be true.
-        # print(f'- There are no unmerged commits. The {config.target} branch is up to date.')
-        print(f'- The status is not computable yet.')
-        return
+        left_commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=config.target,
+                                                                     upstream_branch=config.upstream)
+        right_commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=config.target,
+                                                                      upstream_branch=config.secondary_upstream)
+        if not left_commits and not right_commits:
+            print(f'- There are no unmerged commits. The {config.target} branch is up to date.')
+            return
 
-    print(f'- There is at least one merge that can be performed.')
+        def lenOrNone(x):
+            return len(x) if x else 0
+        print(f'- There are {lenOrNone(left_commits)} unmerged commits from {config.upstream}.')
+        print(f'- There are {lenOrNone(right_commits)} unmerged commits from {config.secondary_upstream}.')
+        print(f'- The automerger is waiting for unmerged commits in')
+        print(f'  {config.upstream} and {config.secondary_upstream} to agree on a merge base')
+        print(f'  from the {config.common_ancestor} branch before performing a zippered merge.')
+        return
+    print(f'- The automerger will perform at least one zippered merge on the next run.')
 
 
 def print_status(remote: str = 'origin', target_branch: Optional[str] = None, list_commits: bool = False,
