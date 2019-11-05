@@ -3,8 +3,7 @@
 """
 
 from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
-from git_apple_llvm.am.core import CommitStates, is_secondary_edge_commit_blocked_by_primary_edge, find_inflight_merges
-from git_apple_llvm.am.core import compute_unmerged_commits
+from git_apple_llvm.am.core import CommitStates, find_inflight_merges, compute_unmerged_commits, has_merge_conflict
 from git_apple_llvm.am.oracle import get_ci_status
 from typing import Dict, Set, List, Optional
 import sys
@@ -41,7 +40,6 @@ class EdgeStates:
 def get_state(upstream_branch: str,
               target_branch: str,
               inflight_merges: Dict[str, List[str]],
-              common_ancestor: Optional[str] = None,
               remote: str = 'origin',
               query_ci_status: bool = False):
     commits: Optional[List[str]] = compute_unmerged_commits(remote=remote,
@@ -54,33 +52,31 @@ def get_state(upstream_branch: str,
     commits_inflight: Set[str] = set(
         inflight_merges[target_branch] if target_branch in inflight_merges else [])
 
-    def is_blocked(commit: str):
-        return common_ancestor and is_secondary_edge_commit_blocked_by_primary_edge(commit,
-                                                                                    f'{remote}/{common_ancestor}',
-                                                                                    f'{remote}/{target_branch}')
-
-    def get_commit_state(commit: str):
+    def get_commit_state(commit: str, check_for_merge_conflict: bool):
         if query_ci_status:
             ci_state: Optional[str] = get_ci_status(commit, target_branch)
             if ci_state:
                 return EdgeStates.get_state(ci_state)
+        if check_for_merge_conflict and has_merge_conflict(commit, target_branch, remote):
+            return EdgeStates.blocked
         if commit in commits_inflight:
             return EdgeStates.working
-        if is_blocked(commit):
-            return EdgeStates.blocked
-        return None
+        return EdgeStates.clear
 
     # Determine the status of this edge.
     # The edge is blocked if there is a least one blocked commit. If there are
     # no blocked commits, the edge is working if there's at least one working
     # commit. Otherwise the edge is clear.
     working: bool = False
+    check_for_merge_conflict: bool = True
     for commit in commits:
-        commit_state = get_commit_state(commit)
+        commit_state = get_commit_state(commit, check_for_merge_conflict)
         if commit_state is EdgeStates.blocked:
             return EdgeStates.blocked
         if commit_state is EdgeStates.working:
             working = True
+        # Only check for a merge conflict on the first commit.
+        check_for_merge_conflict = False
     if working:
         return EdgeStates.working
     return EdgeStates.clear
@@ -161,7 +157,6 @@ def print_graph(remotes: List = ['origin'],
             edge_state = get_state(config.upstream,
                                    config.target,
                                    merges,
-                                   config.common_ancestor,
                                    remote,
                                    query_ci_status)
             graph.edge(config.upstream, config.target,
@@ -171,7 +166,6 @@ def print_graph(remotes: List = ['origin'],
                 edge_state = get_state(config.secondary_upstream,
                                        config.target,
                                        merges,
-                                       config.common_ancestor,
                                        remote,
                                        query_ci_status)
                 graph.edge(config.secondary_upstream, config.target,
