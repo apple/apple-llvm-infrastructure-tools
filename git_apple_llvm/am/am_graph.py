@@ -192,4 +192,10 @@ def print_graph(remotes: List = ['origin'],
                 graph.edge(config.secondary_upstream, config.target,
                            color=EdgeStates.get_color(edge_state),
                            penwidth=PENWIDTH, constraint='false')
-    graph.render('automergers', view=True)
+
+    # If the requested format is dot, print it to the command line instead of
+    # writing and opening an external file.
+    if fmt == 'dot':
+        print(graph.source)
+    else:
+        graph.render('automergers', view=True)

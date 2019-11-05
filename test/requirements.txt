@@ -5,3 +5,4 @@ lit
 flake8
 mypy
 httpretty
+graphviz
