@@ -7,7 +7,7 @@ An overview of infrastructure and tools for Apple fork of llvm-project
 ======================================================================
 
 This is a collection of tools for maintaining LLVM-project related
-infrastructure, including CI, automerging, monorepo transition, and others.
+infrastructure, including CI, automerging, and others.
 
 The documentation is broken down into several high-level groupings targeted at different audiences:
 
@@ -15,13 +15,13 @@ User Guides
 ===========
 
 Are you an engineer working on llvm-project?
-These guides are there to let you know how to use `git apple-llvm` to help your work on the llvm-project monorepo!
+These guides are there to let you know how to use `git apple-llvm` to help your work on the llvm-project!
 
 .. toctree::
    :maxdepth: 2
 
-   Getting started with git apple-llvm <git-apple-llvm>
    WorkingOnLLVM
+   Getting started with git apple-llvm <git-apple-llvm>
    RebasingFromSplitToMonorepo
 
 Tools Documentation
@@ -34,7 +34,7 @@ Tools for engineers
 *******************
 
 The tools listed below simplify some of the day-to-day tasks for
-the engineers who are working with the llvm-project monorepo:
+the engineers who are working with llvm-project:
 
 .. toctree::
    :maxdepth: 1

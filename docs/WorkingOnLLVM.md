@@ -3,20 +3,6 @@
 This guide is aimed at engineers using Apple's downstream
 [llvm-project](https://github.com/apple/llvm-project).
 
-## Building Swift
-
-You can use Swift's `update-checkout` script to get the monorepo! The following command can be used when working with Swift's `master` branch:
-
-```
-./swift/utils/update-checkout --scheme master-llvm-monorepo --clone-with-ssh --symlink-llvm-monorepo
-```
-
-Alternatively, you can use the following command when working with Swift's `master-next` branch:
-
-```
-./swift/utils/update-checkout --scheme master-next-llvm-monorepo --clone-with-ssh --symlink-llvm-monorepo
-```
-
 ## Branching scheme
 
 There are currently three namespaces for branches on
