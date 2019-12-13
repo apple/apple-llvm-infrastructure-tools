@@ -122,7 +122,7 @@ def compute_zippered_merge_commits(left: BranchIterator, right: BranchIterator,
 
 def compute_zippered_merges(remote: str, target: str, left_upstream: str,
                             right_upstream: str, common_ancestor: str,
-                            max_commits: int = 40,
+                            max_commits: int = 140,
                             stop_on_first: bool = False) -> Optional[List[List[str]]]:
     """
         Return the list of lists that contain the parents of the merge commit that should
