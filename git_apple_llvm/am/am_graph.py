@@ -23,7 +23,7 @@ NODE_ATTR = {'shape': 'record',
              'style': 'filled',
              'color': 'lightgray',
              'fixedsize': 'true',
-             'width': '3',
+             'width': '4',
              'height': '0.8',
              }
 PENWIDTH = '2'
