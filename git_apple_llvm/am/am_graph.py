@@ -38,6 +38,32 @@ YELLOW = 'gold3'
 RED = 'red3'
 
 
+class Subgraph:
+
+    def __init__(self, name: str):
+        self.name: str = name
+        self.nodes: List[str] = []
+        self.subgraphs: Dict[str, Subgraph] = dict()
+
+    def add_node(self, node: str):
+        self.nodes.append(node)
+
+    def __getitem__(self, name):
+        if name not in self.subgraphs:
+            self.subgraphs[name] = Subgraph(name)
+        return self.subgraphs[name]
+
+    def materialize(self, graph):
+        log.info(f'Creating {self.name} subgraph with {len(self.nodes)} nodes '
+                 f'and {len(self.subgraphs)} nested subgraphs.')
+        with graph.subgraph(name=f'cluster_{self.name}') as subgraph:
+            subgraph.attr(label=self.name)
+            for node in self.nodes:
+                subgraph.node(node)
+            for _, subsubgraph in self.subgraphs.items():
+                subsubgraph.materialize(subgraph)
+
+
 class EdgeStates:
     clear = 'clear'
     working = 'working'
@@ -108,35 +134,27 @@ def get_state(upstream_branch: str,
     return EdgeStates.clear
 
 
-def create_subgraph(graph, name: str, nodes: List[str]):
-    log.info(f'Creating {name} subgraph with {len(nodes)} node(s)')
-    with graph.subgraph(name=f'cluster_{name}') as subgraph:
-        subgraph.attr(label=name)
-        for node in nodes:
-            subgraph.node(node)
-
-
 def add_branches(graph, branches: List[str]):
-    llvm: List[str] = []
-    github: List[str] = []
-    internal: List[str] = []
+    llvm = Subgraph('LLVM')
+    swift = Subgraph('Swift')
+    internal = Subgraph('Internal')
 
     branches = sorted(set(branches))
     for branch in branches:
         if branch.startswith('llvm'):
-            llvm.append(branch)
+            llvm.add_node(branch)
             continue
         if branch.startswith('swift'):
-            github.append(branch)
+            swift.add_node(branch)
             continue
         if branch.startswith('apple'):
-            github.append(branch)
+            swift.add_node(branch)
             continue
-        internal.append(branch)
+        internal.add_node(branch)
 
-    create_subgraph(graph, 'LLVM', llvm)
-    create_subgraph(graph, 'Github', github)
-    create_subgraph(graph, 'Internal', internal)
+    llvm.materialize(graph)
+    swift.materialize(graph)
+    internal.materialize(graph)
 
 
 def print_graph(remotes: List = ['origin'],
