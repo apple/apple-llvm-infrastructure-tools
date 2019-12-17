@@ -5,6 +5,7 @@
 from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
 from git_apple_llvm.am.core import CommitStates, find_inflight_merges, compute_unmerged_commits, has_merge_conflict
 from git_apple_llvm.am.oracle import get_ci_status
+from git_apple_llvm.am.zippered_merge import compute_zippered_merges
 from typing import Dict, Set, List, Optional
 import sys
 import logging
@@ -34,12 +35,14 @@ SPLINES = 'ortho'
 # Graphviz colors.
 # https://www.graphviz.org/doc/info/colors.html
 GREEN = 'green3'
+BLUE = 'blue3'
 YELLOW = 'gold3'
 RED = 'red3'
 
 
 class EdgeStates:
     clear = 'clear'
+    waiting = 'waiting'
     working = 'working'
     blocked = 'blocked'
 
@@ -47,6 +50,7 @@ class EdgeStates:
     def get_color(state: str):
         colors: Dict = {
             EdgeStates.clear: GREEN,
+            EdgeStates.waiting: BLUE,
             EdgeStates.working: YELLOW,
             EdgeStates.blocked: RED,
         }
@@ -106,6 +110,27 @@ def get_state(upstream_branch: str,
     if working:
         return EdgeStates.working
     return EdgeStates.clear
+
+
+def get_zippered_state(config: AMTargetBranchConfig, remote: str):
+    log.info(f'Computing status for [{config.upstream} -> {config.target} <- {config.secondary_upstream}]')
+    merges: Optional[List[List[str]]] = []
+    merges = compute_zippered_merges(remote=remote, target=config.target,
+                                     left_upstream=config.upstream,
+                                     right_upstream=config.secondary_upstream,
+                                     common_ancestor=config.common_ancestor,
+                                     stop_on_first=True)
+    if merges:
+        return (EdgeStates.working, EdgeStates.working)
+
+    left_commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=config.target,
+                                                                 upstream_branch=config.upstream)
+    right_commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=config.target,
+                                                                  upstream_branch=config.secondary_upstream)
+
+    left_state = EdgeStates.waiting if left_commits else EdgeStates.clear
+    right_state = EdgeStates.waiting if right_commits else EdgeStates.clear
+    return (left_state, right_state)
 
 
 def create_subgraph(graph, name: str, nodes: List[str]):
@@ -175,21 +200,21 @@ def print_graph(remotes: List = ['origin'],
             continue
         merges = find_inflight_merges(remote)
         for config in configs:
-            edge_state = get_state(config.upstream,
-                                   config.target,
-                                   merges,
-                                   remote,
-                                   query_ci_status)
-            graph.edge(config.upstream, config.target,
-                       color=EdgeStates.get_color(edge_state),
-                       penwidth=PENWIDTH)
             if config.secondary_upstream:
-                edge_state = get_state(config.secondary_upstream,
+                left_state, right_state = get_zippered_state(config, remote)
+                graph.edge(config.upstream, config.target,
+                           color=EdgeStates.get_color(left_state),
+                           penwidth=PENWIDTH)
+                graph.edge(config.secondary_upstream, config.target,
+                           color=EdgeStates.get_color(right_state),
+                           penwidth=PENWIDTH, constraint='false')
+            else:
+                edge_state = get_state(config.upstream,
                                        config.target,
                                        merges,
                                        remote,
                                        query_ci_status)
-                graph.edge(config.secondary_upstream, config.target,
+                graph.edge(config.upstream, config.target,
                            color=EdgeStates.get_color(edge_state),
-                           penwidth=PENWIDTH, constraint='false')
+                           penwidth=PENWIDTH)
     graph.render('automergers', view=True)
