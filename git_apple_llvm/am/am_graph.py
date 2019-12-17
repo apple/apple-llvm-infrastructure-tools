@@ -23,6 +23,7 @@ NODESEP = '1'
 NODE_ATTR = {'shape': 'record',
              'style': 'filled',
              'color': 'lightgray',
+             'fontname': 'helvetica',
              'fixedsize': 'true',
              'width': '4',
              'height': '0.8',
