@@ -1,3 +1,4 @@
+REQUIRES: rdar57991261
 RUN: mkrepo %t.root
 RUN: mkrepo %t.x
 RUN: mkrepo %t.y
