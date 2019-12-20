@@ -93,18 +93,43 @@ class EdgeStates:
             return EdgeStates.blocked
 
 
-def get_state(upstream_branch: str,
-              target_branch: str,
-              inflight_merges: Dict[str, List[str]],
-              remote: str = 'origin',
-              query_ci_status: bool = False):
-    log.info(f'Computing status for [{upstream_branch} -> {target_branch}]')
+class Edge:
+
+    def __init__(self, upstream: str, target: str):
+        self.upstream: str = upstream
+        self.target: str = target
+        self.state: str = EdgeStates.clear
+        self.url: Optional[str] = None
+        self.constraint: bool = True
+
+    def set_state(self, state: str):
+        self.state = state
+
+    def set_constraint(self, constraint: bool):
+        self.constraint = constraint
+
+    def materialize(self, graph):
+        contraint = 'true' if self.constraint else 'false'
+        graph.edge(self.upstream, self.target,
+                   color=EdgeStates.get_color(self.state),
+                   URL=self.url,
+                   penwidth=PENWIDTH,
+                   constraint=contraint)
+
+
+def compute_edge(upstream_branch: str,
+                 target_branch: str,
+                 inflight_merges: Dict[str, List[str]],
+                 remote: str = 'origin',
+                 query_ci_status: bool = False):
+    log.info(f'Computing edge for [{upstream_branch} -> {target_branch}]')
+    edge: Edge = Edge(upstream_branch, target_branch)
     commits: Optional[List[str]] = compute_unmerged_commits(remote=remote,
                                                             target_branch=target_branch,
                                                             upstream_branch=upstream_branch,
                                                             format='%H')
     if not commits:
-        return EdgeStates.clear
+        return edge
 
     commits_inflight: Set[str] = set(
         inflight_merges[target_branch] if target_branch in inflight_merges else [])
@@ -129,35 +154,42 @@ def get_state(upstream_branch: str,
     for commit in commits:
         commit_state = get_commit_state(commit, check_for_merge_conflict)
         if commit_state is EdgeStates.blocked:
-            return EdgeStates.blocked
+            edge.set_state(EdgeStates.blocked)
+            return edge
         if commit_state is EdgeStates.working:
             working = True
         # Only check for a merge conflict on the first commit.
         check_for_merge_conflict = False
     if working:
-        return EdgeStates.working
-    return EdgeStates.clear
+        edge.set_state(EdgeStates.working)
+    return edge
 
 
-def get_zippered_state(config: AMTargetBranchConfig, remote: str):
-    log.info(f'Computing status for [{config.upstream} -> {config.target} <- {config.secondary_upstream}]')
+def compute_zippered_edges(config: AMTargetBranchConfig, remote: str):
+    log.info(f'Computing edges for [{config.upstream} -> {config.target} <- {config.secondary_upstream}]')
     merges: Optional[List[List[str]]] = []
     merges = compute_zippered_merges(remote=remote, target=config.target,
                                      left_upstream=config.upstream,
                                      right_upstream=config.secondary_upstream,
                                      common_ancestor=config.common_ancestor,
                                      stop_on_first=True)
+    left_edge: Edge = Edge(config.upstream, config.target)
+    right_edge: Edge = Edge(config.secondary_upstream, config.target)
+    right_edge.set_constraint(False)
     if merges:
-        return (EdgeStates.working, EdgeStates.working)
+        left_edge.set_state(EdgeStates.working)
+        right_edge.set_state(EdgeStates.working)
+        return (left_edge, right_edge)
 
     left_commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=config.target,
                                                                  upstream_branch=config.upstream)
+    left_edge.set_state(
+        EdgeStates.waiting if left_commits else EdgeStates.clear)
     right_commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=config.target,
                                                                   upstream_branch=config.secondary_upstream)
-
-    left_state = EdgeStates.waiting if left_commits else EdgeStates.clear
-    right_state = EdgeStates.waiting if right_commits else EdgeStates.clear
-    return (left_state, right_state)
+    right_edge.set_state(
+        EdgeStates.waiting if right_commits else EdgeStates.clear)
+    return (left_edge, right_edge)
 
 
 def create_subgraph(graph, name: str, nodes: List[str]):
@@ -228,20 +260,14 @@ def print_graph(remotes: List = ['origin'],
         merges = find_inflight_merges(remote)
         for config in configs:
             if config.secondary_upstream:
-                left_state, right_state = get_zippered_state(config, remote)
-                graph.edge(config.upstream, config.target,
-                           color=EdgeStates.get_color(left_state),
-                           penwidth=PENWIDTH)
-                graph.edge(config.secondary_upstream, config.target,
-                           color=EdgeStates.get_color(right_state),
-                           penwidth=PENWIDTH, constraint='false')
+                left_edge, right_edge = compute_zippered_edges(config, remote)
+                left_edge.materialize(graph)
+                right_edge.materialize(graph)
             else:
-                edge_state = get_state(config.upstream,
-                                       config.target,
-                                       merges,
-                                       remote,
-                                       query_ci_status)
-                graph.edge(config.upstream, config.target,
-                           color=EdgeStates.get_color(edge_state),
-                           penwidth=PENWIDTH)
+                edge = compute_edge(config.upstream,
+                                    config.target,
+                                    merges,
+                                    remote,
+                                    query_ci_status)
+                edge.materialize(graph)
     graph.render('automergers', view=True)
