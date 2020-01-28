@@ -53,6 +53,7 @@ def compute_unmerged_commits(remote: str, target_branch: str,
     """ Returns the list of commits that are not yet merged from upstream to the target branch. """
     commit_log_output = git_output(
         'log',
+        '--date=local',
         '--first-parent',
         f'--pretty=format:{format}', '--no-patch',
         f'{remote}/{target_branch}..{remote}/{upstream_branch}',
