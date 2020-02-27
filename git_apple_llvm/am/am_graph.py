@@ -201,8 +201,8 @@ def create_subgraph(graph, name: str, nodes: List[str]):
 
 
 def add_branches(graph, branches: List[str]):
-    llvm = Subgraph('LLVM')
-    swift = Subgraph('Swift')
+    llvm = Subgraph('github.com/llvm')
+    apple = Subgraph('github.com/apple')
     internal = Subgraph('Internal')
 
     branches = sorted(set(branches))
@@ -211,15 +211,15 @@ def add_branches(graph, branches: List[str]):
             llvm.add_node(branch)
             continue
         if branch.startswith('swift'):
-            swift.add_node(branch)
+            apple.add_node(branch)
             continue
         if branch.startswith('apple'):
-            swift.add_node(branch)
+            apple.add_node(branch)
             continue
         internal.add_node(branch)
 
     llvm.materialize(graph)
-    swift.materialize(graph)
+    apple.materialize(graph)
     internal.materialize(graph)
 
 
