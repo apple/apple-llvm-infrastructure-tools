@@ -1,6 +1,7 @@
 pytest-mock
 pytest
 GitPython==2.1.11
+gitdb2==2.0.6
 lit
 flake8
 mypy
