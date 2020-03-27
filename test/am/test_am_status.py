@@ -56,8 +56,7 @@ def test_am_status_ci_state(mocker, cd_to_am_tool_repo_clone):
 
     mocker.patch('git_apple_llvm.am.oracle.get_state', side_effect=fake_redis)
 
-    result = CliRunner().invoke(am, ['status', '--target', 'master', '--no-fetch', '--ci-status'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(am, ['status', '--target', 'master', '--no-fetch', '--ci-status'])
 
     assert result.exit_code == 0
     assert ': PASSED' in result.output

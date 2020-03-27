@@ -80,8 +80,7 @@ def cd_to_am_tool_repo_clone(am_tool_git_repo_clone: str):
 
 
 def test_am_secondary_edge_status(cd_to_am_tool_repo_clone):
-    result = CliRunner().invoke(am, ['status', '--target', 'downstream/swift/master', '--no-fetch'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(am, ['status', '--target', 'downstream/swift/master', '--no-fetch'])
 
     assert result.exit_code == 0
     assert """[downstream/master -> downstream/swift/master <- swift/master]
@@ -90,8 +89,7 @@ def test_am_secondary_edge_status(cd_to_am_tool_repo_clone):
 
 
 def test_am_secondary_edge_status_merged(cd_to_am_tool_repo_clone):
-    result = CliRunner().invoke(am, ['status', '--target', 'downstream/swift/master-merged', '--no-fetch'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(am, ['status', '--target', 'downstream/swift/master-merged', '--no-fetch'])
 
     assert result.exit_code == 0
     assert """[downstream/master -> downstream/swift/master-merged <- swift/master]
@@ -100,8 +98,7 @@ def test_am_secondary_edge_status_merged(cd_to_am_tool_repo_clone):
 
 
 def test_am_secondary_edge_status_blocked(cd_to_am_tool_repo_clone):
-    result = CliRunner().invoke(am, ['status', '--target', 'downstream/swift/master-unmergeable', '--no-fetch'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(am, ['status', '--target', 'downstream/swift/master-unmergeable', '--no-fetch'])
 
     print(result.output)
     assert result.exit_code == 0

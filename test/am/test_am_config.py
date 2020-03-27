@@ -69,8 +69,7 @@ def test_am_print_status(cd_to_am_tool_repo_clone, capfd):
 
 
 def test_am_status(cd_to_am_tool_repo_clone):
-    result = CliRunner().invoke(am, ['status', '--target', 'master', '--no-fetch'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(am, ['status', '--target', 'master', '--no-fetch'])
 
     assert result.exit_code == 0
     assert result.output == '[upstream -> master]\n- There are no unmerged commits. The master branch is up to date.\n'

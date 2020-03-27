@@ -9,36 +9,31 @@ from monorepo_test_harness import commit_file
 
 
 def test_push_invalid_source_ref(cd_to_monorepo):
-    result = CliRunner().invoke(git_apple_llvm_push, ['foo:dest'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(git_apple_llvm_push, ['foo:dest'])
     assert 'refspec "foo" is invalid' in result.output
     assert result.exit_code == 1
 
 
 def test_push_invalid_dest_ref(cd_to_monorepo):
-    result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:dest'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:dest'])
     assert 'refspec "dest" is invalid' in result.output
     assert result.exit_code == 1
 
 
 def test_push_invalid_single_ref_name(cd_to_monorepo):
-    result = CliRunner().invoke(git_apple_llvm_push, ['foo'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(git_apple_llvm_push, ['foo'])
     assert 'refspec "foo" is invalid' in result.output
     assert result.exit_code == 1
 
 
 def test_push_unsupported_def_ref(cd_to_monorepo_clone):
-    result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:llvm/master'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:llvm/master'])
     assert 'destination Git refspec "llvm/master" cannot be pushed to' in result.output
     assert result.exit_code == 1
 
 
 def test_push_up_to_date(cd_to_monorepo_clone):
-    result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:internal/master'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:internal/master'])
     assert 'No commits to commit: everything up-to-date' in result.output
     assert result.exit_code == 0
 
@@ -96,8 +91,7 @@ def test_push_root_commit(cd_to_monorepo_clone,
 def test_push_prohibited_split_dir(cd_to_monorepo_clone):
     commit_file('libcxxabi/testplan', 'it works!')
     result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:internal/master',
-                                                      '--merge-strategy=ff-only'],
-                                mix_stderr=True)
+                                                      '--merge-strategy=ff-only'])
     assert 'push configuration "internal-master" prohibits pushing to "libcxxabi"' in result.output
     assert result.exit_code == 1
 
@@ -109,15 +103,13 @@ def test_push_many_llvm_commits(cd_to_monorepo_clone,
     for i in range(0, 50):
         commit_file(f'llvm/a-new-file{i}', 'internal: cool file')
     result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:internal/master',
-                                                      '--merge-strategy=ff-only'],
-                                mix_stderr=True)
+                                                      '--merge-strategy=ff-only'])
     assert 'pushing 50 commits, are you really sure' in result.output
     assert result.exit_code == 1
 
     result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:internal/master',
                                                       '--merge-strategy=ff-only',
-                                                      '--push-limit=51'],
-                                mix_stderr=True)
+                                                      '--push-limit=51'])
     assert 'Pushing to llvm' in result.output
     assert result.exit_code == 0
     assert git_output('rev-parse', 'master~50',
@@ -129,7 +121,6 @@ def test_reject_mapped_commit(cd_to_monorepo_clone):
 
 apple-llvm-split-commit: f0931a1b36c88157ffc25a9ed1295f3addff85b9\n
 apple-llvm-split-dir: llvm/''')
-    result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:internal/master'],
-                                mix_stderr=True)
+    result = CliRunner().invoke(git_apple_llvm_push, ['HEAD:internal/master'])
     assert 'one or more commits is already present in the split repo' in result.output
     assert result.exit_code == 1
