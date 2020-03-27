@@ -13,6 +13,9 @@ lit_testdirs := $(filter-out ./,$(sort \
 	| awk -f $(testdir)/bin/extract-targets-from-test-directories.awk)))
 lit_targets := $(patsubst ./%/,check-%,$(lit_testdirs))
 
+# Note: PYTEST is lazy because PYTHON_ROOT is set dynamically.
+PYTEST = $(PYTHON_ROOT)pytest
+PYTESTFLAGS := -n auto --log-level=debug
 pytest_dirs := auto-updater git-tools config ci pr am
 pytest_targets := $(foreach t,$(pytest_dirs),check-$t)
 
@@ -47,13 +50,13 @@ $(lit_test_file_targets) : check-%: venv requirements Makefile
 $(pytest_targets) : check-%: venv git_apple_llvm_package requirements Makefile
 	@printf "\n***********************************************************\n"
 	@printf "%s: check pytests for %s\n" "$@" "$*"
-	$(PYTHON_ROOT)pytest --log-level=debug $(testdir)/$*/
+	$(PYTEST) $(PYTESTFLAGS) $(testdir)/$*/
 
 check-pytest: venv git_apple_llvm_package requirements Makefile
 	@printf "\n***********************************************************\n"
 	@printf "%s: check all pytests\n" "$@"
 	@printf " => includes %s\n" $(pytest_targets)
-	$(PYTHON_ROOT)pytest --log-level=debug $(addprefix $(testdir)/,$(pytest_dirs))
+	$(PYTEST) $(PYTESTFLAGS) $(addprefix $(testdir)/,$(pytest_dirs))
 
 check-lit: venv requirements Makefile
 	@printf "\n***********************************************************\n"
