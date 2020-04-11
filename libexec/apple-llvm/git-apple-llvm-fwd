@@ -38,9 +38,6 @@ fwd_setup() {
     run --hide-errors --dry git --git-dir="$GIT_DIR" show-ref >/dev/null ||
         run --dry git init --bare || error "failed to create '$GIT_DIR'"
 
-    # Configure protocol.
-    run --dry git config --local --replace-all protocol.version 2
-
     local -a remotes
     for remote in $(run cat "$FWD_CONFIG" |
         run awk '$1=="remote"{print $2 ":" $3}'); do
@@ -88,18 +85,8 @@ fetch_remote() {
     # Don't fetch if this isn't a source.
     [ -n "$refs" ] || return 0
 
-    # Only negotiate with remote using refs from that remote; it's unlikely
-    # other remotes will speed anything up here.
-    #
-    # Note: Using show-ref to gather SHA-1s since early versions of Git don't
-    # accept patterns here.
-    local tips
-    tips="$(run --dry git for-each-ref \
-        --format="--negotiation-tip %(objectname)" "refs/remotes/$name/*")" ||
-        error "failed to iterate through remote tips of $name"
-
     log "    => fetching for $refs"
-    run --dry git fetch --prune "$name" $tips ||
+    run --dry git fetch --prune "$name" ||
         error "failed to fetch from '$name'"
 }
 
