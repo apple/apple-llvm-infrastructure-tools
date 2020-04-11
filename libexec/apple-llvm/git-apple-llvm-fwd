@@ -53,6 +53,11 @@ fwd_setup() {
     run --hide-errors --dry git --git-dir="$GIT_DIR" show-ref >/dev/null ||
         run --dry git init --bare || error "failed to create '$GIT_DIR'"
 
+    # Configure protocol.
+    if $GIT_v2_18_OR_NEWER; then
+        run --dry git config --local --replace-all protocol.version 2
+    fi
+
     # Format: <name> ':' 'tags'? ':' <url>
     for remote in $(print_remotes); do
         name="${remote%%:*}"
@@ -122,6 +127,30 @@ fetch_remote() {
     run --dry git fetch --prune "$name" "${refspecs[@]}" ||
         error "failed to fetch from '$name'"
 }
+
+lookup_git_v2_18_plus() {
+    GIT_v2_18_OR_NEWER=false
+    local v
+    v="$(git --version 2>/dev/null | awk '$1 == "git" && $2 == "version" {print $3}')" ||
+        return 0
+    [ -n "$v" ] || return 0
+
+    local rest="$v"
+    local next result
+    for n in 2 18; do
+        next="${rest%%.*}"
+        rest="${rest#*.}"
+        result=$(( $n - $next )) 2>/dev/null || return 0
+        [ "$result" -le 0 ] || return 0
+        [ "$result" -lt 0 ] || continue
+        GIT_v2_18_OR_NEWER=true
+        return 0
+    done
+
+    GIT_v2_18_OR_NEWER=true
+    return 0
+}
+lookup_git_v2_18_plus
 
 CONFIG_DIR="$DEFAULT_CONFIG_DIR"
 GIT_DIR=$DEFAULT_GIT_DIR
