@@ -141,10 +141,25 @@ export GIT_DIR
 
 fwd_setup || exit 1
 
+collect_pushes() {
+    cat "$FWD_CONFIG" | awk '
+    $1 == "push" {
+        if (pushes[$2]) { pushes[$2] = pushes[$2] "," $3 }
+        else { pushes[$2] = $3 }
+    }
+    END {
+        for (r in pushes) {
+            printf "%s|%s\n", r, pushes[r]
+        }
+    }' | sort
+}
+
 log "Forwarding refs"
-cat "$FWD_CONFIG" | awk '$1 == "push" {print $2, $3}' |
-while read remote refspec; do
-    log "  - $remote $refspec"
-    run --dry git push "$remote" "$refspec" || error "failed to push '$3' to '$2'"
+for push in $(collect_pushes); do
+    name="${push%%|*}"
+    refspecs="${push#*|}"
+    refspecs="${refspecs//,/ }"
+    run --dry git push "$name" $refspecs ||
+        error "failed to push '$refspecs' to '$name'"
 done
 exit 0
