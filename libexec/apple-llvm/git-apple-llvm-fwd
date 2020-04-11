@@ -271,13 +271,13 @@ for push in $(collect_pushes); do
 
     # Clear out local refs/heads/ and refs/tags/ to create a "clean" ref
     # namespace to compare to the remote.
-    run --dry git push --prune "$GIT_DIR" \
+    run --dry git push --prune --quiet "$GIT_DIR" \
         "refs/no-fwd-refs/*:refs/heads/*" \
         "refs/no-fwd-refs/*:refs/tags/*"
 
     # Push locally.  This will fill up "refs/heads/*" and "refs/tags/*" as if
     # we were pushing to the remote... but without network traffic.
-    run --dry git push "$GIT_DIR" $refspecs ||
+    run --dry git push --quiet "$GIT_DIR" $refspecs ||
         error "failed to push '$refspecs' to '$name'"
 
     # Check for changes, comparing:
@@ -292,7 +292,7 @@ for push in $(collect_pushes); do
     # The remote push will have saved the local heads in refs/remotes/*.  Manually
     # store the pushed tags similarly in refs/remote-tags/*.  We'll need these
     # to compare next time.
-    run --dry git push "$GIT_DIR" \
+    run --dry git push --quiet "$GIT_DIR" \
         "+refs/tags/*:refs/remote-tags/$name/*"
 done
 exit 0
