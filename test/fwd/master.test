@@ -61,3 +61,22 @@ RUN: git -C %t/repos/b.git show-ref a/master | awk '{print $1}' >%t/b.sha1
 RUN: not diff %t/a.sha1 %t/b.sha1
 RUN: git -C %t/repos/a.git show-ref master | awk '{print $1}' >%t/a.sha1
 RUN: diff %t/a.sha1 %t/b.sha1
+
+##############################
+# Don't force push implicitly.
+##############################
+
+# Non-forward change.
+RUN: git -C %t/a checkout master
+RUN: git -C %t/a reset --hard refs/heads/b1
+RUN: mkblob %t/a b3
+RUN: git -C %t/a branch b3
+RUN: git -C %t/a push -f origin master b3
+
+# Forwarding should now fail.
+RUN: cd %t/working
+RUN: not git apple-llvm fwd --config-dir %t/configs t
+
+# Check the output.  Should not have changed.
+RUN: git -C %t/repos/b.git show-ref a/master | awk '{print $1}' >%t/b.sha1
+RUN: diff %t/a.sha1 %t/b.sha1
