@@ -36,7 +36,7 @@ fwd_setup() {
     # Always change directory.
     log "Updating remotes up and syncing $GIT_DIR"
     run --hide-errors --dry git --git-dir="$GIT_DIR" show-ref >/dev/null ||
-        run --dry git init || error "failed to create '$GIT_DIR'"
+        run --dry git init --bare || error "failed to create '$GIT_DIR'"
 
     local -a remotes
     for remote in $(run cat "$FWD_CONFIG" |
