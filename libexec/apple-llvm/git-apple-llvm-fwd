@@ -123,8 +123,21 @@ fetch_remote() {
     [ -z "$tags" ] ||
         refspecs=( "${refspecs[@]}" "+refs/tags/*:refs/remote-tags/$name/*" )
 
-    log "    => fetching $refspecs"
-    run --dry git fetch --prune "$name" "${refspecs[@]}" ||
+    # Only negotiate with remote using refs from that remote; it's unlikely
+    # other remotes will speed anything up here.
+    #
+    # Note: Using for-each-ref to gather SHA-1s since when --negotation-tip was
+    # introduced (and at least up to 2.21.0) it did not accept patterns.
+    local tips
+    if $GIT_v2_18_OR_NEWER; then
+        tips="$(run --dry git for-each-ref \
+            --format="--negotiation-tip %(objectname)" \
+            "refs/remotes/$name/*" "refs/remote-tags/$name/*")" ||
+            error "failed to iterate through remote tips of $name"
+    fi
+
+    log "    => fetching ${refspecs[*]}"
+    run --dry git fetch --prune "$name" $tips "${refspecs[@]}" ||
         error "failed to fetch from '$name'"
 }
 
