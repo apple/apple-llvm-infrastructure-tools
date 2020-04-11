@@ -1,7 +1,9 @@
 remote a __REPOS__/a.git
+remote-tags a
 remote b __REPOS__/b.git
 
 push b refs/remotes/a/master:refs/heads/a/master
+push b refs/remote-tags/a/*:refs/tags/a-tags/*
 
 # Clean up.
 RUN: rm -rf %t
@@ -13,11 +15,12 @@ RUN: mkrepo --bare %t/repos/b.git
 RUN: git clone %t/repos/a.git %t/a
 RUN: mkblob %t/a b1
 RUN: git -C %t/a branch b1
+RUN: git -C %t/a tag tagb1
 RUN: mkblob %t/a b2
 RUN: git -C %t/a branch b2
 
 # Push and check.
-RUN: git -C %t/a push origin master b1 b2
+RUN: git -C %t/a push origin master b1 b2 tagb1
 RUN: git -C %t/repos/a.git show-ref master
 RUN: git -C %t/repos/a.git show-ref b1
 RUN: git -C %t/repos/a.git show-ref b2
@@ -37,6 +40,8 @@ RUN: git -C %t/repos/b.git show-ref a/master
 RUN: not git -C %t/repos/b.git show-ref refs/heads/master
 RUN: not git -C %t/repos/b.git show-ref b1
 RUN: not git -C %t/repos/b.git show-ref b2
+RUN: not git -C %t/repos/b.git show-ref refs/tags/tagb1
+RUN: git -C %t/repos/b.git show-ref a-tags/tagb1
 RUN: git -C %t/repos/a.git show-ref master | awk '{print $1}' >%t/a.sha1
 RUN: git -C %t/repos/b.git show-ref a/master | awk '{print $1}' >%t/b.sha1
 RUN: diff %t/a.sha1 %t/b.sha1
