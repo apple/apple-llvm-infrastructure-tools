@@ -174,12 +174,83 @@ collect_pushes() {
     }' | sort
 }
 
+check_locally_for_changes() {
+    local name="$1"
+
+    # Compare local and (cached) remote.  Return early if there's nothing to
+    # push.  The algorithm for comparing local and remote is as follows:
+    #
+    # - Print refs/remotes/<name>/* (the cached remote refs) as:
+    #       'old SHA-1 refs/heads/*'
+    #   replacing the first three components with "refs/heads/".
+    # - Print refs/heads/* (the refs to push) as:
+    #       'new SHA-1 refs/heads/*'
+    # - (Do the same for "refs/tags/*".)
+    # - Sort by the refname, putting old/new lines adjacent to each other.
+    # - Use 'uniq' to delete refs that shows up twice with the same SHA-1.
+    #   The '-f 1' causes the old/new to be ignored in the comparison.
+    # - If there aren't any 'new' lines left, skip this remote.
+    {
+        # refs/heads/*
+        run --dry git for-each-ref                                      \
+            --format='old %(objectname) refs/heads/%(refname:lstrip=3)' \
+            refs/remotes/$name/
+        run --dry git for-each-ref                  \
+            --format='new %(objectname) %(refname)' \
+            refs/heads/
+
+        # refs/tags/*
+        run --dry git for-each-ref                                     \
+            --format='old %(objectname) refs/tags/%(refname:lstrip=3)' \
+            refs/remote-tags/$name/
+        run --dry git for-each-ref                  \
+            --format='new %(objectname) %(refname)' \
+            refs/tags/
+    } | sort -k 3,3 | uniq -u -f 1 | grep -q ^new
+}
+
 log "Forwarding refs"
 for push in $(collect_pushes); do
     name="${push%%|*}"
     refspecs="${push#*|}"
     refspecs="${refspecs//,/ }"
+
+    # Confirm refspecs only push to refs/heads/* and refs/tags/*.
+    for refspec in $refspecs; do
+        target="${refspec#*:}"
+        case $target in
+            refs/heads/*) true;;
+            refs/tags/*) true;;
+            # We can support other namespaces in the future, but we need to
+            # know about them.
+            *) error "'$refspec' pushes outside of refs/{heads,tags}/*"
+        esac
+    done
+
+    # Clear out local refs/heads/ and refs/tags/ to create a "clean" ref
+    # namespace to compare to the remote.
+    run --dry git push --prune "$GIT_DIR" \
+        "refs/no-fwd-refs/*:refs/heads/*" \
+        "refs/no-fwd-refs/*:refs/tags/*"
+
+    # Push locally.  This will fill up "refs/heads/*" and "refs/tags/*" as if
+    # we were pushing to the remote... but without network traffic.
+    run --dry git push "$GIT_DIR" $refspecs ||
+        error "failed to push '$refspecs' to '$name'"
+
+    # Check for changes, comparing:
+    # - refs/heads/* against refs/remotes/<name/*
+    # - refs/tags/* against refs/remote-tags/<name/*
+    check_locally_for_changes "$name" || continue
+
+    # Push to the remote.
     run --dry git push "$name" $refspecs ||
         error "failed to push '$refspecs' to '$name'"
+
+    # The remote push will have saved the local heads in refs/remotes/*.  Manually
+    # store the pushed tags similarly in refs/remote-tags/*.  We'll need these
+    # to compare next time.
+    run --dry git push "$GIT_DIR" \
+        "+refs/tags/*:refs/remote-tags/$name/*"
 done
 exit 0

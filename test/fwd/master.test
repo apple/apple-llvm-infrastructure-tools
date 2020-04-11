@@ -46,6 +46,20 @@ RUN: git -C %t/repos/a.git show-ref master | awk '{print $1}' >%t/a.sha1
 RUN: git -C %t/repos/b.git show-ref a/master | awk '{print $1}' >%t/b.sha1
 RUN: diff %t/a.sha1 %t/b.sha1
 
+#######################################################
+# Check that running again only pushes if there's work.
+#######################################################
+
+# Move aside the destination remote.  If there's a push, it will fail.
+RUN: mv %t/repos/b.git %t/repos/b.git.backup
+
+# Try to forward.
+RUN: cd %t/working
+RUN: git apple-llvm fwd --config-dir %t/configs t
+
+# Move the destination remote back into place.
+RUN: mv %t/repos/b.git.backup %t/repos/b.git
+
 ########################################
 # Ensure forward can run incrementally.
 ########################################
