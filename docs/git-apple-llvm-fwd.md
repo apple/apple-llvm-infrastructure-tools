@@ -4,7 +4,7 @@
 
 ## Configuration
 
-Configuration *should* be stored in the `FETCH_HEAD` of the remote that wants
+Configuration *should* be stored in the `HEAD` of the remote that wants
 configuration, under `.apple-llvm/fwd-config`.  However that depends on having
 an `.apple-llvm` directory and we don't have that where we need it.  For now,
 configuration is in *this* repository inside `fwd-config`.
@@ -13,7 +13,9 @@ configuration is in *this* repository inside `fwd-config`.
 
 The syntax consists of `remote` and `push` directives.
 
-- `remote <name> <url>` sets up a remote.
+- `remote <name> <url>` sets up a remote.  No tags will be available by default.
+- `remote-tags <name>` requests tags.  They will be at
+  `refs/remote-tags/<name>/*` (instead of colliding in `refs/tags/*`).
 - `push <name> <refspec>` causes the given refspec to be pushed to the remote
   called `<name>`.
 
@@ -28,14 +30,18 @@ remote apple git@github.com:apple/llvm-project-v0.git
 
 push apple refs/remotes/llvm/master:refs/heads/llvm/master
 push apple refs/remotes/llvm/release/*:refs/heads/llvm/release/*
+
+# Optionally, include tags...
+remote-tags llvm
+push apple refs/remote-tags/llvm/llvmorg-*:refs/tags/llvmorg-*
 ```
 
 ### Desired syntax and behaviour
 
 Once the configuration is in the destination remote, we should change the tool
 to take destination remote on the command-line and look up configuration in its
-`FETCH_HEAD` (after cloning, etc.).  The only change to syntax is that `push`
-doesn't take a remote name, since it's set up on the command-line.
+`HEAD` (after cloning, etc.).  The only change to syntax is that `push` doesn't
+take a remote name, since it's set up on the command-line.
 
 #### Example once the configuration moves to the destination repository
 

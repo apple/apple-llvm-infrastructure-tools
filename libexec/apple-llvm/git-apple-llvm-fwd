@@ -27,6 +27,21 @@ is_not_same_url() {
     return 0
 }
 
+print_remotes() {
+    run cat "$FWD_CONFIG" | run awk '
+    $1 == "remote" { urls[$2] = $3 }
+    $1 == "remote-tags" { tags[$2] = 1 }
+    END {
+        for (r in urls) {
+            if (tags[r]) {
+                printf "%s:tags:%s\n", r, urls[r]
+            } else {
+                printf "%s::%s\n", r, urls[r]
+            }
+        }
+    }' | sort
+}
+
 fwd_setup() {
     GIT_DIR="$(canonicalize_path "$GIT_DIR")"
     FWD_CONFIG="$(canonicalize_path "$CONFIG_DIR/$NAME.fwd-config")"
@@ -38,12 +53,14 @@ fwd_setup() {
     run --hide-errors --dry git --git-dir="$GIT_DIR" show-ref >/dev/null ||
         run --dry git init --bare || error "failed to create '$GIT_DIR'"
 
-    local -a remotes
-    for remote in $(run cat "$FWD_CONFIG" |
-        run awk '$1=="remote"{print $2 ":" $3}'); do
+    # Format: <name> ':' 'tags'? ':' <url>
+    for remote in $(print_remotes); do
         name="${remote%%:*}"
-        url="${remote#*:}"
-        log "  - $name $url"
+        tagsurl="${remote#*:}"
+        tags="${tagsurl%%:*}"
+        url="${tagsurl#*:}"
+
+        log "  - $name $url${tags:+ [+tags]}"
         existing="$(run --dry git remote -v |
         run --dry awk -v n="$name" -v e="(fetch)" '$1==n&&$3==e{print $2}')"
         existing_push="$(run --dry git remote -v |
@@ -57,7 +74,11 @@ fwd_setup() {
             error "remote '$name' exists with push URL '$existing';" \
             "refusing to set-url to '$url'"
         fi
-        fetch_remote $name
+
+        # Handle tags manually.
+        run --dry git config --local --replace-all "remote.$name.tagOpt" --no-tags
+
+        fetch_remote $name $tags
     done
 }
 
@@ -68,14 +89,19 @@ collect_source_refspecs() {
         BEGIN {
             remote = "refs/remotes/" r "/"
             plus_remote = "+" remote
+            tags_remote = "refs/remote-tags/" r "/"
+            plus_tags_remote = "+" tags_remote
         }
         index($1, remote) == 1 { print $0 }
         index($1, plus_remote) == 1 { print $0 }
+        index($1, tags_remote) == 1 { print $0 }
+        index($1, plus_tags_remote) == 1 { print $0 }
         '
 }
 
 fetch_remote() {
     local name=$1
+    local tags=$2
 
     # Collect refs sourced from this remote.
     local refs
@@ -85,8 +111,15 @@ fetch_remote() {
     # Don't fetch if this isn't a source.
     [ -n "$refs" ] || return 0
 
-    log "    => fetching for $refs"
-    run --dry git fetch --prune "$name" ||
+    # Construct refspecs manually.  Bring in all heads (and tags, if specified)
+    # to simplify packing on the remote.
+    local -a refspecs
+    refspecs=( "+refs/heads/*:refs/remotes/$name/*" )
+    [ -z "$tags" ] ||
+        refspecs=( "${refspecs[@]}" "+refs/tags/*:refs/remote-tags/$name/*" )
+
+    log "    => fetching $refspecs"
+    run --dry git fetch --prune "$name" "${refspecs[@]}" ||
         error "failed to fetch from '$name'"
 }
 
