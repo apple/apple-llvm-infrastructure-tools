@@ -54,7 +54,7 @@ fwd_setup() {
         run --dry git init --bare || error "failed to create '$GIT_DIR'"
 
     # Configure protocol.
-    if $GIT_v2_18_OR_NEWER; then
+    if check_git_version_at_least 2.18; then
         run --dry git config --local --replace-all protocol.version 2
     fi
 
@@ -125,45 +125,38 @@ fetch_remote() {
 
     # Only negotiate with remote using refs from that remote; it's unlikely
     # other remotes will speed anything up here.
-    #
-    # Note: Using for-each-ref to gather SHA-1s since when --negotation-tip was
-    # introduced (and at least up to 2.21.0) it did not accept patterns.
-    local tips
-    if $GIT_v2_18_OR_NEWER; then
-        tips="$(run --dry git for-each-ref \
-            --format="--negotiation-tip %(objectname)" \
-            "refs/remotes/$name/*" "refs/remote-tags/$name/*")" ||
-            error "failed to iterate through remote tips of $name"
+    local -a tips
+    if check_git_version_at_least 2.19; then
+        tips=(                                           \
+            --negotiation-tip="refs/remotes/$name/*"     \
+            --negotiation-tip="refs/remote-tags/$name/*" \
+        )
     fi
 
     log "    => fetching ${refspecs[*]}"
-    run --dry git fetch --prune "$name" $tips "${refspecs[@]}" ||
+    run --dry git fetch --prune "$name" "${tips[@]}" "${refspecs[@]}" ||
         error "failed to fetch from '$name'"
 }
 
-lookup_git_v2_18_plus() {
-    GIT_v2_18_OR_NEWER=false
-    local v
-    v="$(git --version 2>/dev/null | awk '$1 == "git" && $2 == "version" {print $3}')" ||
-        return 0
-    [ -n "$v" ] || return 0
+GIT_VERSION="$(git --version 2>/dev/null |
+    awk '$1 == "git" && $2 == "version" {print $3}')"
+check_git_version_at_least() {
+    local min="$1"
+    [ -n "$GIT_VERSION" ] || return 1
 
-    local rest="$v"
+    local rest="$GIT_VERSION"
     local next result
-    for n in 2 18; do
+    for n in ${min//./ }; do
         next="${rest%%.*}"
         rest="${rest#*.}"
-        result=$(( $n - $next )) 2>/dev/null || return 0
-        [ "$result" -le 0 ] || return 0
+        result=$(( $n - $next )) 2>/dev/null || return 1
+        [ "$result" -le 0 ] || return 1
         [ "$result" -lt 0 ] || continue
-        GIT_v2_18_OR_NEWER=true
         return 0
     done
 
-    GIT_v2_18_OR_NEWER=true
     return 0
 }
-lookup_git_v2_18_plus
 
 CONFIG_DIR="$DEFAULT_CONFIG_DIR"
 GIT_DIR=$DEFAULT_GIT_DIR
