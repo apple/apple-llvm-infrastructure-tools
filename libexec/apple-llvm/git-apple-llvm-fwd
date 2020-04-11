@@ -38,6 +38,9 @@ fwd_setup() {
     run --hide-errors --dry git --git-dir="$GIT_DIR" show-ref >/dev/null ||
         run --dry git init --bare || error "failed to create '$GIT_DIR'"
 
+    # Configure protocol.
+    run --dry git config --local --replace-all protocol.version 2
+
     local -a remotes
     for remote in $(run cat "$FWD_CONFIG" |
         run awk '$1=="remote"{print $2 ":" $3}'); do
