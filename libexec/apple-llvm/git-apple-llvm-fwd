@@ -57,7 +57,7 @@ fwd_setup() {
             error "remote '$name' exists with push URL '$existing';" \
             "refusing to set-url to '$url'"
         fi
-        run --dry git fetch "$name" ||
+        run --dry git fetch --prune "$name" ||
             error "failed to fetch from '$name'"
     done
 }
