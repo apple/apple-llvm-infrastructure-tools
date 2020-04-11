@@ -32,6 +32,11 @@ RUN: git apple-llvm fwd --config-dir %t/configs t
 RUN: git --git-dir %t/working/apple-llvm-fwd-repo.git show-ref
 RUN: not git --git-dir %t/working/.git show-ref
 
+# Check the protocol version.
+RUN: git --git-dir %t/working/apple-llvm-fwd-repo.git config --local protocol.version \
+RUN: | check-diff %s PROTOCOL %t
+PROTOCOL: 2
+
 # Check the output.
 RUN: git -C %t/repos/b.git show-ref a/master
 RUN: not git -C %t/repos/b.git show-ref refs/heads/master
