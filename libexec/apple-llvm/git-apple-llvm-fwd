@@ -61,8 +61,31 @@ fwd_setup() {
     done
 }
 
+collect_source_refs() {
+    cat "$FWD_CONFIG" |
+    awk '$1 == "push" {print $3}' |
+    awk -F : -v r=$1 '
+        BEGIN {
+            remote = "refs/remotes/" r "/"
+            chop = length(remote) + 1
+        }
+        index($1, remote) == 1 {
+            print substr($1, chop)
+        }'
+}
+
 fetch_remote() {
     local name=$1
+
+    # Collect refs sourced from this remote.
+    local refs
+    refs="$(collect_source_refs $name)" ||
+        error "failed to parse $FWD_CONFIG"
+
+    # Don't fetch if this isn't a source.
+    [ -n "$refs" ] || return 0
+
+    log "    => fetching for $refs"
     run --dry git fetch --prune "$name" ||
         error "failed to fetch from '$name'"
 }
