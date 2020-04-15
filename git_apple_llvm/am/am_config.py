@@ -48,6 +48,11 @@ class AMTargetBranchConfig:
     def __repr__(self) -> str:
         return f'[AM Target: {self.upstream} -> {self.target}]'
 
+    @property
+    def can_merge_without_testing(self) -> bool:
+        # /usr/bin/true always passes, so we don't need to kick off additional tests.
+        return self.test_command is not None and self.test_command == 'true'
+
 
 def find_am_configs(remote: str = 'origin') -> List[AMTargetBranchConfig]:
     contents: Optional[str] = read_file_or_none(
