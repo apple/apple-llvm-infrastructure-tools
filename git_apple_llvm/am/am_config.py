@@ -31,6 +31,9 @@ class AMTargetBranchConfig:
 
     test_command : str
     The name of the command to run for testing the merge.
+
+    test_commits_in_bundle : bool
+    Test the group of incoming commits together instead of one-by-one.
     """
 
     def __init__(self, json: Dict):
@@ -44,6 +47,9 @@ class AMTargetBranchConfig:
             raise RuntimeError(
                 'invalid AM config: missing common ancestor for a secondary upstream')
         self.test_command: Optional[str] = json['test-command'] if 'test-command' in json else None
+        self.test_commits_in_bundle: bool = False
+        if 'test_commits_in_bundle' in json:
+            self.test_commits_in_bundle = bool(json['test_commits_in_bundle'])
 
     def __repr__(self) -> str:
         return f'[AM Target: {self.upstream} -> {self.target}]'

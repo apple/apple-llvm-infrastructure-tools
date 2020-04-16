@@ -19,6 +19,10 @@ def am_tool_git_repo(tmp_path_factory) -> str:
     am_config = [{
         'target': 'master',
         'upstream': 'upstream'
+    }, {
+        'target': 'swift/master',
+        'upstream': 'master',
+        'test_commits_in_bundle': True
     }]
     git('init', git_dir=path)
     os.mkdir(os.path.join(path, 'apple-llvm-config'))
@@ -30,6 +34,7 @@ def am_tool_git_repo(tmp_path_factory) -> str:
     git('commit', '-m', 'up', '--allow-empty', git_dir=path)
     git('checkout', '-b', 'repo/apple-llvm-config/am', git_dir=path)
     git('checkout', '-b', 'upstream', 'HEAD~1', git_dir=path)
+    git('checkout', '-b', 'swift/master', 'master', git_dir=path)
     git('commit', '-m', 'up', '--allow-empty', git_dir=path)
     return path
 
@@ -54,18 +59,26 @@ def cd_to_am_tool_repo_clone(am_tool_git_repo_clone: str):
 
 def test_am_config(cd_to_am_tool_repo_clone):
     configs = find_am_configs()
-    assert len(configs) == 1
+    assert len(configs) == 2
     assert configs[0].upstream == 'upstream'
     assert configs[0].target == 'master'
     assert configs[0].test_command is None
     assert configs[0].secondary_upstream is None
     assert configs[0].common_ancestor is None
+    assert configs[0].test_commits_in_bundle is False
+
+    assert configs[1].upstream == 'master'
+    assert configs[1].target == 'swift/master'
+    assert configs[1].test_command is None
+    assert configs[1].secondary_upstream is None
+    assert configs[1].common_ancestor is None
+    assert configs[1].test_commits_in_bundle is True
 
 
 def test_am_print_status(cd_to_am_tool_repo_clone, capfd):
     print_status()
     captured = capfd.readouterr()
-    assert captured.out == '[upstream -> master]\n- There are no unmerged commits. The master branch is up to date.\n'
+    assert '[upstream -> master]\n- There are no unmerged commits. The master branch is up to date.\n' in captured.out
 
 
 def test_am_status(cd_to_am_tool_repo_clone):
