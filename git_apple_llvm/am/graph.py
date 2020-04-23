@@ -2,10 +2,9 @@
     Module for computing the automerger graph.
 """
 
-from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
-from git_apple_llvm.am.core import CommitStates, find_inflight_merges, compute_unmerged_commits, has_merge_conflict
+from git_apple_llvm.am.am_config import AMTargetBranchConfig
+from git_apple_llvm.am.core import CommitStates, compute_unmerged_commits, has_merge_conflict
 from git_apple_llvm.am.oracle import get_ci_status
-from git_apple_llvm.am.zippered_merge import compute_zippered_merges
 from typing import Dict, Set, List, Optional
 import sys
 import logging
@@ -119,20 +118,14 @@ class Edge:
 
 def compute_edge(upstream_branch: str,
                  target_branch: str,
-                 inflight_merges: Dict[str, List[str]],
+                 commits_inflight: Set[str],
+                 commits_unmerged: Optional[List[str]],
                  remote: str = 'origin',
                  query_ci_status: bool = False):
     log.info(f'Computing edge for [{upstream_branch} -> {target_branch}]')
     edge: Edge = Edge(upstream_branch, target_branch)
-    commits: Optional[List[str]] = compute_unmerged_commits(remote=remote,
-                                                            target_branch=target_branch,
-                                                            upstream_branch=upstream_branch,
-                                                            format='%H')
-    if not commits:
+    if not commits_unmerged:
         return edge
-
-    commits_inflight: Set[str] = set(
-        inflight_merges[target_branch] if target_branch in inflight_merges else [])
 
     def get_commit_state(commit: str, check_for_merge_conflict: bool):
         if query_ci_status:
@@ -151,7 +144,7 @@ def compute_edge(upstream_branch: str,
     # commit. Otherwise the edge is clear.
     working: bool = False
     check_for_merge_conflict: bool = True
-    for commit in commits:
+    for commit in commits_unmerged:
         commit_state = get_commit_state(commit, check_for_merge_conflict)
         if commit_state is EdgeStates.blocked:
             edge.set_state(EdgeStates.blocked)
@@ -165,14 +158,9 @@ def compute_edge(upstream_branch: str,
     return edge
 
 
-def compute_zippered_edges(config: AMTargetBranchConfig, remote: str):
+def compute_zippered_edges(config: AMTargetBranchConfig, remote: str, merges: Optional[List[List[str]]]):
     log.info(f'Computing edges for [{config.upstream} -> {config.target} <- {config.secondary_upstream}]')
-    merges: Optional[List[List[str]]] = []
-    merges = compute_zippered_merges(remote=remote, target=config.target,
-                                     left_upstream=config.upstream,
-                                     right_upstream=config.secondary_upstream,
-                                     common_ancestor=config.common_ancestor,
-                                     stop_on_first=True)
+
     left_edge: Edge = Edge(config.upstream, config.target)
     right_edge: Edge = Edge(config.secondary_upstream, config.target)
     right_edge.set_constraint(False)
@@ -223,51 +211,14 @@ def add_branches(graph, branches: List[str]):
     internal.materialize(graph)
 
 
-def print_graph(remotes: List = ['origin'],
-                query_ci_status: bool = False,
-                fmt: str = 'pdf'):
+def create_graph(fmt: str = 'pdf'):
     if 'graphviz' not in sys.modules:
-        print(f'Generating the automerger graph requires the "graphviz" Python package.')
-        return
-    try:
-        graph = Digraph(comment='Automergers',
-                        format=fmt,
-                        node_attr=NODE_ATTR)
-        graph.attr(rankdir=RANKDIR,
-                   nodesep=NODESEP,
-                   ranksep=RANKSEP,
-                   splines=SPLINES)
-    except ValueError as e:
-        print(e)
-        return
-
-    # Collect all branches and create corresponding subgraphs.
-    branches: List[str] = []
-    for remote in remotes:
-        for config in find_am_configs(remote):
-            branches.append(config.upstream)
-            branches.append(config.target)
-            if config.secondary_upstream:
-                branches.append(config.secondary_upstream)
-    add_branches(graph, branches)
-
-    # Create the edges.
-    for remote in remotes:
-        configs: List[AMTargetBranchConfig] = find_am_configs(remote)
-        if len(configs) == 0:
-            print(f'No automerger configured for remote "{remote}"')
-            continue
-        merges = find_inflight_merges(remote)
-        for config in configs:
-            if config.secondary_upstream:
-                left_edge, right_edge = compute_zippered_edges(config, remote)
-                left_edge.materialize(graph)
-                right_edge.materialize(graph)
-            else:
-                edge = compute_edge(config.upstream,
-                                    config.target,
-                                    merges,
-                                    remote,
-                                    query_ci_status)
-                edge.materialize(graph)
-    graph.render('automergers', view=True)
+        raise RuntimeError('Generating the automerger graph requires the "graphviz" Python package.')
+    graph = Digraph(comment='Automergers',
+                    format=fmt,
+                    node_attr=NODE_ATTR)
+    graph.attr(rankdir=RANKDIR,
+               nodesep=NODESEP,
+               ranksep=RANKSEP,
+               splines=SPLINES)
+    return graph
