@@ -6,6 +6,7 @@ from git_apple_llvm.am.am_config import find_am_configs, AMTargetBranchConfig
 from git_apple_llvm.am.core import find_inflight_merges, compute_unmerged_commits, has_merge_conflict
 from git_apple_llvm.am.oracle import get_ci_status
 from git_apple_llvm.am.zippered_merge import compute_zippered_merges
+from git_apple_llvm.am.graph import create_graph, add_branches, compute_zippered_edges, compute_edge
 import logging
 import click
 from typing import Dict, List, Set, Optional
@@ -26,7 +27,7 @@ def compute_inflight_commit_count(commits: List[str], commits_inflight: Set[str]
 
 def print_edge_status(upstream_branch: str, target_branch: str,
                       inflight_merges: Dict[str, List[str]], list_commits: bool = False, remote: str = 'origin',
-                      query_ci_status: bool = False):
+                      graph=None, query_ci_status: bool = False):
     commits_inflight: Set[str] = set(
         inflight_merges[target_branch] if target_branch in inflight_merges else [])
 
@@ -34,9 +35,14 @@ def print_edge_status(upstream_branch: str, target_branch: str,
                f'[{upstream_branch} -> {target_branch}]', bold=True))
     commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=target_branch,
                                                             upstream_branch=upstream_branch, format='%H %cd')
+    if graph:
+        edge = compute_edge(upstream_branch, target_branch, commits_inflight, commits, remote, query_ci_status)
+        edge.materialize(graph)
+
     if not commits:
         print(f'- There are no unmerged commits. The {target_branch} branch is up to date.')
         return
+
     inflight_count = compute_inflight_commit_count(commits, commits_inflight)
     str2 = f'{inflight_count} commits are currently being merged/build/tested.'
     print(f'- There are {len(commits)} unmerged commits. {str2}')
@@ -68,7 +74,7 @@ def print_edge_status(upstream_branch: str, target_branch: str,
         print_commit_status(commits[-1])
 
 
-def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str):
+def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str, graph=None):
     click.echo(click.style(
                f'[{config.upstream} -> {config.target} <- {config.secondary_upstream}]',
                bold=True))
@@ -80,6 +86,13 @@ def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str):
                                      right_upstream=config.secondary_upstream,
                                      common_ancestor=config.common_ancestor,
                                      stop_on_first=True)
+
+    if graph:
+        # FIXME: Don't duplicate compute_unmerged_commits in compute_zippered_edges.
+        left_edge, right_edge = compute_zippered_edges(config, remote, merges)
+        left_edge.materialize(graph)
+        right_edge.materialize(graph)
+
     if not merges:
         left_commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=config.target,
                                                                      upstream_branch=config.upstream)
@@ -100,28 +113,53 @@ def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str):
     print(f'- The automerger will perform at least one zippered merge on the next run.')
 
 
-def print_status(remote: str = 'origin', target_branch: Optional[str] = None, list_commits: bool = False,
-                 query_ci_status: bool = False):
-    configs: List[AMTargetBranchConfig] = find_am_configs(remote)
-    if target_branch:
-        configs = list(
-            filter(lambda config: config.target == target_branch, configs))
-    if len(configs) == 0:
-        msg = ''
+def print_status(remotes: List[str] = ['origin'], target_branch: Optional[str] = None, list_commits: bool = False,
+                 query_ci_status: bool = False, graph_format: Optional[str] = None):
+    graph = None
+    if graph_format:
+        # Try to create a new graph. This will throw an exception if the
+        # Graphviz package is missing.
+        try:
+            graph = create_graph(graph_format)
+        except Exception as e:
+            print(e)
+            return
+        # Collect all branches across remotes and create corresponding
+        # subgraphs. This needs to happen before we add the edges.
+        branches: List[str] = []
+        for remote in remotes:
+            for config in find_am_configs(remote):
+                branches.append(config.upstream)
+                branches.append(config.target)
+                if config.secondary_upstream:
+                    branches.append(config.secondary_upstream)
+        add_branches(graph, branches)
+
+    for remote in remotes:
+        configs: List[AMTargetBranchConfig] = find_am_configs(remote)
         if target_branch:
-            msg = f'for branch "{target_branch}" from '
-        print(f'No automerger configured for {msg}remote "{remote}"')
-        return
-    ms = find_inflight_merges(remote)
-    printed = False
-    for config in configs:
-        if printed:
-            print('')
-        if config.secondary_upstream:
-            print_zippered_edge_status(config, remote)
+            configs = list(
+                filter(lambda config: config.target == target_branch, configs))
+        if len(configs) == 0:
+            msg = ''
+            if target_branch:
+                msg = f'for branch "{target_branch}" from '
+            print(f'No automerger configured for {msg}remote "{remote}"')
+            return
+
+        ms = find_inflight_merges(remote)
+        printed = False
+        for config in configs:
+            if printed:
+                print('')
+            if config.secondary_upstream:
+                print_zippered_edge_status(config, remote, graph)
+                printed = True
+                continue
+            print_edge_status(config.upstream, config.target,
+                              ms, list_commits, remote, graph,
+                              query_ci_status=query_ci_status)
             printed = True
-            continue
-        print_edge_status(config.upstream, config.target,
-                          ms, list_commits, remote,
-                          query_ci_status=query_ci_status)
-        printed = True
+
+    if graph:
+        graph.render('automergers', view=True)

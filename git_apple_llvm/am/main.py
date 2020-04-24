@@ -3,7 +3,6 @@ import logging
 from typing import Optional, List
 from git_apple_llvm.git_tools import git
 from git_apple_llvm.am.core import CommitStates
-from git_apple_llvm.am.am_graph import print_graph
 from git_apple_llvm.am.am_status import print_status
 from git_apple_llvm.am.oracle import set_state, get_state
 
@@ -46,37 +45,34 @@ def am(verbose):
               help='The target branch for which the status should be reported. All branches are shown by default.')
 @click.option('--all-commits', is_flag=True, default=False,
               help='List all outstanding commits in the merge backlog.')
+@click.option('--remote', metavar='<remote>',
+              multiple=True,
+              help='The remote(s).')
 @click.option('--no-fetch', is_flag=True, default=False,
               help='Do not fetch remote (WARNING: status will be stale!).')
 @click.option('--ci-status', is_flag=True, default=False,
               help='Query additional CI status from Redis.')
-def status(target: Optional[str], all_commits: bool, no_fetch: bool, ci_status: bool):
-    remote = 'origin'
-    if not no_fetch:
-        click.echo(f'❕ Fetching "{remote}" to provide the latest status...')
-        git('fetch', remote, stderr=None)
-        click.echo('✅ Fetch succeeded!\n')
-    print_status(remote=remote, target_branch=target, list_commits=all_commits, query_ci_status=ci_status)
-
-
-@am.command()
-@click.option('--format', metavar='<format>', type=str,
+@click.option('--graph', is_flag=True, default=False,
+              help='Generate the automerger graph.')
+@click.option('--graph-format', metavar='<format>', type=str,
               default=None,
-              help='The file format for the generated graph.')
-@click.option('--remote', metavar='<remote>',
-              multiple=True,
-              help='The remote(s) to graph.')
-@click.option('--no-fetch', is_flag=True, default=False,
-              help='Do not fetch remote (WARNING: status will be stale!).')
-@click.option('--ci-status', is_flag=True, default=False,
-              help='Query additional CI [status from Redis.')
-def graph(format: str, remote: List[str], no_fetch: bool, ci_status: bool):
+              help='The file format for the generated graph. Passing this argument implies passing --graph.')
+def status(target: Optional[str], all_commits: bool, remote: List[str],
+           no_fetch: bool, ci_status: bool, graph: bool, graph_format: str):
     remotes = remote if remote else ['origin']
     if not no_fetch:
         for r in remotes:
-            click.echo(f'❕ Fetching "{r}" to provide the latest status...')
+            click.echo(
+                f'❕ Fetching "{r}" to provide the latest status...')
             git('fetch', r, stderr=None)
-    print_graph(remotes=remotes, query_ci_status=ci_status, fmt=format)
+            click.echo('✅ Fetch succeeded!\n')
+    if graph and not graph_format:
+        graph_format = 'pdf'
+    print_status(remotes=remotes,
+                 target_branch=target,
+                 list_commits=all_commits,
+                 query_ci_status=ci_status,
+                 graph_format=graph_format)
 
 
 @am.group()
