@@ -78,14 +78,14 @@ def test_am_config(cd_to_am_tool_repo_clone):
 def test_am_print_status(cd_to_am_tool_repo_clone, capfd):
     print_status()
     captured = capfd.readouterr()
-    assert '[upstream -> master]\n- There are no unmerged commits. The master branch is up to date.\n' in captured.out
+    assert '[upstream -> master]\n- 0 unmerged commits. master is up to date.\n' in captured.out
 
 
 def test_am_status(cd_to_am_tool_repo_clone):
     result = CliRunner().invoke(am, ['status', '--target', 'master', '--no-fetch'])
 
     assert result.exit_code == 0
-    assert result.output == '[upstream -> master]\n- There are no unmerged commits. The master branch is up to date.\n'
+    assert result.output == '[upstream -> master]\n- 0 unmerged commits. master is up to date.\n'
 
 
 # FIXME: more tests.

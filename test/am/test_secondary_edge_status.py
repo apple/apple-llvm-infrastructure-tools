@@ -85,7 +85,9 @@ def test_am_secondary_edge_status(cd_to_am_tool_repo_clone):
     assert result.exit_code == 0
     assert """[downstream/master -> downstream/swift/master <- swift/master]
 - This is a zippered merge branch!
-- The automerger will perform at least one zippered merge on the next run.""" in result.output
+- 1 unmerged commits from downstream/master.
+- 2 unmerged commits from swift/master.
+- The automerger has found a common merge-base.""" in result.output
 
 
 def test_am_secondary_edge_status_merged(cd_to_am_tool_repo_clone):
@@ -94,7 +96,7 @@ def test_am_secondary_edge_status_merged(cd_to_am_tool_repo_clone):
     assert result.exit_code == 0
     assert """[downstream/master -> downstream/swift/master-merged <- swift/master]
 - This is a zippered merge branch!
-- There are no unmerged commits. The downstream/swift/master-merged branch is up to date.""" in result.output
+- 0 unmerged commits. downstream/swift/master-merged is up to date.""" in result.output
 
 
 def test_am_secondary_edge_status_blocked(cd_to_am_tool_repo_clone):
@@ -104,8 +106,8 @@ def test_am_secondary_edge_status_blocked(cd_to_am_tool_repo_clone):
     assert result.exit_code == 0
     assert """[downstream/master -> downstream/swift/master-unmergeable <- swift/master2]
 - This is a zippered merge branch!
-- There are 0 unmerged commits from downstream/master.
-- There are 1 unmerged commits from swift/master2.
-- The automerger is waiting for unmerged commits in
-  downstream/master and swift/master2 to agree on a merge base
-  from the master branch before performing a zippered merge.""" in result.output
+- 0 unmerged commits from downstream/master.
+- 1 unmerged commits from swift/master2.
+- The automerger is waiting for unmerged commits to share
+  a merge-base from master
+  before merging (i.e., one of the upstreams is behind).""" in result.output
