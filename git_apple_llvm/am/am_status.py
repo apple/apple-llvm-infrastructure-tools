@@ -40,12 +40,12 @@ def print_edge_status(upstream_branch: str, target_branch: str,
         edge.materialize(graph)
 
     if not commits:
-        print(f'- There are no unmerged commits. The {target_branch} branch is up to date.')
+        print(f'- 0 unmerged commits. {target_branch} is up to date.')
         return
 
     inflight_count = compute_inflight_commit_count(commits, commits_inflight)
     str2 = f'{inflight_count} commits are currently being merged/build/tested.'
-    print(f'- There are {len(commits)} unmerged commits. {str2}')
+    print(f'- {len(commits)} unmerged commits. {str2}')
     print('- Unmerged commits:')
 
     def print_commit_status(commit: str, check_for_merge_conflict: bool = False):
@@ -93,28 +93,35 @@ def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str, graph=
         left_edge.materialize(graph)
         right_edge.materialize(graph)
 
-    if not merges:
-        left_commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=config.target,
-                                                                     upstream_branch=config.upstream)
-        right_commits: Optional[List[str]] = compute_unmerged_commits(remote=remote, target_branch=config.target,
-                                                                      upstream_branch=config.secondary_upstream)
-        if not left_commits and not right_commits:
-            print(f'- There are no unmerged commits. The {config.target} branch is up to date.')
-            return
-
-        def lenOrNone(x):
-            return len(x) if x else 0
-        print(f'- There are {lenOrNone(left_commits)} unmerged commits from {config.upstream}.')
-        print(f'- There are {lenOrNone(right_commits)} unmerged commits from {config.secondary_upstream}.')
-        print(f'- The automerger is waiting for unmerged commits in')
-        print(f'  {config.upstream} and {config.secondary_upstream} to agree on a merge base')
-        print(f'  from the {config.common_ancestor} branch before performing a zippered merge.')
+    left_commits: Optional[List[str]] = compute_unmerged_commits(
+        remote=remote, target_branch=config.target,
+        upstream_branch=config.upstream)
+    right_commits: Optional[List[str]] = compute_unmerged_commits(
+        remote=remote, target_branch=config.target,
+        upstream_branch=config.secondary_upstream)
+    if not left_commits and not right_commits:
+        print(f'- 0 unmerged commits. {config.target} is up to date.')
         return
-    print(f'- The automerger will perform at least one zippered merge on the next run.')
+
+    def printUnmergedCommits(commits: Optional[List[str]], branch: str):
+        num = len(commits) if commits else 0
+        print(f'- {num} unmerged commits from {branch}.')
+    printUnmergedCommits(commits=left_commits, branch=config.upstream)
+    printUnmergedCommits(commits=right_commits,
+                         branch=config.secondary_upstream)
+    if merges:
+        print(f'- The automerger has found a common merge-base.')
+        return
+    print(f'- The automerger is waiting for unmerged commits to share')
+    print(f'  a merge-base from {config.common_ancestor}')
+    print(f'  before merging (i.e., one of the upstreams is behind).')
 
 
-def print_status(remotes: List[str] = ['origin'], target_branch: Optional[str] = None, list_commits: bool = False,
-                 query_ci_status: bool = False, graph_format: Optional[str] = None):
+def print_status(remotes: List[str] = ['origin'],
+                 target_branch: Optional[str] = None,
+                 list_commits: bool = False,
+                 query_ci_status: bool = False,
+                 graph_format: Optional[str] = None):
     graph = None
     if graph_format:
         # Try to create a new graph. This will throw an exception if the
