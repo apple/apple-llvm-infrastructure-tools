@@ -59,3 +59,16 @@ def get_ci_status(commit_hash: str, target_branch: str) -> Optional[str]:
         assert val in CommitStates.all
         return val
     return None
+
+
+def set_build_url(merge_id: str, url: str) -> bool:
+    key = f'{merge_id}.build_url'
+    return set_state(key, url)
+
+
+def get_build_url(merge_id: str) -> Optional[str]:
+    key = f'{merge_id}.build_url'
+    val = get_state(key)
+    if val:
+        return val
+    return None

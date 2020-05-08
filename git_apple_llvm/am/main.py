@@ -4,7 +4,7 @@ from typing import Optional, List
 from git_apple_llvm.git_tools import git
 from git_apple_llvm.am.core import CommitStates
 from git_apple_llvm.am.am_status import print_status
-from git_apple_llvm.am.oracle import set_state, get_state
+from git_apple_llvm.am.oracle import set_state, get_state, set_build_url, get_build_url
 
 log = logging.getLogger(__name__)
 
@@ -100,6 +100,30 @@ def get(merge_id):
     """Get the merge status of a merge_id.
     """
     click.echo(get_state(merge_id))
+
+
+@am.group()
+def url():
+    """ Set and Get build URL.
+    """
+    pass
+
+
+@url.command()
+@click.argument('merge_id', envvar='MERGE_ID')
+@click.argument('build_url')
+def seturl(merge_id, build_url):
+    """Set the build URL for a merge ID."""
+    set_build_url(merge_id, build_url)
+    click.echo(f"Set build URL for {merge_id} to {build_url}")
+
+
+@url.command()
+@click.argument('merge_id', envvar='MERGE_ID')
+def geturl(merge_id):
+    """Get the build URL for a merge_id.
+    """
+    click.echo(get_build_url(merge_id))
 
 
 if __name__ == '__main__':
