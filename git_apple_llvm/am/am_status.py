@@ -78,7 +78,7 @@ def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str, graph=
     click.echo(click.style(
                f'[{config.upstream} -> {config.target} <- {config.secondary_upstream}]',
                bold=True))
-    print(f'- This is a zippered merge branch!')
+    print('- This is a zippered merge branch!')
 
     merges: Optional[List[List[str]]] = []
     merges = compute_zippered_merges(remote=remote, target=config.target,
@@ -110,11 +110,11 @@ def print_zippered_edge_status(config: AMTargetBranchConfig, remote: str, graph=
     printUnmergedCommits(commits=right_commits,
                          branch=config.secondary_upstream)
     if merges:
-        print(f'- The automerger has found a common merge-base.')
+        print('- The automerger has found a common merge-base.')
         return
-    print(f'- The automerger is waiting for unmerged commits to share')
+    print('- The automerger is waiting for unmerged commits to share')
     print(f'  a merge-base from {config.common_ancestor}')
-    print(f'  before merging (i.e., one of the upstreams is behind).')
+    print('  before merging (i.e., one of the upstreams is behind).')
 
 
 def print_status(remotes: List[str] = ['origin'],
