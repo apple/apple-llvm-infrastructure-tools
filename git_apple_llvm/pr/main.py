@@ -73,7 +73,7 @@ class PRToolConfiguration:
 
 def load_pr_config() -> Optional[PRToolConfiguration]:
     config = git_output(
-        'show', f'HEAD:apple-llvm-config/pr.json', ignore_error=True)
+        'show', 'HEAD:apple-llvm-config/pr.json', ignore_error=True)
     if not config:
         return None
     value = json.loads(config)
@@ -250,7 +250,7 @@ def create(title: str, head: str, base: str, dry_run: bool):
         return
     log.info('BASE branch: %s from %s', bb.branch_name, bb.remote_url)
 
-    click.echo(f'Creating pull request:')
+    click.echo('Creating pull request:')
     remote_prefix = ''
     if hb.remote_url != bb.remote_url:
         remote_prefix = f'{hb.remote_name}:'

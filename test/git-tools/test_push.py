@@ -59,7 +59,7 @@ def test_push_clang_commit(cd_to_monorepo_clone,
     assert new_clang_top != current_clang_top
     assert git_output('rev-parse', 'master~1',
                       git_dir=monorepo_simple_clang_remote_git_dir) == current_clang_top
-    assert git_output('show', f'master:a-new-file',
+    assert git_output('show', 'master:a-new-file',
                       git_dir=monorepo_simple_clang_remote_git_dir) == file_contents
 
 
@@ -84,7 +84,7 @@ def test_push_root_commit(cd_to_monorepo_clone,
     assert new_root_top != current_root_top
     assert git_output('rev-parse', 'internal/master~1',
                       git_dir=monorepo_simple_root_remote_git_dir) == current_root_top
-    assert git_output('show', f'internal/master:root-file',
+    assert git_output('show', 'internal/master:root-file',
                       git_dir=monorepo_simple_root_remote_git_dir) == file_contents
 
 

@@ -62,7 +62,7 @@ class AMTargetBranchConfig:
 
 def find_am_configs(remote: str = 'origin') -> List[AMTargetBranchConfig]:
     contents: Optional[str] = read_file_or_none(
-        f'{remote}/repo/apple-llvm-config/am', f'apple-llvm-config/am/am-config.json')
+        f'{remote}/repo/apple-llvm-config/am', 'apple-llvm-config/am/am-config.json')
     if not contents:
         return []
     configs = json.loads(contents)

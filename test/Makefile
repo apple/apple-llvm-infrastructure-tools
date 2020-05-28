@@ -68,7 +68,7 @@ python_sources := $(shell find $(testdir) $(testdir)../git_apple_llvm $(testdir)
 check-lint: venv git_apple_llvm_package requirements Makefile
 	@printf "\n***********************************************************\n"
 	@printf "%s: check for python linting errors\n" "$@"
-	$(PYTHON_ROOT)flake8 --exclude="*env" --tee flake8_report.pep8.txt $(python_sources)
+	$(PYTHON_ROOT)flake8 --exclude="*env" $(python_sources)
 
 check-types: venv git_apple_llvm_package requirements Makefile
 	@printf "\n***********************************************************\n"

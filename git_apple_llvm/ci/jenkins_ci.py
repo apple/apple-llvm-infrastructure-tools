@@ -122,7 +122,7 @@ def _get_jenkins_auth(url: str):
 
     # Do the first-time authorization sequence.
     print(f'Please provide your "{url}" Jenkins credentials.')
-    print(f'They will be used once to create a Jenkins access token that will be saved on this machine.')
+    print('They will be used once to create a Jenkins access token that will be saved on this machine.')
     user = input(f'  {url} username: ')
     password: str = ''
     while not password:
