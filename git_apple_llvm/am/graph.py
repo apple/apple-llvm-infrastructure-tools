@@ -198,13 +198,19 @@ def add_branches(graph, branches: List[str]):
         if branch.startswith('llvm'):
             llvm.add_node(branch)
             continue
+        if branch.startswith('internal'):
+            internal.add_node(branch)
+            continue
+        if branch.startswith('swift/internal'):
+            internal.add_node(branch)
+            continue
         if branch.startswith('swift'):
             apple.add_node(branch)
             continue
         if branch.startswith('apple'):
             apple.add_node(branch)
             continue
-        internal.add_node(branch)
+        raise ValueError('Unknown branch "{}"'.format(branch))
 
     llvm.materialize(graph)
     apple.materialize(graph)
