@@ -1,6 +1,7 @@
 // read_all.h
 #pragma once
 
+#include <cassert>
 #include <sys/errno.h>
 #include <unistd.h>
 #include <vector>

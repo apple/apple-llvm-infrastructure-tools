@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <cstdlib>
 #include <memory>
 #include <vector>
