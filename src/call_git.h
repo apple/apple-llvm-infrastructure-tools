@@ -3,6 +3,7 @@
 
 #include "error.h"
 #include "read_all.h"
+#include <cassert>
 #include <cstdio>
 #include <mutex>
 #include <spawn.h>
