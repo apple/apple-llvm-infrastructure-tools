@@ -9,16 +9,6 @@ SETUP_PY_FILE=$(root_dir)/setup.py
 
 PYTHON_ROOT := $(VENV_OUT)/bin/
 
-ifeq (${shell which xcrun},)
-    XCRUN :=
-else
-    ifeq (${shell xcrun --find python3},)
-        XCRUN :=
-    else
-        XCRUN := xcrun
-    endif
-endif
-
 clean-venv:
 	rm -rf $(REQUIREMENTS_OUT) $(VENV_OUT)
 
@@ -26,7 +16,7 @@ venv: $(VENV_OUT) Makefile
 
 $(VENV_OUT):
 	@echo "Setting up python venv..."
-	$(XCRUN) python3 -m venv $(VENV_OUT)
+	python3 -m venv $(VENV_OUT)
 	@echo ""
 
 requirements: $(REQUIREMENTS_OUT) Makefile
