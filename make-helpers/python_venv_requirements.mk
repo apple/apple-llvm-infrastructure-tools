@@ -27,4 +27,5 @@ $(REQUIREMENTS_OUT): $(REQUIREMENTS_FILE) | $(VENV_OUT)
 git_apple_llvm_package: $(GIT_APPLE_LLVM_INSTALL_OUT) $(SETUP_PY_FILE)
 
 $(GIT_APPLE_LLVM_INSTALL_OUT): $(SETUP_PY_FILE) | $(VENV_OUT)
+	$(PYTHON_ROOT)pip install --upgrade pip
 	$(PYTHON_ROOT)pip install -e $(root_dir) | tee $(GIT_APPLE_LLVM_INSTALL_OUT)

@@ -43,6 +43,8 @@ show-params:
 install-python-package: $(PIP)
 	@echo "Installing python packages"
 	@echo "################################################################################"
+	@echo "Upgrading pip before installing python packages"
+	$(PIP) install --upgrade pip
 	env GIT_APPLE_LLVM_NO_BIN_LIBEXEC=1 $(PIP) install $(verbose_arg) .
 	@echo ""
 
