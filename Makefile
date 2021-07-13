@@ -19,7 +19,7 @@ ifeq ($(PREFIX),)
   PIP := pip3
 else
   VIRTUALENV := $(PREFIX)
-  PIP := $(PREFIX)/bin/pip3
+  PIP := $(VIRTUALENV)/bin/pip3
 endif
 
 INSTALL := install
@@ -40,17 +40,23 @@ show-params:
 	@echo "  DESTDIR = ${DESTDIR}"
 	@echo ""
 
-install-python-package: $(VIRTUALENV)
+install-python-package: $(PIP)
 	@echo "Installing python packages"
 	@echo "################################################################################"
 	env GIT_APPLE_LLVM_NO_BIN_LIBEXEC=1 $(PIP) install $(verbose_arg) .
 	@echo ""
 
-$(VIRTUALENV):
-	@echo "Creating virtualenv at $(PREFIX) "
+$(PIP):
+ifeq ($(VIRTUALENV),)
+	@echo "$(PIP) not found in the system. Please install it."
+else
+	@echo "Creating virtualenv at $(VIRTUALENV) "
+	@echo "Cleaning before creating virtualenv"
+	rm -rf $(VIRTUALENV)
 	@echo "################################################################################"
-	python3 -m venv $(PREFIX)
+	python3 -m venv $(VIRTUALENV)
 	@echo ""
+endif
 
 install-git-scripts:
 	@echo "Installing 'git apple-llvm' bash scripts"
