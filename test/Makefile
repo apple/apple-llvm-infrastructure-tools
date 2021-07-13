@@ -73,7 +73,7 @@ check-lint: venv git_apple_llvm_package requirements Makefile
 check-types: venv git_apple_llvm_package requirements Makefile
 	@printf "\n***********************************************************\n"
 	@printf "%s: check for python type errors\n" "$@"
-	env MYPYPATH="$(S)" $(PYTHON_ROOT)mypy $(python_sources) --ignore-missing-imports
+	env MYPYPATH="$(S)" $(PYTHON_ROOT)mypy $(python_sources) --install-types --non-interactive --ignore-missing-imports
 
 $(filter check-split2mono/%,$(lit_targets) $(lit_test_file_targets)) \
 $(filter check-svn2git/%,$(lit_targets) $(lit_test_file_targets)) \
