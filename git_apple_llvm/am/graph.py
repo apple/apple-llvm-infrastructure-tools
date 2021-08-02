@@ -198,17 +198,15 @@ def add_branches(graph, branches: List[str]):
         if branch.startswith('llvm'):
             llvm.add_node(branch)
             continue
-        if branch.startswith('internal'):
-            internal.add_node(branch)
-            continue
-        if branch.startswith('swift/internal'):
-            internal.add_node(branch)
-            continue
-        if branch.startswith('swift'):
+        elif (branch == 'next'
+                or branch.startswith('swift')
+                or branch.startswith('apple')
+                or branch.startswith('stable')):
             apple.add_node(branch)
             continue
-        if branch.startswith('apple'):
-            apple.add_node(branch)
+        elif (branch.startswith('internal')
+                or branch.startswith('swift/internal')):
+            internal.add_node(branch)
             continue
         raise ValueError('Unknown branch "{}"'.format(branch))
 
