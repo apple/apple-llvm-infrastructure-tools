@@ -6,4 +6,6 @@ gitdb2==2.0.6
 lit
 flake8
 mypy
+types-requests
+types-redis
 httpretty
