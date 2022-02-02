@@ -204,6 +204,7 @@ def add_branches(graph, branches: List[str]):
             internal.add_node(branch)
             continue
         elif (branch == 'next'
+                or branch == 'experimental/cas/main'
                 or branch.startswith('swift')
                 or branch.startswith('apple')
                 or branch.startswith('stable')):
